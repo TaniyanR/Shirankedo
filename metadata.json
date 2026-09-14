@@ -1,0 +1,6 @@
+{
+  "name": "しらんけど",
+  "description": "「しらんけど」完全自動トレンドサイトシステム。複数ソースからの話題収集、独自しらんけど指数算出、一次情報確認、AI記事生成、危険判定ブレーキ、画像管理、マルチサイト対応。",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

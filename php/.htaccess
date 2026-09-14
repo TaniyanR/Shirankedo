@@ -1,0 +1,20 @@
+# 「しらんけど」 Apache URL Rewrite 設定
+RewriteEngine On
+
+# 既存のファイルやディレクトリはそのまま配信
+RewriteCond %{REQUEST_FILENAME} -f [OR]
+RewriteCond %{REQUEST_FILENAME} -d
+RewriteRule ^ - [L]
+
+# 固定ページ
+RewriteRule ^shirankedo-about$ shirankedo-about.php [L,QSA]
+RewriteRule ^comment-rules$ comment-rules.php [L,QSA]
+
+# 記事詳細ページ (/article/trend-xxx)
+RewriteRule ^article/([a-zA-Z0-9_-]+)$ article.php?slug=$1 [L,QSA]
+
+# 管理画面
+RewriteRule ^admin/?$ admin/index.php [L,QSA]
+
+# トップページ / その他
+RewriteRule ^$ index.php [L,QSA]
