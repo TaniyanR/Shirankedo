@@ -9,15 +9,54 @@ require_once __DIR__ . '/config.php';
 
 $message = '';
 $status = 'idle'; // idle | success | error
+
+// フォームからDB接続設定の変更・保存要求がある場合
+$dbHost = isset($_POST['db_host']) ? trim($_POST['db_host']) : DB_HOST;
+$dbPort = isset($_POST['db_port']) ? trim($_POST['db_port']) : DB_PORT;
+$dbName = isset($_POST['db_name']) ? trim($_POST['db_name']) : DB_NAME;
+$dbUser = isset($_POST['db_user']) ? trim($_POST['db_user']) : DB_USER;
+$dbPass = isset($_POST['db_pass']) ? trim($_POST['db_pass']) : DB_PASS;
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['save_config'])) {
+    try {
+        $configFile = __DIR__ . '/config.php';
+        $configContent = file_get_contents($configFile);
+        
+        // 正規表現でDB定数を置換
+        $configContent = preg_replace("/define\('DB_HOST',\s*getenv\('DB_HOST'\)\s*\?:\s*'[^']*'\);/", "define('DB_HOST', getenv('DB_HOST') ?: '" . addslashes($dbHost) . "');", $configContent);
+        $configContent = preg_replace("/define\('DB_PORT',\s*getenv\('DB_PORT'\)\s*\?:\s*'[^']*'\);/", "define('DB_PORT', getenv('DB_PORT') ?: '" . addslashes($dbPort) . "');", $configContent);
+        $configContent = preg_replace("/define\('DB_NAME',\s*getenv\('DB_NAME'\)\s*\?:\s*'[^']*'\);/", "define('DB_NAME', getenv('DB_NAME') ?: '" . addslashes($dbName) . "');", $configContent);
+        $configContent = preg_replace("/define\('DB_USER',\s*getenv\('DB_USER'\)\s*\?:\s*'[^']*'\);/", "define('DB_USER', getenv('DB_USER') ?: '" . addslashes($dbUser) . "');", $configContent);
+        $configContent = preg_replace("/define\('DB_PASS',\s*getenv\('DB_PASS'\)\s*\?:\s*'[^']*'\);/", "define('DB_PASS', getenv('DB_PASS') ?: '" . addslashes($dbPass) . "');", $configContent);
+        
+        if (file_put_contents($configFile, $configContent) !== false) {
+            $status = 'info';
+            $message = "データベース設定を php/config.php に正常に保存しました！続けて「データベース自動セットアップを実行する」を押してください。";
+        } else {
+            throw new Exception("php/config.php への書き込み権限がありません。パーミッションをご確認ください。");
+        }
+    } catch (Throwable $e) {
+        $status = 'error';
+        $message = "設定保存エラー: " . $e->getMessage();
+    }
+}
+
 $dbDetails = [
-    'host' => DB_HOST,
-    'port' => DB_PORT,
-    'name' => DB_NAME,
-    'user' => DB_USER,
+    'host' => $dbHost,
+    'port' => $dbPort,
+    'name' => $dbName,
+    'user' => $dbUser,
+    'pass' => $dbPass,
 ];
 
-function executeMigrations() {
-    $db = Database::getConnection();
+function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
+    $dsn = sprintf('mysql:host=%s;port=%s;dbname=%s;charset=utf8mb4', $host, $port, $name);
+    $options = [
+        PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
+        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+        PDO::ATTR_EMULATE_PREPARES   => false,
+    ];
+    $db = new PDO($dsn, $user, $pass, $options);
 
     // 1. database.sql の読み込みと実行
     $sqlPath = __DIR__ . '/database.sql';
@@ -106,7 +145,7 @@ $shouldRun = (php_sapi_name() === 'cli') || isset($_POST['run']) || isset($_GET[
 
 if ($shouldRun) {
     try {
-        $result = executeMigrations();
+        $result = executeMigrationsWithParams($dbDetails['host'], $dbDetails['port'], $dbDetails['name'], $dbDetails['user'], $dbDetails['pass']);
         $status = 'success';
         $message = $result['message'];
     } catch (Throwable $e) {
@@ -141,13 +180,42 @@ if (php_sapi_name() === 'cli') {
             </div>
         </div>
 
-        <!-- 接続情報プレビュー -->
-        <div class="bg-stone-50 border border-stone-200 rounded-2xl p-4 text-xs space-y-1.5 font-mono">
-            <div class="font-bold text-stone-700 font-sans mb-1 text-sm">【現在の接続設定 (php/config.php)】</div>
-            <div>ホスト: <span class="text-stone-900 font-bold"><?= htmlspecialchars($dbDetails['host']) ?>:<?= htmlspecialchars($dbDetails['port']) ?></span></div>
-            <div>データベース名: <span class="text-stone-900 font-bold"><?= htmlspecialchars($dbDetails['name']) ?></span></div>
-            <div>ユーザー名: <span class="text-stone-900 font-bold"><?= htmlspecialchars($dbDetails['user']) ?></span></div>
-        </div>
+        <!-- 接続情報設定フォーム -->
+        <form method="POST" class="bg-stone-50 border border-stone-200 rounded-2xl p-5 text-xs space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-stone-200">
+                <span class="font-bold text-stone-800 text-sm">🛠️ データベース接続設定の変更</span>
+                <span class="text-[10px] text-stone-500">（php/config.php に自動保存）</span>
+            </div>
+            
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">MySQL ホスト名 (サーバー名)</label>
+                    <input type="text" name="db_host" value="<?= htmlspecialchars($dbDetails['host']) ?>" placeholder="例: mysql1234.xserver.jp または 127.0.0.1" class="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs font-mono focus:outline-none focus:border-stone-900" required>
+                </div>
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">ポート番号</label>
+                    <input type="text" name="db_port" value="<?= htmlspecialchars($dbDetails['port']) ?>" class="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs font-mono focus:outline-none focus:border-stone-900" required>
+                </div>
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">データベース名</label>
+                    <input type="text" name="db_name" value="<?= htmlspecialchars($dbDetails['name']) ?>" placeholder="例: xxxxx_shirankedo" class="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs font-mono focus:outline-none focus:border-stone-900 font-bold text-amber-900" required>
+                </div>
+                <div>
+                    <label class="block font-bold text-stone-700 mb-1">MySQL ユーザー名</label>
+                    <input type="text" name="db_user" value="<?= htmlspecialchars($dbDetails['user']) ?>" placeholder="例: xxxxx_user" class="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs font-mono focus:outline-none focus:border-stone-900 font-bold" required>
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block font-bold text-stone-700 mb-1">MySQL パスワード</label>
+                    <input type="password" name="db_pass" value="<?= htmlspecialchars($dbDetails['pass']) ?>" placeholder="MySQLパスワードを入力" class="w-full px-3 py-2 bg-white border border-stone-300 rounded-xl text-xs font-mono focus:outline-none focus:border-stone-900">
+                </div>
+            </div>
+
+            <div class="pt-2 flex gap-2">
+                <button type="submit" name="save_config" value="1" class="w-full py-2.5 px-4 bg-stone-900 hover:bg-stone-800 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center justify-center gap-1.5">
+                    <span>💾 この接続設定を保存する</span>
+                </button>
+            </div>
+        </form>
 
         <!-- 結果メッセージ -->
         <?php if ($status === 'success'): ?>
@@ -161,6 +229,13 @@ if (php_sapi_name() === 'cli') {
                         トップページを開く →
                     </a>
                 </div>
+            </div>
+        <?php elseif ($status === 'info'): ?>
+            <div class="p-4 bg-amber-50 border border-amber-300 text-amber-900 rounded-2xl text-xs sm:text-sm font-bold space-y-2">
+                <div class="flex items-center gap-2 text-amber-700 font-black text-base">
+                    <span>ℹ️ 設定を更新しました</span>
+                </div>
+                <p><?= nl2br(htmlspecialchars($message)) ?></p>
             </div>
         <?php elseif ($status === 'error'): ?>
             <div class="p-4 bg-rose-50 border border-rose-300 text-rose-900 rounded-2xl text-xs sm:text-sm space-y-2">
