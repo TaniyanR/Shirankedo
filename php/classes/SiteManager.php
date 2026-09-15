@@ -30,7 +30,7 @@ class SiteManager {
 
         // 該当がなければメイン総合サイト (subdomain='') を取得
         if (!$site) {
-            $stmt = $db->prepare("SELECT * FROM sites WHERE subdomain = '' LIMIT 1");
+            $stmt = $db->prepare("SELECT * FROM sites WHERE subdomain = '' OR is_public = 1 ORDER BY id ASC LIMIT 1");
             $stmt->execute();
             $site = $stmt->fetch();
         }

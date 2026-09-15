@@ -126,7 +126,7 @@ if ($dbConnected && $site) {
         $categories = $catStmt->fetchAll();
 
         $selectedCategory = $_GET['cat'] ?? 'all';
-        $whereSql = "WHERE a.site_id = ? AND a.status = 'published'";
+        $whereSql = "WHERE (a.site_id = ? OR a.site_id = 1) AND a.status = 'published'";
         $params = [(int)$site['id']];
 
         if ($selectedCategory !== 'all') {
@@ -147,7 +147,7 @@ if ($dbConnected && $site) {
         $artStmt->execute($params);
         $articles = $artStmt->fetchAll();
     } catch (Throwable $e) {
-        // テーブル未マイグレーション
+        $dbError = $e->getMessage();
     }
 }
 ?>

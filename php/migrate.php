@@ -78,8 +78,11 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
             (2, 'game', 'しらんけど ゲーム速報', 'Steam・新作ゲーム・大型アプデのトレンドまとめ。しらんけど。', 'game'),
             (3, 'entame', 'しらんけど エンタメ', 'お笑い・バラエティ・芸能カルチャーの話題。しらんけど。', 'entertainment')");
         $stmt->execute();
+    }
 
-        // カテゴリ投入
+    // カテゴリ確認 & 投入
+    $catCheck = $db->query("SELECT COUNT(*) as cnt FROM categories");
+    if ($catCheck->fetch()['cnt'] == 0) {
         $catStmt = $db->prepare("INSERT INTO categories (site_id, slug, name, sort_order) VALUES
             (1, 'all', '総合', 1),
             (1, 'entertainment', 'エンタメ', 2),
@@ -90,8 +93,11 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
             (2, 'console', 'コンシューマー', 2),
             (2, 'mobile', 'アプリ', 3)");
         $catStmt->execute();
+    }
 
-        // 拒否キーワード初期データ投入
+    // 拒否キーワード初期データ確認 & 投入
+    $kwCheck = $db->query("SELECT COUNT(*) as cnt FROM banned_keywords");
+    if ($kwCheck->fetch()['cnt'] == 0) {
         $kwStmt = $db->prepare("INSERT INTO banned_keywords (site_id, keyword, match_type, reason) VALUES
             (1, '死ね', 'partial', '誹謗中傷・脅迫'),
             (1, '殺す', 'partial', '脅迫'),
@@ -102,15 +108,17 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
             (1, '電話番号', 'partial', '個人情報誘導'),
             (1, '口座', 'partial', '詐欺誘導')");
         $kwStmt->execute();
+    }
 
-        // 画像グループ初期投入
+    // 画像グループ・ライブラリ確認 & 投入
+    $imgCheck = $db->query("SELECT COUNT(*) as cnt FROM images");
+    if ($imgCheck->fetch()['cnt'] == 0) {
         $grpStmt = $db->prepare("INSERT INTO image_groups (id, site_id, name, genre) VALUES
             (1, 1, '千鳥', 'entertainment'),
             (2, 1, 'ダウンタウン', 'entertainment'),
             (3, 1, 'モンスターハンター', 'game')");
         $grpStmt->execute();
 
-        // 初期画像ライブラリ投入
         $imgStmt = $db->prepare("INSERT INTO images (id, site_id, group_id, category_id, filename, url, alt_text) VALUES
             (1, 1, 1, 2, 'chidori_001.webp', 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80', 'お笑いステージイメージ'),
             (2, 1, 2, 2, 'downtown_001.webp', 'https://images.unsplash.com/photo-1475721027785-f74eccf877e2?auto=format&fit=crop&w=800&q=80', 'スタジオマイクイメージ'),
@@ -118,20 +126,25 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
             (4, 1, NULL, 1, 'trend_news_default.webp', 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80', 'ニュース速報イメージ')");
         $imgStmt->execute();
 
-        // 画像キーワード投入
         $ikStmt = $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES
             (1, '千鳥'), (1, '大悟'), (1, 'ノブ'), (1, 'お笑い'),
             (2, 'ダウンタウン'), (2, '松本人志'), (2, '浜田雅功'), (2, 'バラエティ'),
             (3, 'モンスターハンター'), (3, 'モンハン'), (3, 'Monster Hunter'), (3, 'ゲーム')");
         $ikStmt->execute();
+    }
 
-        // サンプル記事投入
+    // サンプル記事確認 & 投入 (記事が0件なら必ず投入)
+    $artCheck = $db->query("SELECT COUNT(*) as cnt FROM articles");
+    $artCnt = (int)($artCheck->fetch()['cnt'] ?? 0);
+    if ($artCnt == 0) {
         $artStmt = $db->prepare("INSERT INTO articles (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, shirankedo_index, index_label, is_rapid_rise, growth_rate, status, published_at) VALUES 
             (1, 2, '千鳥の新番組が異例のTVer週間ランキング1位を獲得した件', 'chidori-new-show-tver-no1', '新企画の予測不能なロケ展開がSNSで話題を呼び、放送後わずか3日で再生数200万回を突破しました。', 'お笑いコンビ・千鳥が出演する深夜バラエティ番組の新企画が、民放公式テレビ配信サービス「TVer」の総合ランキングにおいて異例の週間1位を獲得しました。\n\n番組関係者によると、事前告知なしで決行された岡山ロケの模様がSNS上で大きな反響を呼び、放送終了直後から切り抜き動画や言及ポストが急増。関連キーワードがトレンド入りを果たすなど、深夜枠としては極めて高い視聴熱を記録しています。\n\n同局プロデューサーは「視聴者のリアルタイムな共感と反響が今回の数字につながった」とコメントしています。', '次回の放送でもこの勢いを維持できるのか、今後の企画展開に注目が集まります。しらんけど。', 88, 'めっちゃ話題', 1, 142.5, 'published', NOW()),
-            (1, 4, '大人気ハンティングアクション最新作、全世界同時体験版が配信開始', 'game-hunting-action-demo', 'シリーズ待望の最新作が突如体験版の配信を開始し、同時接続プレイヤー数が歴代記録を更新しました。', '人気ゲームシリーズの最新ナンバリングタイトルにおいて、全世界同時での無料オープンベータテストが本日未明より開始されました。\n\n公式サイトおよび各プラットフォームの発表によると、配信開始直後からアクセスが集中し、一部サーバーで入場制限が実施されるほどの盛り上がりを見せています。ユーザーからは刷新されたグラフィックや新アクションに対する高評価が寄せられています。', '本編発売日にはさらに大きな熱狂が巻き起こりそうです。しらんけど。', 94, 'めっちゃ話題', 1, 210.0, 'published', NOW())");
+            (1, 4, '大人気ハンティングアクション最新作、全世界同時体験版が配信開始', 'game-hunting-action-demo', 'シリーズ待望の最新作が突如体験版の配信を開始し、同時接続プレイヤー数が歴代記録を更新しました。', '人気ゲームシリーズの最新ナンバリングタイトルにおいて、全世界同時での無料オープンベータテストが本日未明より開始されました。\n\n公式サイトおよび各プラットフォームの発表によると、配信開始直後からアクセスが集中し、一部サーバーで入場制限が実施されるほどの盛り上がりを見せています。ユーザーからは刷新されたグラフィックや新アクションに対する高評価が寄せられています。', '本編発売日にはさらに大きな熱狂が巻き起こりそうです。しらんけど。', 94, 'めっちゃ話題', 1, 210.0, 'published', NOW()),
+            (1, 5, 'SNSで話題の「しらんけど」構文が流行語候補に？ 会話を丸く収めるクッション言葉', 'shirankedo-buzz-trend', '会話で責任を回避しつつ円滑にコミュニケーションをとる言葉として「しらんけど」の便利さがX上でバズを記録。', '関西地方で古くから使われてきた「しらんけど」というクッション表現が、若年層を中心にSNS上でブームとなっています。断定を避け相手の反発を和らげる効果があると分析されています。', 'この記事を読んだからといって上司に「しらんけど」を使うと普通に怒られます。しらんけど。', 85, 'めっちゃ話題', 1, 180.0, 'published', NOW())");
         $artStmt->execute();
-
-        $insertedCount = 2;
+        $insertedCount = 3;
+    } else {
+        $insertedCount = $artCnt;
     }
 
     return [
@@ -256,6 +269,12 @@ if (php_sapi_name() === 'cli') {
         <!-- 実行フォーム -->
         <form method="POST">
             <input type="hidden" name="run" value="1">
+            <input type="hidden" name="save_config" value="1">
+            <input type="hidden" name="db_host" value="<?= htmlspecialchars($dbDetails['host']) ?>">
+            <input type="hidden" name="db_port" value="<?= htmlspecialchars($dbDetails['port']) ?>">
+            <input type="hidden" name="db_name" value="<?= htmlspecialchars($dbDetails['name']) ?>">
+            <input type="hidden" name="db_user" value="<?= htmlspecialchars($dbDetails['user']) ?>">
+            <input type="hidden" name="db_pass" value="<?= htmlspecialchars($dbDetails['pass']) ?>">
             <button type="submit" class="w-full py-3 px-5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm shadow-md transition-all flex items-center justify-center gap-2">
                 <span>データベース自動セットアップを実行する</span>
             </button>

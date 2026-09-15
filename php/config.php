@@ -12,7 +12,7 @@ define('DB_PASS', getenv('DB_PASS') ?: '');
 define('DB_CHARSET', 'utf8mb4');
 
 // ルートURL・ワイルドカードドメイン設定
-define('MAIN_DOMAIN', getenv('MAIN_DOMAIN') ?: 'example.com');
+define('MAIN_DOMAIN', getenv('MAIN_DOMAIN') ?: ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz'));
 define('APP_SECRET_KEY', getenv('APP_SECRET_KEY') ?: 'shirankedo_super_secure_token_2026');
 
 // セッション開始 (安全な設定)
