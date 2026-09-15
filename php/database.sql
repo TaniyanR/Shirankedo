@@ -234,7 +234,20 @@ CREATE TABLE IF NOT EXISTS `system_logs` (
   KEY `idx_site` (`site_id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- 15. マイグレーション履歴
+-- 15. お問い合わせテーブル
+CREATE TABLE IF NOT EXISTS `contacts` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `name` VARCHAR(100) NOT NULL,
+  `email` VARCHAR(255) NOT NULL,
+  `subject` VARCHAR(255) NOT NULL DEFAULT '',
+  `message` TEXT NOT NULL,
+  `ip_address` VARCHAR(45) NOT NULL DEFAULT '',
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_created_at` (`created_at` DESC)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- 16. マイグレーション履歴
 CREATE TABLE IF NOT EXISTS `migrations` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `migration_name` VARCHAR(128) NOT NULL,

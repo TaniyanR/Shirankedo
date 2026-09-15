@@ -7,6 +7,7 @@ import { ArticleDetailModal } from './components/ArticleDetailModal';
 import { ShirankedoAboutModal } from './components/ShirankedoAboutModal';
 import { CommentRulesModal } from './components/CommentRulesModal';
 import { AdminConsole } from './components/AdminConsole';
+import { PageModal } from './components/PageModal';
 
 export default function App() {
   const [sites, setSites] = useState<Site[]>([]);
@@ -29,6 +30,7 @@ export default function App() {
 
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
   const [activeView, setActiveView] = useState<'feed' | 'about' | 'rules' | 'admin'>('feed');
+  const [pageSlug, setPageSlug] = useState<'about' | 'privacy-policy' | 'que' | null>(null);
 
   // Load sites
   const fetchSites = () => {
@@ -300,6 +302,15 @@ export default function App() {
         <CommentRulesModal onClose={() => setActiveView('feed')} />
       )}
 
+      {/* PAGE MODAL (about / privacy-policy / que) */}
+      {pageSlug && (
+        <PageModal
+          slug={pageSlug}
+          onClose={() => setPageSlug(null)}
+          onSwitchSlug={(newSlug) => setPageSlug(newSlug)}
+        />
+      )}
+
       {/* FOOTER */}
       <footer className="bg-stone-900 text-stone-400 mt-16 border-t border-stone-800 text-xs py-10 px-4">
         <div className="max-w-6xl mx-auto space-y-6">
@@ -316,7 +327,28 @@ export default function App() {
               </p>
             </div>
 
-            <div className="flex items-center gap-4 text-xs font-medium">
+            <div className="flex flex-wrap items-center gap-3 sm:gap-4 text-xs font-medium">
+              <button
+                onClick={() => setPageSlug('about')}
+                className="hover:text-amber-400 text-stone-300 font-bold transition-colors"
+              >
+                サイトについて
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => setPageSlug('privacy-policy')}
+                className="hover:text-amber-400 text-stone-300 font-bold transition-colors"
+              >
+                プライバシーポリシー
+              </button>
+              <span>•</span>
+              <button
+                onClick={() => setPageSlug('que')}
+                className="hover:text-amber-400 text-stone-300 font-bold transition-colors"
+              >
+                お問い合わせ
+              </button>
+              <span>•</span>
               <button
                 onClick={() => setActiveView('about')}
                 className="hover:text-white transition-colors"
@@ -328,12 +360,8 @@ export default function App() {
                 onClick={() => setActiveView('rules')}
                 className="hover:text-white transition-colors"
               >
-                誹謗中傷禁止・利用ルール
+                利用ルール
               </button>
-              <span>•</span>
-              <a href="/sitemap.xml" target="_blank" rel="noreferrer" className="hover:text-white transition-colors">
-                サイトマップ
-              </a>
               <span>•</span>
               <button
                 onClick={() => setActiveView('admin')}

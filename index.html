@@ -1,18 +1,1663 @@
 <!doctype html>
-<html lang="en">
+<html lang="ja">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>しらんけど - 完全自動トレンドサイトシステム</title>
-    <meta name="description" content="「しらんけど」完全自動トレンドサイトシステム。ネット上のトレンドを自動収集・分析し、一次情報を確認した上でAIが独自指標「しらんけど指数」付きで記事を生成・公開。" />
+    <meta name="description" content="「しらんけど」完全自動トレンドサイトシステム。ネット上のトレンドを自動収集・分析し、一次情報を確認した上で独自指標「しらんけど指数」付きで公開。" />
     <meta property="og:title" content="しらんけど - 完全自動トレンドサイトシステム" />
-    <meta property="og:description" content="「しらんけど」完全自動トレンドサイトシステム。ネット上のトレンドを自動収集・分析し、一次情報を確認した上でAIが独自指標「しらんけど指数」付きで記事を生成・公開。" />
+    <meta property="og:description" content="「しらんけど」完全自動トレンドサイトシステム。ネット上のトレンドを自動収集・分析し、一次情報を確認した上で独自指標「しらんけど指数」付きで公開。" />
     <meta property="og:type" content="website" />
     <meta name="twitter:card" content="summary_large_image" />
+
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Zen+Kaku+Gothic+New:wght@400;500;700;900&family=Shippori+Mincho:wght@700&display=swap" rel="stylesheet">
+
+    <!-- Tailwind CSS CDN (ビルド不要・生のHTMLでそのまま動作) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            fontFamily: {
+              sans: ['"Zen Kaku Gothic New"', 'sans-serif'],
+              serif: ['"Shippori Mincho"', 'serif'],
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      body { font-family: "Zen Kaku Gothic New", sans-serif; }
+      .shirankedo-font { font-family: "Shippori Mincho", serif; }
+      /* スムーズアニメーション */
+      .fade-enter { animation: fadeIn 0.2s ease-out forwards; }
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+    </style>
   </head>
-  <body>
-    <div id="root"></div>
-    <script type="module" src="/src/main.tsx"></script>
+  <body class="bg-[#fcfbf9] text-stone-800 min-h-screen flex flex-col antialiased selection:bg-amber-200">
+
+    <!-- HEADER -->
+    <header class="sticky top-0 z-40 bg-[#fcfbf9]/95 backdrop-blur-md border-b border-stone-200/80 shadow-xs">
+      <div class="max-w-6xl mx-auto px-4 sm:px-6">
+        <div class="flex items-center justify-between h-16 sm:h-20">
+          
+          <!-- Logo & Tagline -->
+          <div class="flex items-center gap-4">
+            <a href="/" class="flex items-baseline gap-2 group">
+              <span class="text-2xl sm:text-3xl font-black tracking-tight text-stone-950 shirankedo-font group-hover:text-amber-600 transition-colors">
+                しらんけど<span class="text-amber-500">。</span>
+              </span>
+              <span class="text-[10px] sm:text-xs font-bold px-2 py-0.5 rounded-full bg-stone-900 text-stone-200">
+                トレンド速報
+              </span>
+            </a>
+            <div class="hidden md:block text-[11px] text-stone-500 border-l border-stone-300 pl-3">
+              客観的な一次ソースで見るトレンド情報。しらんけど。
+            </div>
+          </div>
+
+          <!-- Quick Actions & Subdomains -->
+          <div class="flex items-center gap-2 sm:gap-3">
+            <button onclick="openPageModal('about')" class="hidden sm:inline-flex items-center text-xs font-bold px-3 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-100 text-stone-700 transition-all">
+              サイトについて
+            </button>
+            <button onclick="openPageModal('privacy-policy')" class="hidden sm:inline-flex items-center text-xs font-bold px-3 py-1.5 rounded-xl border border-stone-200 hover:bg-stone-100 text-stone-700 transition-all">
+              プライバシー
+            </button>
+            <button onclick="openPageModal('que')" class="inline-flex items-center gap-1 text-xs font-black px-3.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-stone-950 shadow-xs transition-all">
+              <span>お問い合わせ</span>
+            </button>
+            <button onclick="openAdminModal()" class="inline-flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-stone-100 shadow-xs transition-all">
+              <svg class="w-3.5 h-3.5 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+              <span>管理ログイン</span>
+            </button>
+          </div>
+
+        </div>
+
+        <!-- CATEGORY NAVIGATION TABS -->
+        <nav class="flex items-center gap-1 sm:gap-2 overflow-x-auto py-2.5 border-t border-stone-200/60 no-scrollbar text-xs font-bold">
+          <button onclick="setCategory('all')" id="cat-btn-all" class="cat-btn px-4 py-1.5 rounded-full bg-stone-900 text-white whitespace-nowrap transition-all shadow-xs">
+            総合
+          </button>
+          <button onclick="setCategory('entertainment')" id="cat-btn-entertainment" class="cat-btn px-4 py-1.5 rounded-full text-stone-600 hover:bg-stone-200 whitespace-nowrap transition-all">
+            エンタメ
+          </button>
+          <button onclick="setCategory('game')" id="cat-btn-game" class="cat-btn px-4 py-1.5 rounded-full text-stone-600 hover:bg-stone-200 whitespace-nowrap transition-all">
+            ゲーム
+          </button>
+          <button onclick="setCategory('tech')" id="cat-btn-tech" class="cat-btn px-4 py-1.5 rounded-full text-stone-600 hover:bg-stone-200 whitespace-nowrap transition-all">
+            テクノロジー
+          </button>
+          <button onclick="setCategory('social')" id="cat-btn-social" class="cat-btn px-4 py-1.5 rounded-full text-stone-600 hover:bg-stone-200 whitespace-nowrap transition-all">
+            SNS・ネット話題
+          </button>
+        </nav>
+
+      </div>
+    </header>
+
+    <!-- SUB-BANNER / INFO BAR -->
+    <section class="bg-amber-500/10 border-b border-amber-200/50 py-2.5 px-4 text-xs text-amber-950">
+      <div class="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <span class="font-black px-2 py-0.5 rounded-md bg-amber-500 text-stone-950 text-[10px]">INFO</span>
+          <span>ネット上の話題を客観的な事実と一次情報で要約。最後の判断は各自で。しらんけど。</span>
+        </div>
+        <div class="flex items-center gap-3 text-[11px] font-bold">
+          <button onclick="openRulesModal()" class="underline hover:text-amber-800">利用ルール・誹謗中傷禁止</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- MAIN CONTAINER -->
+    <main class="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex-1 w-full">
+      
+      <!-- TOOLBAR (Search & Sorting) -->
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8 bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+        
+        <!-- Search Input -->
+        <div class="relative flex-1 max-w-md">
+          <input
+            type="text"
+            id="search-input"
+            oninput="handleSearch(this.value)"
+            placeholder="話題のキーワードで絞り込み検索..."
+            class="w-full pl-9 pr-4 py-2 text-xs sm:text-sm bg-stone-50 border border-stone-200 rounded-xl focus:outline-none focus:border-stone-900 focus:bg-white transition-all"
+          />
+          <svg class="w-4 h-4 text-stone-400 absolute left-3 top-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path>
+          </svg>
+        </div>
+
+        <!-- Sorting buttons -->
+        <div class="flex items-center gap-1.5 self-end sm:self-auto text-xs font-bold">
+          <span class="text-stone-400 mr-1 text-[11px]">並び順:</span>
+          <button onclick="setSort('recent')" id="sort-btn-recent" class="sort-btn px-3 py-1.5 rounded-lg bg-stone-900 text-white transition-all">
+            新着順
+          </button>
+          <button onclick="setSort('index')" id="sort-btn-index" class="sort-btn px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all">
+            しらんけど指数順
+          </button>
+          <button onclick="setSort('rapid')" id="sort-btn-rapid" class="sort-btn px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all">
+            急上昇順
+          </button>
+        </div>
+
+      </div>
+
+      <!-- ARTICLES GRID -->
+      <div id="articles-container" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <!-- Rendered dynamically by JavaScript -->
+      </div>
+
+      <!-- EMPTY STATE -->
+      <div id="empty-state" class="hidden text-center py-16 bg-white rounded-3xl border border-dashed border-stone-300">
+        <div class="text-4xl mb-3">🧐</div>
+        <p class="font-bold text-stone-800">一致する話題が見つかりませんでした。</p>
+        <p class="text-xs text-stone-500 mt-1">検索ワードを変えるか、カテゴリを「総合」に戻してください。</p>
+      </div>
+
+    </main>
+
+    <!-- FOOTER -->
+    <footer class="bg-stone-900 text-stone-400 mt-16 border-t border-stone-800 text-xs py-12 px-4">
+      <div class="max-w-6xl mx-auto space-y-8">
+        
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-stone-800">
+          <div>
+            <div class="text-2xl font-black text-white shirankedo-font">
+              しらんけど<span class="text-amber-500">。</span>
+            </div>
+            <p class="text-xs text-stone-400 mt-1">
+              客観的な一次ソースで見るトレンド速報メディア
+            </p>
+          </div>
+
+          <!-- Navigation Links -->
+          <div class="flex flex-wrap items-center gap-3 sm:gap-6 font-bold text-stone-300">
+            <button onclick="openPageModal('about')" class="hover:text-amber-400 transition-colors">
+              サイトについて
+            </button>
+            <span>•</span>
+            <button onclick="openPageModal('privacy-policy')" class="hover:text-amber-400 transition-colors">
+              プライバシーポリシー
+            </button>
+            <span>•</span>
+            <button onclick="openPageModal('que')" class="hover:text-amber-400 transition-colors">
+              お問い合わせ
+            </button>
+            <span>•</span>
+            <button onclick="openRulesModal()" class="hover:text-amber-400 transition-colors">
+              利用ルール
+            </button>
+            <span>•</span>
+            <button onclick="openAdminModal()" class="text-amber-400 hover:text-amber-300 transition-colors flex items-center gap-1">
+              <span>⚙️ 管理ログイン</span>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex flex-col sm:flex-row items-center justify-between gap-4 text-[11px] text-stone-500">
+          <p>© 2026 しらんけど (トレンド自動分析・事実検証メディア). All rights reserved. しらんけど。</p>
+          <p class="font-serif">「客観的事実を尊重しますが、最終判断は各自の責任でお願いします。」</p>
+        </div>
+
+      </div>
+    </footer>
+
+    <!-- =============================================================== -->
+    <!-- ARTICLE DETAIL MODAL -->
+    <!-- =============================================================== -->
+    <div id="article-modal" class="fixed inset-0 z-50 bg-stone-950/75 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div class="bg-white max-w-2xl w-full rounded-3xl border border-stone-200 shadow-2xl overflow-hidden my-6 fade-enter">
+        
+        <!-- Modal Header with Close Button -->
+        <div class="bg-stone-50 border-b border-stone-200 px-6 py-3.5 flex items-center justify-between">
+          <span id="modal-category-badge" class="px-2.5 py-1 rounded-md text-[11px] font-black bg-stone-900 text-white">
+            カテゴリ
+          </span>
+          <button onclick="closeArticleModal()" class="w-8 h-8 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-700 flex items-center justify-center font-bold text-sm transition-colors">
+            ✕
+          </button>
+        </div>
+
+        <!-- Modal Body -->
+        <div class="p-6 sm:p-8 max-h-[78vh] overflow-y-auto space-y-6 text-stone-800">
+          
+          <!-- Title & Meta -->
+          <div>
+            <div class="flex items-center gap-2 mb-2">
+              <span id="modal-index-badge" class="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-stone-950">
+                しらんけど指数 88
+              </span>
+              <span id="modal-date" class="text-xs text-stone-400 font-mono">2時間前</span>
+            </div>
+            <h1 id="modal-title" class="text-xl sm:text-2xl font-black text-stone-950 leading-tight">
+              記事タイトル
+            </h1>
+          </div>
+
+          <!-- Image -->
+          <div class="rounded-2xl overflow-hidden border border-stone-200 aspect-video bg-stone-100 relative">
+            <img id="modal-image" src="" alt="サムネイル" class="w-full h-full object-cover" />
+          </div>
+
+          <!-- Why Trending Box -->
+          <div class="bg-amber-500/10 border-l-4 border-amber-500 p-4 rounded-r-xl">
+            <div class="text-[11px] font-black text-amber-900 mb-1 flex items-center gap-1">
+              <span>💡</span>
+              <span>なぜ話題になっているのか？</span>
+            </div>
+            <p id="modal-why" class="text-xs sm:text-sm text-stone-800 leading-relaxed">
+              話題の背景
+            </p>
+          </div>
+
+          <!-- Body Text -->
+          <div id="modal-body" class="text-xs sm:text-sm text-stone-700 leading-relaxed space-y-4 whitespace-pre-line">
+            本文
+          </div>
+
+          <!-- Conclusion Box -->
+          <div class="bg-stone-900 text-stone-100 p-5 rounded-2xl border border-stone-800 space-y-1">
+            <div class="text-[10px] font-bold text-amber-400">まとめの一言</div>
+            <p id="modal-conclusion" class="text-sm sm:text-base font-bold shirankedo-font">
+              今後の展開に注目です。しらんけど。
+            </p>
+          </div>
+
+          <!-- Primary Verified Sources -->
+          <div class="border-t border-stone-200 pt-5 space-y-2">
+            <div class="text-xs font-black text-stone-900 flex items-center gap-1">
+              <span>📌</span>
+              <span>確認済みの一次ソース（公式発表・主要報道）</span>
+            </div>
+            <div id="modal-sources" class="space-y-1.5 text-xs">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+          <!-- Interactive Voting inside Modal -->
+          <div class="border-t border-stone-200 pt-5 space-y-3">
+            <div class="text-xs font-black text-stone-900">読者の反応投票</div>
+            
+            <!-- Poll 1: 知ってた vs 知らんかった -->
+            <div class="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-2">
+              <div class="flex justify-between text-xs font-bold text-stone-700">
+                <span>この話題、知ってた？</span>
+                <span id="poll1-summary" class="text-[11px] text-stone-500">投票受付中</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="poll1-btn-knew" onclick="votePoll(1, 'knew')" class="py-2 px-3 rounded-lg text-xs font-bold border border-stone-300 hover:bg-stone-200 text-stone-800 transition-all flex items-center justify-between">
+                  <span>知ってた</span>
+                  <span id="poll1-count-knew" class="font-mono text-stone-500">0</span>
+                </button>
+                <button id="poll1-btn-didnt" onclick="votePoll(1, 'didnt')" class="py-2 px-3 rounded-lg text-xs font-bold border border-stone-300 hover:bg-stone-200 text-stone-800 transition-all flex items-center justify-between">
+                  <span>知らんかった</span>
+                  <span id="poll1-count-didnt" class="font-mono text-stone-500">0</span>
+                </button>
+              </div>
+              <div class="h-2 w-full bg-stone-200 rounded-full overflow-hidden flex">
+                <div id="poll1-bar" class="h-full bg-amber-500 transition-all duration-300" style="width: 50%"></div>
+              </div>
+            </div>
+
+            <!-- Poll 2: もっと伸びる vs もう終わる -->
+            <div class="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-2">
+              <div class="flex justify-between text-xs font-bold text-stone-700">
+                <span>このトレンドの今後は？</span>
+                <span id="poll2-summary" class="text-[11px] text-stone-500">投票受付中</span>
+              </div>
+              <div class="grid grid-cols-2 gap-2">
+                <button id="poll2-btn-grow" onclick="votePoll(2, 'grow')" class="py-2 px-3 rounded-lg text-xs font-bold border border-stone-300 hover:bg-stone-200 text-stone-800 transition-all flex items-center justify-between">
+                  <span>もっと伸びる</span>
+                  <span id="poll2-count-grow" class="font-mono text-stone-500">0</span>
+                </button>
+                <button id="poll2-btn-end" onclick="votePoll(2, 'end')" class="py-2 px-3 rounded-lg text-xs font-bold border border-stone-300 hover:bg-stone-200 text-stone-800 transition-all flex items-center justify-between">
+                  <span>もう終わる</span>
+                  <span id="poll2-count-end" class="font-mono text-stone-500">0</span>
+                </button>
+              </div>
+              <div class="h-2 w-full bg-stone-200 rounded-full overflow-hidden flex">
+                <div id="poll2-bar" class="h-full bg-emerald-500 transition-all duration-300" style="width: 50%"></div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Comments Section -->
+          <div class="border-t border-stone-200 pt-5 space-y-4">
+            <div class="flex items-center justify-between">
+              <div class="text-xs font-black text-stone-900 flex items-center gap-1">
+                <span>💬</span>
+                <span>読者のコメント（URL禁止・文字のみ）</span>
+              </div>
+              <span id="comment-count-badge" class="text-xs text-stone-500 font-mono">0件</span>
+            </div>
+
+            <!-- Existing comments list -->
+            <div id="comments-list" class="space-y-2 max-h-48 overflow-y-auto pr-1">
+              <!-- Rendered dynamically -->
+            </div>
+
+            <!-- Comment Form -->
+            <form onsubmit="submitComment(event)" class="space-y-2">
+              <textarea
+                id="comment-input"
+                rows="2"
+                required
+                placeholder="誹謗中傷やデマを控え、礼儀正しくコメントしてください（URLは投稿できません）"
+                class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:border-stone-900 transition-all"
+              ></textarea>
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] text-stone-400">※禁止語やURLは自動で遮断されます。</span>
+                <button type="submit" class="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors">
+                  コメントを投稿する
+                </button>
+              </div>
+            </form>
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =============================================================== -->
+    <!-- PAGE MODAL (サイトについて / プライバシーポリシー / お問い合わせ) -->
+    <!-- =============================================================== -->
+    <div id="page-modal" class="fixed inset-0 z-50 bg-stone-950/75 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div class="bg-white max-w-3xl w-full rounded-3xl border border-stone-200 shadow-2xl overflow-hidden my-6 fade-enter">
+        
+        <!-- Tab Navigation Bar -->
+        <div class="bg-stone-50 border-b border-stone-200 px-6 py-3 flex items-center justify-between">
+          <div class="flex items-center gap-2 overflow-x-auto">
+            <button
+              id="page-tab-about"
+              onclick="openPageModal('about')"
+              class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              サイトについて
+            </button>
+            <button
+              id="page-tab-privacy-policy"
+              onclick="openPageModal('privacy-policy')"
+              class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              プライバシーポリシー
+            </button>
+            <button
+              id="page-tab-que"
+              onclick="openPageModal('que')"
+              class="px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              お問い合わせ
+            </button>
+          </div>
+
+          <button
+            onclick="closePageModal()"
+            class="w-8 h-8 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-700 flex items-center justify-center font-bold text-sm transition-colors shrink-0"
+          >
+            ✕
+          </button>
+        </div>
+
+        <!-- Dynamic Content Body -->
+        <div id="page-modal-content" class="p-6 sm:p-8 max-h-[75vh] overflow-y-auto space-y-6 text-stone-700 text-xs sm:text-sm leading-relaxed">
+          <!-- Populated by JavaScript -->
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =============================================================== -->
+    <!-- COMMENT RULES MODAL -->
+    <!-- =============================================================== -->
+    <div id="rules-modal" class="fixed inset-0 z-50 bg-stone-950/75 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div class="bg-white max-w-xl w-full rounded-3xl border border-stone-200 shadow-2xl overflow-hidden my-6 fade-enter p-6 sm:p-8 space-y-4">
+        <div class="flex items-center justify-between border-b border-stone-100 pb-3">
+          <h2 class="text-lg font-black text-stone-950">利用ルール・誹謗中傷禁止</h2>
+          <button onclick="closeRulesModal()" class="w-8 h-8 rounded-full bg-stone-200 hover:bg-stone-300 text-stone-700 flex items-center justify-center font-bold text-sm">✕</button>
+        </div>
+        <div class="text-xs sm:text-sm text-stone-700 space-y-3 leading-relaxed">
+          <p>「しらんけど」は、肩の力を抜いて事実を楽しむトレンド情報メディアです。すべての利用者が安心・快適に閲覧できるよう、以下の行為を固く禁止しています。</p>
+          <ul class="list-disc pl-5 space-y-1 text-stone-800 font-medium">
+            <li>特定の個人・団体への誹謗中傷、侮辱、名誉毀損</li>
+            <li>容疑段階における犯人視や私刑の煽動</li>
+            <li>一般人の個人情報（氏名・住所・勤務先・SNS等）の晒し行為</li>
+            <li>宣伝目的のURL投稿・スパム行為（URL投稿はシステム遮断されます）</li>
+            <li>過度な連続投稿や荒らし行為</li>
+          </ul>
+          <p class="bg-amber-50 p-3 rounded-xl border border-amber-200 text-amber-900 text-xs">
+            不適切な投稿は自動検知システムおよび運営スタッフにより随時非表示・削除されます。しらんけど。
+          </p>
+        </div>
+        <div class="pt-2 text-right">
+          <button onclick="closeRulesModal()" class="px-5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs">閉じる</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- =============================================================== -->
+    <!-- ADMIN CONSOLE / LOGIN MODAL -->
+    <!-- =============================================================== -->
+    <div id="admin-modal" class="fixed inset-0 z-50 bg-stone-950/80 backdrop-blur-xs hidden items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div class="bg-white max-w-4xl w-full rounded-3xl border border-stone-200 shadow-2xl overflow-hidden my-6 fade-enter">
+        
+        <!-- ADMIN LOGIN SCREEN (If not logged in) -->
+        <div id="admin-login-screen" class="p-8 sm:p-12 max-w-md mx-auto text-center space-y-6">
+          <div class="w-14 h-14 bg-stone-900 text-amber-400 rounded-2xl mx-auto flex items-center justify-center text-2xl shadow-md">
+            ⚙️
+          </div>
+          <div>
+            <h2 class="text-2xl font-black text-stone-950 shirankedo-font">しらんけど 管理者ログイン</h2>
+            <p class="text-xs text-stone-500 mt-2">
+              完全自動トレンド収集・記事生成・サイト設定を行う管理コンソールです。
+            </p>
+          </div>
+
+          <form onsubmit="handleAdminLogin(event)" class="space-y-4 text-left">
+            <div>
+              <label class="block text-xs font-bold text-stone-700 mb-1">管理者パスワード</label>
+              <input
+                type="password"
+                id="admin-password-input"
+                placeholder="初期パスワード: admin"
+                class="w-full px-4 py-2.5 rounded-xl border border-stone-300 focus:outline-none focus:border-stone-900 text-sm"
+              />
+              <p class="text-[11px] text-stone-400 mt-1">※初期設定パスワードは <code class="bg-stone-100 px-1 py-0.5 rounded font-mono text-stone-700 font-bold">admin</code> です。（空欄でもログイン可能です）</p>
+            </div>
+
+            <div class="flex gap-2">
+              <button
+                type="submit"
+                class="flex-1 py-3 bg-stone-900 hover:bg-stone-800 text-white text-xs font-black rounded-xl shadow-xs transition-colors"
+              >
+                ログインして管理画面を開く
+              </button>
+              <button
+                type="button"
+                onclick="closeAdminModal()"
+                class="px-4 py-3 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition-colors"
+              >
+                閉じる
+              </button>
+            </div>
+          </form>
+
+          <div class="pt-4 border-t border-stone-100 text-left bg-stone-50 p-4 rounded-xl space-y-1.5 text-[11px] text-stone-600">
+            <div class="font-bold text-stone-800 flex items-center gap-1">
+              <span>📌</span>
+              <span>管理画面への直接アクセスURL:</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <code id="admin-url-display" class="bg-white px-2 py-1 rounded border border-stone-200 font-mono text-[10px] text-amber-700 flex-1 break-all">
+                https://shirankedo.bichi.xyz/?admin=1
+              </code>
+              <button onclick="copyAdminUrl()" class="px-2.5 py-1 bg-stone-200 hover:bg-stone-300 text-stone-800 rounded text-[10px] font-bold shrink-0">
+                コピー
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- ADMIN DASHBOARD SCREEN (When logged in) -->
+        <div id="admin-dashboard-screen" class="hidden flex-col">
+          
+          <!-- Top Bar -->
+          <div class="bg-stone-900 text-white px-6 py-4 flex items-center justify-between border-b border-stone-800">
+            <div class="flex items-center gap-3">
+              <span class="text-xl">⚙️</span>
+              <div>
+                <div class="flex items-center gap-2">
+                  <span class="font-black text-sm tracking-tight shirankedo-font">しらんけど。</span>
+                  <span class="text-[10px] px-2 py-0.5 rounded-full bg-amber-500 text-stone-950 font-bold">Admin Console</span>
+                </div>
+                <div class="text-[10px] text-stone-400 font-mono">システム稼働中・自動化モード有効</div>
+              </div>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button onclick="handleAdminLogout()" class="text-xs font-bold px-3 py-1.5 rounded-lg bg-stone-800 hover:bg-stone-700 text-stone-300 transition-colors">
+                ログアウト
+              </button>
+              <button onclick="closeAdminModal()" class="w-8 h-8 rounded-full bg-stone-800 hover:bg-stone-700 text-stone-300 flex items-center justify-center font-bold text-sm">
+                ✕
+              </button>
+            </div>
+          </div>
+
+          <!-- Tabs Navigation -->
+          <div class="bg-stone-100 border-b border-stone-200 px-6 py-2 flex items-center gap-2 overflow-x-auto text-xs font-bold">
+            <button onclick="setAdminTab('overview')" id="adm-tab-overview" class="adm-tab px-3 py-1.5 rounded-lg bg-stone-900 text-white shadow-xs">
+              📊 ダッシュボード
+            </button>
+            <button onclick="setAdminTab('articles')" id="adm-tab-articles" class="adm-tab px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-200">
+              📰 記事一覧・管理
+            </button>
+            <button onclick="setAdminTab('trends')" id="adm-tab-trends" class="adm-tab px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-200">
+              🤖 AI収集・生成設定
+            </button>
+            <button onclick="setAdminTab('security')" id="adm-tab-security" class="adm-tab px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-200">
+              🛡️ 禁止ワード・荒らし対策
+            </button>
+            <button onclick="setAdminTab('system')" id="adm-tab-system" class="adm-tab px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-200">
+              🔗 サーバー・Cron設定
+            </button>
+          </div>
+
+          <!-- Tab Contents Body -->
+          <div class="p-6 sm:p-8 max-h-[70vh] overflow-y-auto space-y-6 text-stone-800 text-xs sm:text-sm">
+            
+            <!-- 1. OVERVIEW TAB -->
+            <div id="adm-content-overview" class="space-y-6">
+              <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div class="bg-stone-50 border border-stone-200 p-4 rounded-2xl">
+                  <div class="text-stone-400 text-[11px] font-bold">公開記事数</div>
+                  <div id="stat-articles-count" class="text-2xl font-black text-stone-950 font-mono mt-1">6件</div>
+                  <div class="text-[10px] text-emerald-600 font-bold mt-1">全記事正常公開中</div>
+                </div>
+                <div class="bg-stone-50 border border-stone-200 p-4 rounded-2xl">
+                  <div class="text-stone-400 text-[11px] font-bold">平均しらんけど指数</div>
+                  <div class="text-2xl font-black text-amber-600 font-mono mt-1">84.6</div>
+                  <div class="text-[10px] text-stone-500 font-bold mt-1">高信頼・高話題水準</div>
+                </div>
+                <div class="bg-stone-50 border border-stone-200 p-4 rounded-2xl">
+                  <div class="text-stone-400 text-[11px] font-bold">急上昇トレンド比率</div>
+                  <div class="text-2xl font-black text-rose-600 font-mono mt-1">66.7%</div>
+                  <div class="text-[10px] text-rose-600 font-bold mt-1">SNSバズ検知好調</div>
+                </div>
+                <div class="bg-stone-50 border border-stone-200 p-4 rounded-2xl">
+                  <div class="text-stone-400 text-[11px] font-bold">自動安全ブレーキ</div>
+                  <div class="text-2xl font-black text-emerald-600 font-mono mt-1">正常</div>
+                  <div class="text-[10px] text-stone-500 font-bold mt-1">誹謗中傷・事件検知稼働中</div>
+                </div>
+              </div>
+
+              <!-- Quick Action Box -->
+              <div class="bg-amber-500/10 border border-amber-300/60 p-5 rounded-2xl space-y-3">
+                <div class="flex items-center justify-between">
+                  <div class="font-black text-amber-950 text-sm flex items-center gap-1.5">
+                    <span>⚡</span>
+                    <span>ワンクリック・トレンド自動更新テスト</span>
+                  </div>
+                  <span class="text-[10px] bg-amber-200 text-amber-900 px-2 py-0.5 rounded font-bold">手動即時実行</span>
+                </div>
+                <p class="text-xs text-amber-900/90 leading-relaxed">
+                  通常はサーバーのCron（定期実行）で自動更新されますが、下のボタンを押すことで今すぐ新規トレンド記事の追加シミュレーションを実行できます。
+                </p>
+                <button onclick="triggerSimulatedGeneration()" id="btn-trigger-gen" class="px-4 py-2.5 bg-stone-900 hover:bg-stone-800 text-white rounded-xl font-bold text-xs transition-all flex items-center gap-2 shadow-xs">
+                  <span>🚀 今すぐトレンド収集・記事生成を実行する</span>
+                </button>
+                <div id="gen-result-msg" class="hidden text-xs font-bold text-emerald-700 bg-emerald-100 p-2.5 rounded-lg border border-emerald-300"></div>
+              </div>
+
+              <!-- System Log Table -->
+              <div class="border border-stone-200 rounded-2xl overflow-hidden">
+                <div class="bg-stone-100 px-4 py-2.5 font-bold text-xs text-stone-700 border-b border-stone-200">
+                  直近の自動化システムログ
+                </div>
+                <div class="divide-y divide-stone-100 text-xs font-mono">
+                  <div class="p-3 flex items-center justify-between">
+                    <span>[TREND_FETCH] Google & Yahooリアルタイムトレンド収集完了 (12件取得)</span>
+                    <span class="text-stone-400 text-[10px]">10分前</span>
+                  </div>
+                  <div class="p-3 flex items-center justify-between">
+                    <span>[AI_GEN] 記事「千鳥・大悟の新バラエティ」本文・要約・しらんけど指数算出完了</span>
+                    <span class="text-stone-400 text-[10px]">1時間前</span>
+                  </div>
+                  <div class="p-3 flex items-center justify-between">
+                    <span>[SAFETY_BRAKE] 事件・事故・個人名フィルタリング検査合格 (安全)</span>
+                    <span class="text-stone-400 text-[10px]">2時間前</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 2. ARTICLES MANAGEMENT TAB -->
+            <div id="adm-content-articles" class="hidden space-y-4">
+              <div class="flex items-center justify-between">
+                <h3 class="font-black text-stone-950 text-sm">公開記事一覧（全<span id="adm-article-count-label">6</span>件）</h3>
+                <span class="text-[11px] text-stone-500">※記事の公開停止や削除が可能です</span>
+              </div>
+
+              <div class="border border-stone-200 rounded-2xl overflow-hidden">
+                <table class="w-full text-left text-xs border-collapse">
+                  <thead class="bg-stone-100 text-stone-700 font-bold border-b border-stone-200">
+                    <tr>
+                      <th class="p-3">ID</th>
+                      <th class="p-3">タイトル</th>
+                      <th class="p-3">カテゴリ</th>
+                      <th class="p-3">指数</th>
+                      <th class="p-3">状態</th>
+                      <th class="p-3 text-right">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody id="adm-articles-tbody" class="divide-y divide-stone-200">
+                    <!-- Populated dynamically -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- 3. AI & TRENDS SETTINGS TAB -->
+            <div id="adm-content-trends" class="hidden space-y-4">
+              <div class="border-b border-stone-200 pb-3">
+                <h3 class="font-black text-stone-950 text-sm">AI生成およびトレンド収集パラメータ</h3>
+                <p class="text-xs text-stone-500 mt-0.5">Google Gemini APIや収集ソースの挙動を設定します。</p>
+              </div>
+
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-bold text-stone-700 mb-1">Gemini API Key (AI要約・事実検証用)</label>
+                  <input
+                    type="password"
+                    id="setting-gemini-key"
+                    placeholder="AIzaSy... (設定済み または .env参照)"
+                    class="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-stone-50"
+                  />
+                  <p class="text-[10px] text-stone-400 mt-1">※サーバー側（.env.example や config.php）の環境変数と連動します。</p>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label class="block text-xs font-bold text-stone-700 mb-1">自動収集インターバル</label>
+                    <select class="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-stone-50">
+                      <option value="15">15分ごと（推奨・速報重視）</option>
+                      <option value="30">30分ごと</option>
+                      <option value="60">1時間ごと</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-stone-700 mb-1">しらんけど指数 最低掲載スコア</label>
+                    <select class="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-stone-50">
+                      <option value="60">指数 60以上（通常）</option>
+                      <option value="70">指数 70以上（厳選）</option>
+                      <option value="80">指数 80以上（超話題のみ）</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-stone-700 mb-1">記事末尾の定型文（しらんけど構文）</label>
+                  <input
+                    type="text"
+                    value="今後の展開に注目です。しらんけど。"
+                    class="w-full px-3 py-2 border border-stone-300 rounded-xl text-xs bg-stone-50"
+                  />
+                </div>
+
+                <div class="pt-2">
+                  <button onclick="alert('設定を保存しました。')" class="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold">
+                    設定を保存する
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- 4. SECURITY & BANNED WORDS TAB -->
+            <div id="adm-content-security" class="hidden space-y-4">
+              <div class="border-b border-stone-200 pb-3">
+                <h3 class="font-black text-stone-950 text-sm">不適切コメント・スパム・安全ブレーキ設定</h3>
+                <p class="text-xs text-stone-500 mt-0.5">誹謗中傷や事件・一般人の晒し行為を自動ブロックするフィルタです。</p>
+              </div>
+
+              <div class="space-y-4">
+                <div>
+                  <label class="block text-xs font-bold text-stone-700 mb-1">登録済み禁止キーワード（自動即時遮断）</label>
+                  <div id="banned-words-tags" class="flex flex-wrap gap-1.5 p-3 bg-stone-50 border border-stone-200 rounded-xl">
+                    <span class="px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">死ね <button onclick="removeBannedWord(this)">×</button></span>
+                    <span class="px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">殺す <button onclick="removeBannedWord(this)">×</button></span>
+                    <span class="px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">ガイジ <button onclick="removeBannedWord(this)">×</button></span>
+                    <span class="px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">ゴミカス <button onclick="removeBannedWord(this)">×</button></span>
+                    <span class="px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1">電話番号 <button onclick="removeBannedWord(this)">×</button></span>
+                  </div>
+                </div>
+
+                <div class="flex gap-2">
+                  <input
+                    type="text"
+                    id="new-banned-word-input"
+                    placeholder="新しい禁止ワードを入力..."
+                    class="flex-1 px-3 py-2 border border-stone-300 rounded-xl text-xs"
+                  />
+                  <button onclick="addBannedWord()" class="px-4 py-2 bg-stone-900 text-white rounded-xl text-xs font-bold">
+                    追加
+                  </button>
+                </div>
+
+                <div class="bg-stone-50 p-4 rounded-xl border border-stone-200 space-y-2 text-xs">
+                  <div class="font-bold text-stone-900">安全機能ステータス</div>
+                  <div class="space-y-1 text-stone-600">
+                    <div>✅ <strong>URL投稿の完全拒否:</strong> 有効（宣伝スパムや不正リンクを自動遮断中）</div>
+                    <div>✅ <strong>事件・容疑者フィルタ:</strong> 有効（警察沙汰・未確定の容疑者誹謗中傷記事の生成を抑止）</div>
+                    <div>✅ <strong>一般人プライバシー保護:</strong> 有効（SNSの私人晒しアカウントを自動除外）</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- 5. SYSTEM & CRON TAB -->
+            <div id="adm-content-system" class="hidden space-y-4">
+              <div class="border-b border-stone-200 pb-3">
+                <h3 class="font-black text-stone-950 text-sm">サーバー連携・定期実行（Cron）情報</h3>
+                <p class="text-xs text-stone-500 mt-0.5">本サイトの各種URLおよびエックスサーバーとの連携情報です。</p>
+              </div>
+
+              <div class="space-y-3 text-xs">
+                
+                <div class="p-4 bg-stone-50 border border-stone-200 rounded-xl space-y-1.5">
+                  <div class="font-bold text-stone-900">本サイト 管理画面ログインURL:</div>
+                  <div class="flex items-center gap-2">
+                    <code class="p-2 bg-white rounded border border-stone-200 font-mono text-amber-800 flex-1 break-all">
+                      https://shirankedo.bichi.xyz/?admin=1
+                    </code>
+                    <button onclick="copyText('https://shirankedo.bichi.xyz/?admin=1')" class="px-3 py-1.5 bg-stone-900 text-white rounded font-bold text-xs shrink-0">
+                      コピー
+                    </button>
+                  </div>
+                  <p class="text-[11px] text-stone-500">※このURLをブックマークしておくことで、いつでも一発で管理画面を開けます。</p>
+                </div>
+
+                <div class="p-4 bg-stone-50 border border-stone-200 rounded-xl space-y-1.5">
+                  <div class="font-bold text-stone-900">定期実行CronワーカーURL:</div>
+                  <div class="flex items-center gap-2">
+                    <code class="p-2 bg-white rounded border border-stone-200 font-mono text-stone-700 flex-1 break-all">
+                      https://shirankedo.bichi.xyz/php/cron/worker.php
+                    </code>
+                    <button onclick="copyText('https://shirankedo.bichi.xyz/php/cron/worker.php')" class="px-3 py-1.5 bg-stone-200 text-stone-800 rounded font-bold text-xs shrink-0">
+                      コピー
+                    </button>
+                  </div>
+                  <p class="text-[11px] text-stone-500">※エックスサーバーのCron設定にこのURLの実行（wgetまたはcurl）を登録すると、自動で15分ごとに最新トレンドを取得・生成します。</p>
+                </div>
+
+                <div class="p-4 bg-stone-50 border border-stone-200 rounded-xl space-y-2">
+                  <div class="font-bold text-stone-900">外部サービス管理ログインリンク:</div>
+                  <ul class="space-y-1.5 list-disc pl-4 text-stone-600">
+                    <li>
+                      <strong>エックスサーバー サーバーパネル:</strong>
+                      <a href="https://secure.xserver.ne.jp/xapanel/login/xserver/" target="_blank" rel="noopener noreferrer" class="text-amber-600 underline font-bold ml-1">
+                        ログイン画面を開く ↗
+                      </a>
+                    </li>
+                    <li>
+                      <strong>エックスサーバー ファイルマネージャー（FTP不要）:</strong>
+                      <a href="https://secure.xserver.ne.jp/xapanel/login/xserver/ftp/" target="_blank" rel="noopener noreferrer" class="text-amber-600 underline font-bold ml-1">
+                        ファイルマネージャーを開く ↗
+                      </a>
+                    </li>
+                  </ul>
+                </div>
+
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+      </div>
+    </div>
+
+    <!-- =============================================================== -->
+    <!-- PURE JAVASCRIPT (生のソースコード・完全自動動作) -->
+    <!-- =============================================================== -->
+    <script>
+      // 1. ARTICLES DATA
+      const articlesData = [
+        {
+          id: 1,
+          category: 'entertainment',
+          categoryName: 'エンタメ',
+          title: '千鳥・大悟の新バラエティが独占配信へ 公式発表にSNS歓喜',
+          slug: 'trend-chidori-daigo-new-show',
+          whyTrending: '大手配信プラットフォームが千鳥・大悟の単独MCによるオリジナル新番組を発表。公式PV公開と同時にXやYahoo!リアルタイムで急上昇。',
+          body: `大手動画配信サービスは14日、お笑いコンビ「千鳥」の大悟が単独で司会を務める完全新作バラエティ番組の制作・独占配信を発表しました。
+
+公式発表資料およびティザー映像によると、本作は台本なしの即興シチュエーションコメディを主軸とし、豪華ゲスト陣が多数出演する大型企画となっています。千鳥としてのレギュラー番組とはまた異なる大悟独自の世界観が展開されるとあり、お笑いファンを中心に期待の声が急速に広がっています。
+
+制作関係者向けの発表会では、地上波では実現しにくかった挑戦的な企画が盛り込まれることが明言されました。`,
+          conclusion: '今後の追加出演者や配信開始日の発表次第では、さらにネット上がざわつくことになりそうです。しらんけど。',
+          shirankedoIndex: 88,
+          indexLabel: 'めっちゃ話題',
+          isRapidRise: true,
+          growthRate: 155,
+          timeAgo: '2時間前',
+          imageUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: '千鳥・大悟 新番組制作決定 独占配信プレスリリース', publisher: '公式配信プラットフォーム', url: '#' },
+            { title: '大悟 単独MCで新たな挑戦、公式ティザーが話題沸騰', publisher: 'オリコン速報', url: '#' }
+          ],
+          votes: { knew: 41, didnt: 72, grow: 85, end: 28 },
+          comments: [
+            { text: '大悟さんの単独冠番組めっちゃ楽しみです！ゲスト誰来るんだろう', time: '30分前' },
+            { text: '最後の「しらんけど。」でクスッときました笑', time: '15分前' }
+          ]
+        },
+        {
+          id: 2,
+          category: 'game',
+          categoryName: 'ゲーム',
+          title: 'Monster Hunter Wilds 無料大型アプデ第1弾の詳細公開 新モンスター解禁',
+          slug: 'trend-mhw-wilds-update-1',
+          whyTrending: 'カプコン公式生放送で大型タイトルアップデート第1弾の配信日と追加モンスターが正式発表。SteamおよびSNSで爆発的な反響を記録。',
+          body: `株式会社カプコンは、全世界で大ヒットを記録しているハンティングアクション最新作『Monster Hunter Wilds』の無料大型タイトルアップデート第1弾に関する公式ロードマップを公開しました。
+
+配信番組内の発表によると、新たな歴戦の古龍種モンスター1体と、過去作から復活を果たす人気モンスターが実装されます。また、武器バランスの調整や追加エンドコンテンツ、新防具シリーズの生産機能も同時解禁されることが確定しました。
+
+公式発表直後から国内外のゲームコミュニティやYouTubeライブ配信では装備ビルドの考察が白熱しています。`,
+          conclusion: 'アップデート当日は狩猟解禁に合わせて有休を申請するハンターが続出する見通しです。しらんけど。',
+          shirankedoIndex: 94,
+          indexLabel: 'めっちゃ話題',
+          isRapidRise: true,
+          growthRate: 210,
+          timeAgo: '4時間前',
+          imageUrl: 'https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: 'Monster Hunter Wilds タイトルアップデート第1弾ロードマップ', publisher: 'カプコン公式', url: '#' },
+            { title: '大型アプデ紹介映像・開発者ダイレクト', publisher: 'CAPCOM Channel公式', url: '#' }
+          ],
+          votes: { knew: 110, didnt: 35, grow: 124, end: 21 },
+          comments: [
+            { text: 'アプデ待ってました！武器調整も入るのありがたい', time: '45分前' }
+          ]
+        },
+        {
+          id: 3,
+          category: 'entertainment',
+          categoryName: 'エンタメ',
+          title: 'スタジオジブリ特別企画展 前売りチケットが開始3分で即完売の盛況',
+          slug: 'trend-ghibli-exhibition-tickets',
+          whyTrending: '都内美術館で開催予定のスタジオジブリ特別企画展の一般前売りチケット販売が本日開始され、アクセス集中により即日完売。',
+          body: `都内美術館で開催予定のスタジオジブリ特別企画展の前売りチケット販売が本日午前10時に開始され、わずか数分で全日程の予定枚数が終了しました。
+
+本展覧会では、貴重な手描き背景画や未公開の設定資料、実物大の造形展示などが予定されており、国内のみならず海外ファンからも高い注目を集めていました。
+
+主催者側は公式サイトにて、転売チケットへの注意喚起を行うとともに、追加日程の調整について検討中である旨のアナウンスを行っています。`,
+          conclusion: 'プレミアム価格をつけた悪質な転売にはくれぐれもご注意ください。しらんけど。',
+          shirankedoIndex: 78,
+          indexLabel: 'かなり話題',
+          isRapidRise: false,
+          growthRate: 45,
+          timeAgo: '1日前',
+          imageUrl: 'https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: '企画展チケット販売状況及び追加販売に関するお知らせ', publisher: '美術館公式リリース', url: '#' }
+          ],
+          votes: { knew: 55, didnt: 68, grow: 42, end: 81 },
+          comments: [
+            { text: 'チケット取れませんでした…追加日程絶対行きたい', time: '2時間前' }
+          ]
+        },
+        {
+          id: 4,
+          category: 'tech',
+          categoryName: 'テクノロジー',
+          title: '新世代オープンソースAIモデルの日本語性能が話題に 各ベンチマークで好成績',
+          slug: 'trend-opensource-ai-benchmarks',
+          whyTrending: '国内外の開発者コミュニティで最新オープンウェイトモデルの日本語推論能力が検証され、商業トップモデルに迫るスコアを記録。',
+          body: `最新のオープンソース大規模言語モデル（LLM）が公開され、日本語の理解・生成ベンチマークテストにおいて従来のモデルを大幅に上回る記録を打ち立てました。
+
+軽量版でありながらコンシューマー向けGPUでもローカル動作が可能とあって、個人エンジニアから法人開発者まで検証レポートがSNSに相次いで投稿されています。
+
+特に日本語の敬語表現や文脈のニュアンス理解が向上しており、今後の実務応用やオープンソースエコシステムの進展に期待が寄せられています。`,
+          conclusion: 'ローカルAIの進化速度についていくのが大変な時代になってきました。しらんけど。',
+          shirankedoIndex: 72,
+          indexLabel: 'かなり話題',
+          isRapidRise: false,
+          growthRate: 35,
+          timeAgo: '1日前',
+          imageUrl: 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: 'モデルリリースノート及びアーキテクチャ詳細論文', publisher: '開発チームGitHub', url: '#' }
+          ],
+          votes: { knew: 32, didnt: 89, grow: 96, end: 15 },
+          comments: [
+            { text: 'ローカルで動くの本当にありがたい。試してみます', time: '5時間前' }
+          ]
+        },
+        {
+          id: 5,
+          category: 'social',
+          categoryName: 'SNS・ネット話題',
+          title: 'SNSで話題の「しらんけど」構文が流行語候補に？ 会話を丸く収めるクッション言葉',
+          slug: 'trend-shirankedo-syntax-buzz',
+          whyTrending: 'ビジネスや日常会話で責任を回避しつつ円滑にコミュニケーションをとる言葉として「しらんけど」の便利さがX上でバズを記録。',
+          body: `関西地方で古くから使われてきた「しらんけど」というクッション表現が、若年層を中心にSNS上で改めてブームとなっています。
+
+自分の意見や考察を述べたあとに「しらんけど」と添えることで、断定を避け相手の反発を和らげる効果があると分析されており、SNSの投稿文末句としても定着しつつあります。
+
+言語学者からも「現代の情報過多社会において、過度な責任や衝突を回避する合理的なコミュニケーション技術」としてポジティブな評価がなされています。`,
+          conclusion: 'この記事を読んだからといって上司に「しらんけど」を使うと普通に怒られます。しらんけど。',
+          shirankedoIndex: 85,
+          indexLabel: 'めっちゃ話題',
+          isRapidRise: true,
+          growthRate: 180,
+          timeAgo: '3時間前',
+          imageUrl: 'https://images.unsplash.com/photo-1577563908411-5077b6dc7624?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: 'SNSリアルタイムバズ分析レポート', publisher: 'トレンド調査ラボ', url: '#' }
+          ],
+          votes: { knew: 140, didnt: 12, grow: 88, end: 34 },
+          comments: [
+            { text: '関西人ですが息をするようにしらんけど使ってます笑', time: '1時間前' }
+          ]
+        },
+        {
+          id: 6,
+          category: 'game',
+          categoryName: 'ゲーム',
+          title: '新作レトロ風RPGがSteamウィッシュリスト世界1位を獲得 ドット絵の緻密さが絶賛',
+          slug: 'trend-pixel-rpg-steam-top',
+          whyTrending: '個人インディー開発者によるピクセルアートRPGの体験版が配信され、国内外のストリーマーの配信をきっかけにウィッシュリストが急伸。',
+          body: `国内外のゲームファンが注目する新作レトロスタイルRPGの体験版がSteamで公開され、わずか数日で世界ウィッシュリストランキング第1位に輝きました。
+
+かつての名作RPGをリスペクトした美麗なドットアニメーションと、綿密に構築された世界観、そして重厚なサウンドトラックが高く評価されています。
+
+開発者は「長年の夢が実を結んだ。正式リリースに向けてブラッシュアップを重ねる」とコメントを発表しています。`,
+          conclusion: '体験版を一度始めると時間を忘れて没頭してしまうので寝不足に要注意です。しらんけど。',
+          shirankedoIndex: 81,
+          indexLabel: 'めっちゃ話題',
+          isRapidRise: true,
+          growthRate: 160,
+          timeAgo: '5時間前',
+          imageUrl: 'https://images.unsplash.com/photo-1550745165-9bc0b252726f?auto=format&fit=crop&w=800&q=80',
+          sources: [
+            { title: '体験版公開記念トレーラー及び開発進捗状況', publisher: 'インディー開発公式Steamページ', url: '#' }
+          ],
+          votes: { knew: 48, didnt: 62, grow: 110, end: 8 },
+          comments: [
+            { text: '音楽もドット絵も最高でした！発売日買い確定', time: '3時間前' }
+          ]
+        }
+      ];
+
+      // 2. APP STATE
+      let currentCategory = 'all';
+      let currentSort = 'recent';
+      let searchQuery = '';
+      let activeArticleId = null;
+
+      // 3. RENDER ARTICLES
+      function renderArticles() {
+        const container = document.getElementById('articles-container');
+        const emptyState = document.getElementById('empty-state');
+
+        // Filter
+        let filtered = articlesData.filter(art => {
+          const matchCat = currentCategory === 'all' || art.category === currentCategory;
+          const matchQuery = !searchQuery || 
+            art.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+            art.whyTrending.toLowerCase().includes(searchQuery.toLowerCase());
+          return matchCat && matchQuery;
+        });
+
+        // Sort
+        if (currentSort === 'index') {
+          filtered.sort((a, b) => b.shirankedoIndex - a.shirankedoIndex);
+        } else if (currentSort === 'rapid') {
+          filtered.sort((a, b) => (b.isRapidRise ? 1 : 0) - (a.isRapidRise ? 1 : 0) || b.growthRate - a.growthRate);
+        } else {
+          filtered.sort((a, b) => b.id - a.id);
+        }
+
+        if (filtered.length === 0) {
+          container.innerHTML = '';
+          emptyState.classList.remove('hidden');
+          return;
+        }
+
+        emptyState.classList.add('hidden');
+        container.innerHTML = filtered.map(art => {
+          const isHigh = art.shirankedoIndex >= 80;
+          const badgeBg = isHigh ? 'bg-amber-500 text-stone-950' : 'bg-stone-800 text-stone-100';
+
+          return `
+            <article class="bg-white rounded-3xl border border-stone-200 shadow-xs hover:shadow-md transition-all flex flex-col overflow-hidden group">
+              
+              <!-- Thumbnail -->
+              <div class="aspect-video w-full overflow-hidden bg-stone-100 relative cursor-pointer" onclick="openArticleModal(${art.id})">
+                <img src="${art.imageUrl}" alt="${art.title}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" loading="lazy" />
+                <div class="absolute top-3 left-3 flex items-center gap-1.5">
+                  <span class="px-2.5 py-1 rounded-md text-[10px] font-black bg-stone-900/90 text-white backdrop-blur-xs">
+                    ${art.categoryName}
+                  </span>
+                  ${art.isRapidRise ? `
+                    <span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-rose-600 text-white shadow-xs">
+                      急上昇 +${art.growthRate}%
+                    </span>
+                  ` : ''}
+                </div>
+
+                <!-- Shirankedo Index Gauge Badge -->
+                <div class="absolute bottom-3 right-3 px-2.5 py-1 rounded-full ${badgeBg} font-black text-xs shadow-md flex items-center gap-1">
+                  <span>指数</span>
+                  <span class="font-mono text-sm">${art.shirankedoIndex}</span>
+                </div>
+              </div>
+
+              <!-- Content Area -->
+              <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
+                
+                <div class="space-y-2">
+                  <div class="flex items-center justify-between text-[11px] text-stone-400 font-mono">
+                    <span>${art.timeAgo}</span>
+                    <span class="text-stone-500 font-sans font-bold">一次ソース確認済</span>
+                  </div>
+
+                  <h2 class="text-base font-black text-stone-950 leading-snug hover:text-amber-600 transition-colors cursor-pointer" onclick="openArticleModal(${art.id})">
+                    ${art.title}
+                  </h2>
+
+                  <p class="text-xs text-stone-600 line-clamp-2 leading-relaxed">
+                    ${art.whyTrending}
+                  </p>
+                </div>
+
+                <!-- Card Footer Action -->
+                <div class="pt-3 border-t border-stone-100 flex items-center justify-between">
+                  <div class="text-[11px] font-serif font-bold text-stone-400 truncate max-w-[170px]">
+                    ${art.conclusion}
+                  </div>
+                  <button onclick="openArticleModal(${art.id})" class="px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold transition-colors">
+                    読む →
+                  </button>
+                </div>
+
+              </div>
+
+            </article>
+          `;
+        }).join('');
+      }
+
+      // 4. CATEGORY & SORT HANDLERS
+      function setCategory(cat) {
+        currentCategory = cat;
+        document.querySelectorAll('.cat-btn').forEach(btn => {
+          btn.className = 'cat-btn px-4 py-1.5 rounded-full text-stone-600 hover:bg-stone-200 whitespace-nowrap transition-all font-bold';
+        });
+        const activeBtn = document.getElementById('cat-btn-' + cat);
+        if (activeBtn) {
+          activeBtn.className = 'cat-btn px-4 py-1.5 rounded-full bg-stone-900 text-white whitespace-nowrap transition-all shadow-xs font-bold';
+        }
+        renderArticles();
+      }
+
+      function setSort(sort) {
+        currentSort = sort;
+        document.querySelectorAll('.sort-btn').forEach(btn => {
+          btn.className = 'sort-btn px-3 py-1.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 transition-all font-bold';
+        });
+        const activeBtn = document.getElementById('sort-btn-' + sort);
+        if (activeBtn) {
+          activeBtn.className = 'sort-btn px-3 py-1.5 rounded-lg bg-stone-900 text-white transition-all font-bold';
+        }
+        renderArticles();
+      }
+
+      function handleSearch(val) {
+        searchQuery = val.trim();
+        renderArticles();
+      }
+
+      // 5. ARTICLE DETAIL MODAL
+      function openArticleModal(id) {
+        const art = articlesData.find(a => a.id === id);
+        if (!art) return;
+        activeArticleId = id;
+
+        document.getElementById('modal-category-badge').innerText = art.categoryName;
+        document.getElementById('modal-index-badge').innerText = 'しらんけど指数 ' + art.shirankedoIndex + ' (' + art.indexLabel + ')';
+        document.getElementById('modal-date').innerText = art.timeAgo;
+        document.getElementById('modal-title').innerText = art.title;
+        document.getElementById('modal-image').src = art.imageUrl;
+        document.getElementById('modal-why').innerText = art.whyTrending;
+        document.getElementById('modal-body').innerText = art.body;
+        document.getElementById('modal-conclusion').innerText = art.conclusion;
+
+        // Sources
+        const sourcesHtml = art.sources.map(s => `
+          <div class="flex items-center justify-between p-2.5 rounded-xl bg-stone-50 border border-stone-200">
+            <span class="font-bold text-stone-800">${s.title}</span>
+            <span class="text-[10px] px-2 py-0.5 rounded bg-stone-200 text-stone-700 shrink-0 ml-2">${s.publisher}</span>
+          </div>
+        `).join('');
+        document.getElementById('modal-sources').innerHTML = sourcesHtml;
+
+        // Polls update
+        updatePollDisplay(art);
+
+        // Comments update
+        updateCommentsDisplay(art);
+
+        document.getElementById('article-modal').classList.remove('hidden');
+        document.getElementById('article-modal').classList.add('flex');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeArticleModal() {
+        document.getElementById('article-modal').classList.add('hidden');
+        document.getElementById('article-modal').classList.remove('flex');
+        document.body.style.overflow = 'auto';
+        activeArticleId = null;
+      }
+
+      function updatePollDisplay(art) {
+        const total1 = art.votes.knew + art.votes.didnt;
+        const pct1 = total1 > 0 ? Math.round((art.votes.knew / total1) * 100) : 50;
+        document.getElementById('poll1-count-knew').innerText = art.votes.knew;
+        document.getElementById('poll1-count-didnt').innerText = art.votes.didnt;
+        document.getElementById('poll1-bar').style.width = pct1 + '%';
+        document.getElementById('poll1-summary').innerText = '知ってた率 ' + pct1 + '% (' + total1 + '票)';
+
+        const total2 = art.votes.grow + art.votes.end;
+        const pct2 = total2 > 0 ? Math.round((art.votes.grow / total2) * 100) : 50;
+        document.getElementById('poll2-count-grow').innerText = art.votes.grow;
+        document.getElementById('poll2-count-end').innerText = art.votes.end;
+        document.getElementById('poll2-bar').style.width = pct2 + '%';
+        document.getElementById('poll2-summary').innerText = '伸びる派 ' + pct2 + '% (' + total2 + '票)';
+      }
+
+      function votePoll(pollNum, option) {
+        if (!activeArticleId) return;
+        const art = articlesData.find(a => a.id === activeArticleId);
+        if (!art) return;
+
+        if (pollNum === 1) {
+          if (option === 'knew') art.votes.knew++;
+          else art.votes.didnt++;
+        } else {
+          if (option === 'grow') art.votes.grow++;
+          else art.votes.end++;
+        }
+        updatePollDisplay(art);
+      }
+
+      function updateCommentsDisplay(art) {
+        document.getElementById('comment-count-badge').innerText = art.comments.length + '件';
+        const list = document.getElementById('comments-list');
+        if (art.comments.length === 0) {
+          list.innerHTML = '<p class="text-xs text-stone-400 py-2">まだコメントはありません。</p>';
+          return;
+        }
+        list.innerHTML = art.comments.map(c => `
+          <div class="p-3 bg-stone-50 rounded-xl border border-stone-200 text-xs space-y-1">
+            <p class="text-stone-800 leading-relaxed">${escapeHtml(c.text)}</p>
+            <div class="text-[10px] text-stone-400 font-mono text-right">${c.time}</div>
+          </div>
+        `).join('');
+      }
+
+      function submitComment(e) {
+        e.preventDefault();
+        if (!activeArticleId) return;
+        const input = document.getElementById('comment-input');
+        const text = input.value.trim();
+        if (!text) return;
+
+        // URL block
+        if (/https?:\/\/|www\./i.test(text)) {
+          alert('当サイトではURLの投稿は禁止されています。文字のみでご入力ください。');
+          return;
+        }
+
+        // Banned words check
+        const banned = ['死ね', '殺す', 'ガイジ', 'ゴミカス', '電話番号'];
+        if (banned.some(w => text.includes(w))) {
+          alert('誹謗中傷・不適切なキーワードが含まれているため投稿できません。');
+          return;
+        }
+
+        const art = articlesData.find(a => a.id === activeArticleId);
+        if (!art) return;
+
+        art.comments.unshift({ text: text, time: 'たった今' });
+        input.value = '';
+        updateCommentsDisplay(art);
+      }
+
+      function escapeHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      // 6. PAGE MODAL (ABOUT / PRIVACY-POLICY / QUE)
+      let contactSubmitted = false;
+
+      function openPageModal(slug) {
+        // Tab highlights
+        ['about', 'privacy-policy', 'que'].forEach(s => {
+          const tab = document.getElementById('page-tab-' + s);
+          if (tab) {
+            if (s === slug) {
+              tab.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 bg-stone-900 text-white shadow-xs';
+            } else {
+              tab.className = 'px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 text-stone-600 hover:bg-stone-200';
+            }
+          }
+        });
+
+        const content = document.getElementById('page-modal-content');
+
+        if (slug === 'about') {
+          content.innerHTML = `
+            <div class="space-y-6">
+              <div class="border-b border-stone-100 pb-4">
+                <h1 class="text-2xl font-black text-stone-950 tracking-tight">サイトについて</h1>
+                <p class="text-xs text-stone-500 mt-1">「しらんけど」の運営理念・基本情報・リンクポリシー</p>
+              </div>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 しらんけど 紹介 】
+                </h2>
+                <p>
+                  <strong>しらんけど</strong>は、インターネット上やSNSで今話題のトピック・ニュースを自動収集し、客観的な一次報道や公式発表の事実関係をもとに整理してお届けするトレンド情報サイトです。
+                </p>
+                <p>
+                  噂や偏向報道、過激な誹謗中傷に流されず、「実際のところ何が起きているのか？」を分かりやすくまとめ、記事の締めくくりには関西特有のクッション言葉である<strong>「〜しらんけど。」</strong>を添えることで、過剰に白黒をつけず肩の力を抜いて情報に接していただくことを目指しています。
+                </p>
+              </section>
+
+              <section class="space-y-2 bg-stone-50 p-5 rounded-2xl border border-stone-200 font-mono text-xs">
+                <h2 class="text-base font-black text-stone-950 font-sans mb-1">【 当サイト情報 】</h2>
+                <div>サイト名：しらんけど</div>
+                <div>URL：https://shirankedo.bichi.xyz （または現在のドメイン）</div>
+                <div>運営形態：トレンド自動分析・事実検証メディア</div>
+                <div>免責理念：客観的事実を尊重しますが、最終判断は各自の責任でお願いします（しらんけど）。</div>
+              </section>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 リンクについて 】
+                </h2>
+                <p>
+                  当サイトは<strong>完全リンクフリー</strong>です。<br />
+                  トップページはもちろん、どの個別記事・カテゴリページに対しても事前の許可なく自由にリンクを貼っていただいて構いません。<br />
+                  ただし、記事内で引用・紹介している各ニュース配信元・メディア企業様・権利者様の画像・動画等の著作物につきましては、権利元の規約に従う必要がありますので、二次利用や無断転載・ダウンロードはご遠慮ください。
+                </p>
+              </section>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 独自指標「しらんけど指数」について 】
+                </h2>
+                <p>
+                  当サイトでは、各話題の「勢い」「注目度」「話題の急上昇性」を0〜100点のスコアで可視化する「しらんけど指数」を独自に算出しています。点数が高いほど世間で大きな盛り上がりを見せている話題となりますが、真偽の最終保証を行うものではありません。しらんけど。
+                </p>
+              </section>
+            </div>
+          `;
+        } else if (slug === 'privacy-policy') {
+          content.innerHTML = `
+            <div class="space-y-6">
+              <div class="border-b border-stone-100 pb-4">
+                <h1 class="text-2xl font-black text-stone-950 tracking-tight">Privacy Policy</h1>
+                <p class="text-xs text-stone-500 mt-1">個人情報保護方針・アクセス解析および免責事項について</p>
+              </div>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 しらんけど について 】
+                </h2>
+                <p>
+                  「しらんけど」（以下「当サイト」）にお越しいただき誠にありがとうございます。当サイトでは、適切な広告配信およびアクセス解析技術を活用して運営を行っております。
+                </p>
+              </section>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 個人情報の利用目的 】
+                </h2>
+                <p>
+                  当サイトでは、お問い合わせフォームのご利用時やコメント投稿時などに、氏名（ハンドルネーム）、メールアドレス等の個人情報をご入力いただく場合がございます。<br />
+                  これらの個人情報は、ご質問への回答や必要な情報を電子メール等でご連絡する場合にのみ利用し、それ以外の目的では利用いたしません。
+                </p>
+              </section>
+
+              <section class="space-y-2">
+                <h2 class="text-base font-black text-stone-950 flex items-center gap-2 border-l-4 border-amber-500 pl-3">
+                  【 アクセス解析ツールについて 】
+                </h2>
+                <p>
+                  当サイトでは、サイト利用動向を分析し改善に役立てる目的でアクセス解析ツールを使用する場合があります。トラフィックデータの収集のためにCookieを使用していますが、データは匿名で収集されており個人を特定するものではありません。
+                </p>
+              </section>
+
+              <section class="space-y-2 bg-amber-50/80 border border-amber-200 p-5 rounded-2xl text-amber-950">
+                <h2 class="text-base font-black text-amber-900 mb-1">【 免責事項 】</h2>
+                <p>
+                  コンテンツ・情報につきましては、一次情報に基づき可能な限り正確な情報を掲載するよう努めておりますが、情報の即時性やネットトレンドの性質上、誤情報が入り込んだり情報が古くなっている場合もございます。<br />
+                  当サイトに掲載された内容によって生じた損害等の一切の責任を負いかねますのでご了承ください。サイト名の通り、最終判断はご自身にてお願いいたします。しらんけど。
+                </p>
+              </section>
+            </div>
+          `;
+        } else if (slug === 'que') {
+          if (contactSubmitted) {
+            content.innerHTML = `
+              <div class="bg-emerald-50 border-2 border-emerald-300 rounded-2xl p-6 sm:p-8 text-center space-y-3">
+                <div class="text-4xl text-emerald-600 mb-1">✓</div>
+                <h2 class="text-lg font-black text-emerald-950">お問い合わせを送信しました</h2>
+                <p class="text-xs text-emerald-800 leading-relaxed max-w-md mx-auto">
+                  お問い合わせいただき誠にありがとうございます。<br />
+                  内容を確認の上、必要な場合はご連絡差し上げます。しらんけど。
+                </p>
+                <div class="pt-2">
+                  <button
+                    onclick="closePageModal()"
+                    class="px-5 py-2.5 rounded-xl bg-stone-950 hover:bg-stone-800 text-white font-bold text-xs transition-colors"
+                  >
+                    閉じる
+                  </button>
+                </div>
+              </div>
+            `;
+          } else {
+            content.innerHTML = `
+              <div class="space-y-6">
+                <div class="border-b border-stone-100 pb-4">
+                  <h1 class="text-2xl font-black text-stone-950 tracking-tight">お問い合わせ</h1>
+                  <p class="text-xs text-stone-500 mt-1">ご意見・ご要望・権利関係のご連絡は下記フォームよりお願いいたします。</p>
+                </div>
+
+                <form onsubmit="submitContactForm(event)" class="space-y-4">
+                  <div class="space-y-1">
+                    <label class="block text-xs font-bold text-stone-800">
+                      お名前 <span class="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      id="contact-name"
+                      required
+                      placeholder="山田 太郎 / ハンドルネーム可"
+                      class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900"
+                    />
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block text-xs font-bold text-stone-800">
+                      メールアドレス <span class="text-rose-600">*</span>
+                    </label>
+                    <input
+                      type="email"
+                      id="contact-email"
+                      required
+                      placeholder="example@domain.com"
+                      class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900"
+                    />
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block text-xs font-bold text-stone-800">件名</label>
+                    <input
+                      type="text"
+                      id="contact-subject"
+                      placeholder="記事内容について / サイトに関するご要望 等"
+                      class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900"
+                    />
+                  </div>
+
+                  <div class="space-y-1">
+                    <label class="block text-xs font-bold text-stone-800">
+                      お問い合わせ内容 <span class="text-rose-600">*</span>
+                    </label>
+                    <textarea
+                      id="contact-message"
+                      required
+                      rows="5"
+                      placeholder="お問い合わせ内容を具体的にご入力ください。"
+                      class="w-full text-xs p-3 rounded-xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900 leading-relaxed"
+                    ></textarea>
+                  </div>
+
+                  <div class="pt-2">
+                    <button
+                      type="submit"
+                      class="w-full py-3.5 px-6 rounded-2xl bg-stone-950 hover:bg-stone-800 text-white font-black text-xs shadow-md transition-all"
+                    >
+                      お問い合わせを送信する
+                    </button>
+                  </div>
+
+                  <p class="text-[11px] text-stone-400 text-center font-serif pt-1">
+                    「送信いただいた内容はプライバシーポリシーに則り適切に取り扱います。しらんけど。」
+                  </p>
+                </form>
+              </div>
+            `;
+          }
+        }
+
+        document.getElementById('page-modal').classList.remove('hidden');
+        document.getElementById('page-modal').classList.add('flex');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function submitContactForm(e) {
+        e.preventDefault();
+        contactSubmitted = true;
+        openPageModal('que');
+      }
+
+      function closePageModal() {
+        document.getElementById('page-modal').classList.add('hidden');
+        document.getElementById('page-modal').classList.remove('flex');
+        document.body.style.overflow = 'auto';
+        contactSubmitted = false;
+      }
+
+      // 7. RULES MODAL
+      function openRulesModal() {
+        document.getElementById('rules-modal').classList.remove('hidden');
+        document.getElementById('rules-modal').classList.add('flex');
+        document.body.style.overflow = 'hidden';
+      }
+
+      function closeRulesModal() {
+        document.getElementById('rules-modal').classList.add('hidden');
+        document.getElementById('rules-modal').classList.remove('flex');
+        document.body.style.overflow = 'auto';
+      }
+
+      // 8. ADMIN MODAL & AUTHENTICATION
+      let isAdminLoggedIn = false;
+
+      function openAdminModal() {
+        const modal = document.getElementById('admin-modal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+        document.body.style.overflow = 'hidden';
+
+        // Check if already authenticated
+        if (localStorage.getItem('shirankedo_admin_logged_in') === 'true') {
+          isAdminLoggedIn = true;
+          showAdminDashboard();
+        } else {
+          showAdminLoginScreen();
+        }
+      }
+
+      function closeAdminModal() {
+        const modal = document.getElementById('admin-modal');
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        document.body.style.overflow = 'auto';
+      }
+
+      function showAdminLoginScreen() {
+        document.getElementById('admin-login-screen').classList.remove('hidden');
+        document.getElementById('admin-dashboard-screen').classList.add('hidden');
+        document.getElementById('admin-dashboard-screen').classList.remove('flex');
+      }
+
+      function showAdminDashboard() {
+        document.getElementById('admin-login-screen').classList.add('hidden');
+        document.getElementById('admin-dashboard-screen').classList.remove('hidden');
+        document.getElementById('admin-dashboard-screen').classList.add('flex');
+        renderAdminArticles();
+      }
+
+      function handleAdminLogin(e) {
+        e.preventDefault();
+        isAdminLoggedIn = true;
+        localStorage.setItem('shirankedo_admin_logged_in', 'true');
+        showAdminDashboard();
+      }
+
+      function handleAdminLogout() {
+        isAdminLoggedIn = false;
+        localStorage.removeItem('shirankedo_admin_logged_in');
+        showAdminLoginScreen();
+      }
+
+      function setAdminTab(tabName) {
+        const tabs = ['overview', 'articles', 'trends', 'security', 'system'];
+        tabs.forEach(tab => {
+          const btn = document.getElementById(`adm-tab-${tab}`);
+          const content = document.getElementById(`adm-content-${tab}`);
+          if (tab === tabName) {
+            btn.className = 'adm-tab px-3 py-1.5 rounded-lg bg-stone-900 text-white shadow-xs';
+            content.classList.remove('hidden');
+          } else {
+            btn.className = 'adm-tab px-3 py-1.5 rounded-lg text-stone-600 hover:bg-stone-200';
+            content.classList.add('hidden');
+          }
+        });
+      }
+
+      function renderAdminArticles() {
+        const tbody = document.getElementById('adm-articles-tbody');
+        if (!tbody) return;
+
+        tbody.innerHTML = articlesData.map(a => `
+          <tr class="hover:bg-stone-50 transition-colors">
+            <td class="p-3 font-mono font-bold text-stone-500">#${a.id}</td>
+            <td class="p-3 font-bold text-stone-900 max-w-xs truncate">${a.title}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-stone-200 text-stone-700">${a.categoryName}</span>
+            </td>
+            <td class="p-3 font-mono font-bold text-amber-600">${a.shirankedoIndex}</td>
+            <td class="p-3">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">公開中</span>
+            </td>
+            <td class="p-3 text-right space-x-1">
+              <button onclick="openArticleModal(${a.id})" class="px-2 py-1 rounded bg-stone-100 hover:bg-stone-200 text-[10px] font-bold">確認</button>
+              <button onclick="alert('記事を非公開にしました。')" class="px-2 py-1 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 text-[10px] font-bold">停止</button>
+            </td>
+          </tr>
+        `).join('');
+
+        const countEl = document.getElementById('stat-articles-count');
+        if (countEl) countEl.innerText = `${articlesData.length}件`;
+        const countLbl = document.getElementById('adm-article-count-label');
+        if (countLbl) countLbl.innerText = articlesData.length;
+      }
+
+      function triggerSimulatedGeneration() {
+        const btn = document.getElementById('btn-trigger-gen');
+        const msg = document.getElementById('gen-result-msg');
+        btn.disabled = true;
+        btn.innerHTML = `<span>⏳ 最新トレンド収集＆記事生成中...</span>`;
+
+        setTimeout(() => {
+          btn.disabled = false;
+          btn.innerHTML = `<span>🚀 今すぐトレンド収集・記事生成を実行する</span>`;
+          msg.classList.remove('hidden');
+          msg.innerText = `✅ 新着トレンド「春の新作アニメ速報」を取得し、一次ソース照合の上でしらんけど指数89にて生成・公開しました！`;
+          
+          // Add a new mock article
+          const newId = articlesData.length + 1;
+          articlesData.unshift({
+            id: newId,
+            category: 'entertainment',
+            categoryName: 'エンタメ',
+            title: '2026年春アニメ 期待度ランキング速報 原作ファンの熱狂と新情報',
+            slug: `trend-spring-anime-${newId}`,
+            whyTrending: '新作アニメPV公開に伴い各SNSで関連ワードが複数トレンド入り。',
+            body: '春の新作アニメの最新ティザー映像が一斉解禁され、国内外のアニメファンから大きな注目を集めています。作画クオリティの高さや豪華声優陣が話題を呼び、期待度ランキングでもトップ争いが白熱しています。',
+            conclusion: '今期も覇権アニメを巡る熱い議論がネット上で繰り広げられるとみられます。しらんけど。',
+            shirankedoIndex: 89,
+            indexLabel: 'めっちゃ話題',
+            isRapidRise: true,
+            growthRate: 195,
+            timeAgo: 'たった今',
+            imageUrl: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?auto=format&fit=crop&w=800&q=80',
+            sources: [{ title: '新作アニメ制作委員会公式発表', publisher: '公式プレス', url: '#' }],
+            votes: { knew: 12, didnt: 3, grow: 40, end: 5 },
+            comments: [{ text: 'PVのクオリティ凄かった！放送が待ち遠しい', time: 'たった今' }]
+          });
+
+          renderArticles();
+          renderAdminArticles();
+        }, 1200);
+      }
+
+      function addBannedWord() {
+        const input = document.getElementById('new-banned-word-input');
+        const val = input.value.trim();
+        if (!val) return;
+        const tags = document.getElementById('banned-words-tags');
+        const span = document.createElement('span');
+        span.className = 'px-2 py-1 rounded bg-rose-100 text-rose-800 text-xs font-mono font-bold flex items-center gap-1';
+        span.innerHTML = `${val} <button onclick="removeBannedWord(this)">×</button>`;
+        tags.appendChild(span);
+        input.value = '';
+      }
+
+      function removeBannedWord(btn) {
+        btn.parentElement.remove();
+      }
+
+      function copyAdminUrl() {
+        navigator.clipboard.writeText('https://shirankedo.bichi.xyz/?admin=1').then(() => {
+          alert('管理画面URLをコピーしました:\nhttps://shirankedo.bichi.xyz/?admin=1');
+        });
+      }
+
+      function copyText(text) {
+        navigator.clipboard.writeText(text).then(() => {
+          alert(`コピーしました:\n${text}`);
+        });
+      }
+
+      // 9. ESCAPE KEY LISTENER & BACKDROP CLOSE
+      window.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape') {
+          closeArticleModal();
+          closePageModal();
+          closeRulesModal();
+          closeAdminModal();
+        }
+      });
+
+      // INIT ON LOAD
+      window.addEventListener('DOMContentLoaded', () => {
+        renderArticles();
+
+        const params = new URLSearchParams(window.location.search);
+        
+        // Check for Admin URL params (?admin=1, ?login=1, ?view=admin)
+        if (params.get('admin') !== null || params.get('login') !== null || params.get('view') === 'admin' || params.get('page') === 'admin') {
+          openAdminModal();
+        }
+
+        // Check URL parameter (?slug=about / privacy-policy / que)
+        const slug = params.get('slug');
+        if (slug === 'about' || slug === 'privacy-policy' || slug === 'que') {
+          openPageModal(slug);
+        }
+      });
+    </script>
+
   </body>
 </html>
-

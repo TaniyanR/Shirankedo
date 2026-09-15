@@ -1,0 +1,19 @@
+# 「しらんけど」 Apache 設定
+# PHPスクリプトを最優先で実行する
+DirectoryIndex index.php index.html
+
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # 既存のファイルやディレクトリはそのまま配信
+    RewriteCond %{REQUEST_FILENAME} -f [OR]
+    RewriteCond %{REQUEST_FILENAME} -d
+    RewriteRule ^ - [L]
+
+    # 固定ページへのルーティング
+    RewriteRule ^shirankedo-about$ php/shirankedo-about.php [L,QSA]
+    RewriteRule ^comment-rules$ php/comment-rules.php [L,QSA]
+
+    # トップページ
+    RewriteRule ^$ index.php [L,QSA]
+</IfModule>
