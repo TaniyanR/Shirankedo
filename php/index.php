@@ -225,8 +225,8 @@ if ($dbConnected && $site) {
                 <a href="page.php?slug=que" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 font-bold transition-all">
                     お問い合わせ
                 </a>
-                <a href="php/migrate.php" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all">
-                    ⚙️ DB設定
+                <a href="admin.php" class="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold transition-all">
+                    管理画面
                 </a>
             </div>
         </div>
@@ -234,31 +234,6 @@ if ($dbConnected && $site) {
 
     <!-- メインコンテンツ -->
     <main class="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
-
-        <!-- DB未設定・マイグレーション未実行の場合の親切アラート -->
-        <?php if (!$dbConnected || empty($articles)): ?>
-            <div class="bg-amber-50 border-2 border-amber-300 rounded-3xl p-6 sm:p-8 space-y-4 shadow-md">
-                <div class="flex items-center gap-3 text-amber-900 font-black text-lg">
-                    <span class="text-2xl">🚀</span>
-                    <span>サーバーへの設置が完了しました！あと1ステップです</span>
-                </div>
-                <p class="text-xs sm:text-sm text-amber-800 leading-relaxed">
-                    データベーステーブルが未作成、または初期データがまだ投入されていません。<br>
-                    以下のボタンから<strong>「DB自動セットアップ」</strong>を1度実行してください。全テーブルと初期サンプル記事が自動生成されます。
-                </p>
-                <div class="pt-2 flex flex-wrap items-center gap-4">
-                    <a href="php/migrate.php" class="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm shadow transition-transform active:scale-95">
-                        👉 データベース自動セットアップ画面を開く
-                    </a>
-                    <?php if ($dbError): ?>
-                        <div class="text-xs text-rose-700 font-mono bg-rose-50 px-3 py-2 rounded-xl border border-rose-200">
-                            DB接続情報エラー: <?= htmlspecialchars($dbError) ?><br>
-                            ※ <code class="font-bold">php/config.php</code> のホスト・ユーザー・パスワードをご確認ください。
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
-        <?php endif; ?>
 
         <!-- カテゴリナビゲーション -->
         <?php if (!empty($categories)): ?>
@@ -283,9 +258,9 @@ if ($dbConnected && $site) {
                     $barColor = $score >= 80 ? 'bg-rose-500' : ($score >= 50 ? 'bg-amber-500' : 'bg-stone-400');
                     $imgSrc = $art['custom_image_url'] ?: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80';
                 ?>
-                    <article class="bg-white rounded-3xl border border-stone-200/80 overflow-hidden shadow-sm hover:shadow-md transition-all flex flex-col group">
-                        <!-- アイキャッチ画像 -->
-                        <div class="relative h-44 sm:h-48 overflow-hidden bg-stone-100">
+                    <article class="bg-white rounded-3xl border border-stone-200/80 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col group">
+                        <!-- アイキャッチ画像 (記事リンク) -->
+                        <a href="article.php?id=<?= $art['id'] ?>" class="relative h-44 sm:h-48 overflow-hidden bg-stone-100 block">
                             <img src="<?= htmlspecialchars($imgSrc) ?>" alt="<?= htmlspecialchars($art['title']) ?>" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500">
                             <?php if ($art['is_rapid_rise']): ?>
                                 <span class="absolute top-3 left-3 bg-rose-600 text-white text-[11px] font-black px-2.5 py-1 rounded-full shadow-md flex items-center gap-1 animate-pulse">
@@ -295,7 +270,7 @@ if ($dbConnected && $site) {
                             <span class="absolute top-3 right-3 bg-stone-900/80 backdrop-blur-md text-white text-[11px] font-bold px-2.5 py-1 rounded-full">
                                 <?= htmlspecialchars($art['category_name'] ?? 'ニュース') ?>
                             </span>
-                        </div>
+                        </a>
 
                         <!-- 記事内容 -->
                         <div class="p-5 flex-1 flex flex-col justify-between space-y-4">
@@ -314,13 +289,15 @@ if ($dbConnected && $site) {
                                 </div>
 
                                 <h2 class="font-black text-stone-950 text-base sm:text-lg leading-snug line-clamp-2">
-                                    <?= htmlspecialchars($art['title']) ?>
+                                    <a href="article.php?id=<?= $art['id'] ?>" class="hover:text-amber-800 transition-colors">
+                                        <?= htmlspecialchars($art['title']) ?>
+                                    </a>
                                 </h2>
 
-                                <div class="bg-amber-50/60 border border-amber-100/80 rounded-2xl p-3 text-xs text-amber-950 leading-relaxed">
+                                <a href="article.php?id=<?= $art['id'] ?>" class="block bg-amber-50/60 hover:bg-amber-50 border border-amber-100/80 rounded-2xl p-3 text-xs text-amber-950 leading-relaxed transition-colors">
                                     <span class="font-bold text-amber-900 block mb-0.5">💡 なぜ話題？</span>
                                     <?= htmlspecialchars($art['why_trending']) ?>
-                                </div>
+                                </a>
                             </div>
 
                             <!-- 締め文句とアクション -->
@@ -331,9 +308,9 @@ if ($dbConnected && $site) {
 
                                 <div class="flex items-center justify-between text-xs text-stone-500 pt-1">
                                     <span><?= date('m/d H:i', strtotime($art['published_at'])) ?></span>
-                                    <button onclick="openModal(<?= htmlspecialchars(json_encode($art), ENT_QUOTES, 'UTF-8') ?>)" class="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold transition-colors">
-                                        詳細を読む →
-                                    </button>
+                                    <a href="article.php?id=<?= $art['id'] ?>" class="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold transition-colors inline-flex items-center gap-1">
+                                        記事を読む →
+                                    </a>
                                 </div>
                             </div>
                         </div>
@@ -359,7 +336,7 @@ if ($dbConnected && $site) {
                 <a href="page.php?slug=about" class="hover:text-amber-400 transition-colors">サイトについて</a>
                 <a href="page.php?slug=privacy-policy" class="hover:text-amber-400 transition-colors">プライバシーポリシー</a>
                 <a href="page.php?slug=que" class="hover:text-amber-400 transition-colors">お問い合わせ</a>
-                <a href="php/comment-rules.php" class="hover:text-amber-400 transition-colors">利用規約</a>
+                <a href="admin.php" class="hover:text-amber-400 transition-colors text-stone-500">管理画面</a>
             </div>
         </div>
     </footer>
