@@ -12,6 +12,22 @@ $dbError = '';
 try {
     $db = Database::getConnection();
     $dbConnected = true;
+
+    // votesテーブルの存在確認と自動作成（未作成による1146エラーを恒久防止）
+    try {
+        $db->exec("CREATE TABLE IF NOT EXISTS `votes` (
+            `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `article_id` INT UNSIGNED NOT NULL,
+            `vote_type` VARCHAR(32) NOT NULL DEFAULT 'believed',
+            `voter_hash` VARCHAR(64) NOT NULL DEFAULT '',
+            `ip_address` VARCHAR(64) DEFAULT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (`id`),
+            KEY `idx_article` (`article_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+    } catch (Throwable $ignore) {
+        // テーブル作成権限がない場合などは無視
+    }
 } catch (Throwable $e) {
     $dbError = $e->getMessage();
 }
@@ -143,9 +159,25 @@ if ($dbConnected && $site) {
                    LEFT JOIN categories c ON a.category_id = c.id
                    {$whereSql}
                    ORDER BY a.published_at DESC LIMIT 30";
-        $artStmt = $db->prepare($artSql);
-        $artStmt->execute($params);
-        $articles = $artStmt->fetchAll();
+        try {
+            $artStmt = $db->prepare($artSql);
+            $artStmt->execute($params);
+            $articles = $artStmt->fetchAll();
+        } catch (Throwable $subEx) {
+            // テーブル未作成時のセーフティフォールバック
+            $fallbackSql = "SELECT a.*, c.name as category_name, c.slug as category_slug,
+                                   0 as vote_believed, 0 as vote_skeptical, 0 as comment_count
+                            FROM articles a
+                            LEFT JOIN categories c ON a.category_id = c.id
+                            {$whereSql}
+                            ORDER BY a.published_at DESC LIMIT 30";
+            $fbStmt = $db->prepare($fallbackSql);
+            $fbStmt->execute($params);
+            $articles = $fbStmt->fetchAll();
+        }
+        if (!empty($articles)) {
+            $dbError = '';
+        }
     } catch (Throwable $e) {
         $dbError = $e->getMessage();
     }

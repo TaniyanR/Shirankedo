@@ -162,6 +162,19 @@ CREATE TABLE IF NOT EXISTS `user_votes` (
   KEY `idx_article_poll` (`article_id`, `poll_type`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- 9-2. 記事フロントエンド用 投票テーブル (ほんまや / しらんけど)
+CREATE TABLE IF NOT EXISTS `votes` (
+  `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `article_id` INT UNSIGNED NOT NULL,
+  `vote_type` VARCHAR(32) NOT NULL DEFAULT 'believed',
+  `voter_hash` VARCHAR(64) NOT NULL,
+  `ip_address` VARCHAR(64) DEFAULT NULL,
+  `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  KEY `idx_article` (`article_id`),
+  KEY `idx_voter` (`article_id`, `voter_hash`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- 10. ユーザーコメントテーブル (文字限定・URL禁止・拒否語自動遮断)
 CREATE TABLE IF NOT EXISTS `comments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,

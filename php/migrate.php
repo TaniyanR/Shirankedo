@@ -66,6 +66,18 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
     $sql = file_get_contents($sqlPath);
     $db->exec($sql);
 
+    // votes テーブルの存在保証 (index.php の投票・集計用)
+    $db->exec("CREATE TABLE IF NOT EXISTS `votes` (
+      `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+      `article_id` INT UNSIGNED NOT NULL,
+      `vote_type` VARCHAR(32) NOT NULL DEFAULT 'believed',
+      `voter_hash` VARCHAR(64) NOT NULL DEFAULT '',
+      `ip_address` VARCHAR(64) DEFAULT NULL,
+      `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY (`id`),
+      KEY `idx_article` (`article_id`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
+
     // 2. デフォルトサイト確認 & 作成
     $stmt = $db->query("SELECT COUNT(*) as cnt FROM sites");
     $res = $stmt->fetch();
