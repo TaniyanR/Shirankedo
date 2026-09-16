@@ -365,16 +365,21 @@ if ($dbConnected && $site) {
     </footer>
 
     <!-- 記事詳細 & 投票・コメント モーダル -->
-    <div id="articleModal" class="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
-        <div class="bg-white max-w-2xl w-full rounded-3xl border border-stone-200 overflow-hidden shadow-2xl my-8">
-            <div class="p-6 sm:p-8 space-y-6">
+    <div id="articleModal" onclick="if(event.target === this) closeModal()" class="fixed inset-0 z-50 bg-stone-950/70 backdrop-blur-sm hidden items-center justify-center p-4 overflow-y-auto">
+        <div class="relative bg-white max-w-2xl w-full rounded-3xl border border-stone-200 overflow-hidden shadow-2xl my-8" onclick="event.stopPropagation()">
+            <!-- 固定表示の閉じる(✕)ボタン -->
+            <button type="button" onclick="closeModal()" aria-label="閉じる" class="absolute top-4 right-4 z-50 w-10 h-10 rounded-full bg-stone-900 hover:bg-stone-800 text-white flex items-center justify-center font-bold text-lg shadow-lg hover:scale-105 transition-transform cursor-pointer">
+                ✕
+            </button>
+
+            <div class="p-6 sm:p-8 space-y-6 max-h-[85vh] overflow-y-auto">
                 <!-- モーダルヘッダー -->
-                <div class="flex items-start justify-between gap-4 border-b border-stone-100 pb-4">
+                <div class="flex items-center justify-between gap-4 border-b border-stone-100 pb-4 pr-12">
                     <span id="modalCategory" class="px-3 py-1 rounded-full bg-stone-100 text-stone-800 text-xs font-bold">
                         カテゴリ
                     </span>
-                    <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 text-stone-700 flex items-center justify-center font-black">
-                        ✕
+                    <button type="button" onclick="closeModal()" class="text-xs text-stone-500 hover:text-stone-900 font-bold flex items-center gap-1">
+                        <span>閉じる</span>
                     </button>
                 </div>
 
@@ -465,6 +470,13 @@ if ($dbConnected && $site) {
             document.getElementById('articleModal').classList.remove('flex');
             currentArticle = null;
         }
+
+        // ESCキーでモーダルを閉じる
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeModal();
+            }
+        });
 
         async function sendVote(voteType) {
             if (!currentArticle) return;
