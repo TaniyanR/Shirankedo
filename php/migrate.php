@@ -159,9 +159,13 @@ function executeMigrationsWithParams($host, $port, $name, $user, $pass) {
         $insertedCount = $artCnt;
     }
 
+    // 3. 相互リンク・相互RSS返還システム、広告スロット、セキュリティテーブル追加マイグレーション
+    require_once __DIR__ . '/classes/MigrationAddFeatures.php';
+    MigrationAddFeatures::run();
+
     return [
         'status' => 'success',
-        'message' => "マイグレーション完了！全12テーブルの作成と初期マスターデータ（サンプル記事 {$insertedCount}件）の投入が成功しました。",
+        'message' => "マイグレーション完了！全12テーブルの作成、相互リンク・RSS返還・広告枠拡張および初期マスターデータ（サンプル記事 {$insertedCount}件）の投入が成功しました。",
     ];
 }
 

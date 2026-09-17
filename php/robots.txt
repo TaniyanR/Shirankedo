@@ -1,0 +1,9 @@
+User-agent: *
+Allow: /
+Disallow: /admin-manage-sk89q.php
+Disallow: /admin.php
+Disallow: /cron/
+Disallow: /php/cron/
+Disallow: /php/classes/
+
+Sitemap: https://shirankedo.bichi.xyz/sitemap.php
