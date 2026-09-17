@@ -7,9 +7,11 @@ ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
+require_once __DIR__ . '/classes/AnalyticsTracker.php';
 
-// 相互リンク逆アクセスの自動記録 (INカウント加算)
+// アクセス解析トラッキング & 相互リンク逆アクセスの自動記録
 TradeEngine::trackIncomingReferrer();
+AnalyticsTracker::track('home');
 
 // DB接続チェック
 $dbConnected = false;
@@ -167,6 +169,10 @@ if ($dbConnected) {
     }
 }
 
+// 表示切り替えフラグ
+$showAds = SettingsManager::get('show_ads', '1') === '1';
+$showRss = SettingsManager::get('show_rss', '1') === '1';
+
 // 広告スロット設定の取得
 $adPcHeader = SettingsManager::get('ad_pc_header');
 $adPcSidebarTop = SettingsManager::get('ad_pc_sidebar_top');
@@ -175,14 +181,14 @@ $adSpHeaderTop = SettingsManager::get('ad_sp_header_top');
 $adSpHeaderBottom = SettingsManager::get('ad_sp_header_bottom');
 
 // 相互RSS配信アイテムの取得
-$pcHeaderBelowRss = TradeEngine::getDisplayFeedItems(true, 4); // PCヘッダー下: 画像あり
-$pcSideRss = TradeEngine::getDisplayFeedItems(true, 5);       // PCサイド: 画像あり
-$pcFooterAboveRss = TradeEngine::getDisplayFeedItems(true, 4); // PCフッター上: 画像あり
-$spHeaderRss = TradeEngine::getDisplayFeedItems(false, 3);    // スマホヘッダー: テキスト+画像
-$spFooterRss = TradeEngine::getDisplayFeedItems(false, 4);    // スマホフッター: テキスト
+$pcHeaderBelowRss = $showRss ? TradeEngine::getDisplayFeedItems(true, 4) : []; // PCヘッダー下: 画像あり
+$pcSideRss = $showRss ? TradeEngine::getDisplayFeedItems(true, 5) : [];       // PCサイド: 画像あり
+$pcFooterAboveRss = $showRss ? TradeEngine::getDisplayFeedItems(true, 4) : []; // PCフッター上: 画像あり
+$spHeaderRss = $showRss ? TradeEngine::getDisplayFeedItems(false, 3) : [];    // スマホヘッダー: テキスト+画像
+$spFooterRss = $showRss ? TradeEngine::getDisplayFeedItems(false, 4) : [];    // スマホフッター: テキスト
 
 // 相互リンク集
-$approvedLinks = TradeEngine::getApprovedLinks();
+$approvedLinks = $showRss ? TradeEngine::getApprovedLinks() : [];
 
 // カスタムタグ
 $headCustomTags = SettingsManager::get('head_custom_tags');
@@ -231,9 +237,11 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
             </a>
 
             <!-- PCヘッダー広告枠 (468x60) -->
-            <div class="hidden lg:block overflow-hidden max-h-[60px]">
-                <?= $adPcHeader ?>
-            </div>
+            <?php if ($showAds && !empty($adPcHeader)): ?>
+                <div class="hidden lg:block overflow-hidden max-h-[60px]">
+                    <?= $adPcHeader ?>
+                </div>
+            <?php endif; ?>
 
             <div class="flex items-center gap-2 sm:gap-3 text-xs">
                 <a href="page.php?slug=about" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all">
@@ -250,54 +258,62 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     </header>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-        <?= $adSpHeaderTop ?>
-    </div>
+    <?php if ($showAds && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
+    <?php endif; ?>
 
     <!-- スマホ専用 ヘッダー 相互RSS (テキスト+画像) -->
-    <div class="lg:hidden bg-white border-b border-stone-200 px-4 py-3 space-y-2">
-        <div class="text-[11px] font-black text-stone-700 flex items-center gap-1">
-            <span>📡</span> <span>提携アンテナ速報</span>
-        </div>
-        <div class="grid grid-cols-1 gap-2">
-            <?php foreach ($spHeaderRss as $shr): ?>
-                <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$shr['trade_site_id'], $shr['url'])) ?>" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs text-stone-800 hover:text-amber-800">
-                    <?php if (!empty($shr['has_image']) && !empty($shr['image_url'])): ?>
-                        <img src="<?= htmlspecialchars($shr['image_url']) ?>" alt="" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
-                    <?php endif; ?>
-                    <span class="truncate font-medium leading-snug"><?= htmlspecialchars($shr['title']) ?></span>
-                </a>
-            <?php endforeach; ?>
-        </div>
-    </div>
-
-    <!-- PC専用 ヘッダー下 相互RSS (画像カルーセル/グリッド) -->
-    <div class="hidden lg:block bg-stone-50 border-b border-stone-200 py-3">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6">
-            <div class="flex items-center gap-2 mb-2">
-                <span class="text-xs font-black text-stone-700">📡 提携アンテナ更新 (相互RSS)</span>
-                <span class="text-[10px] text-stone-400">| アクセス還元配信中</span>
+    <?php if ($showRss && !empty($spHeaderRss)): ?>
+        <div class="lg:hidden bg-white border-b border-stone-200 px-4 py-3 space-y-2">
+            <div class="text-[11px] font-black text-stone-700 flex items-center gap-1">
+                <span>📡</span> <span>提携アンテナ速報</span>
             </div>
-            <div class="grid grid-cols-4 gap-4">
-                <?php foreach ($pcHeaderBelowRss as $phr): ?>
-                    <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$phr['trade_site_id'], $phr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center p-2 rounded-2xl bg-white border border-stone-200 hover:border-amber-400 transition-all group">
-                        <?php if (!empty($phr['has_image']) && !empty($phr['image_url'])): ?>
-                            <img src="<?= htmlspecialchars($phr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-stone-100">
+            <div class="grid grid-cols-1 gap-2">
+                <?php foreach ($spHeaderRss as $shr): ?>
+                    <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$shr['trade_site_id'], $shr['url'])) ?>" target="_blank" rel="noopener" class="flex items-center gap-2 text-xs text-stone-800 hover:text-amber-800">
+                        <?php if (!empty($shr['has_image']) && !empty($shr['image_url'])): ?>
+                            <img src="<?= htmlspecialchars($shr['image_url']) ?>" alt="" class="w-8 h-8 rounded-lg object-cover flex-shrink-0">
                         <?php endif; ?>
-                        <div class="flex-1 min-w-0">
-                            <span class="text-[9px] font-bold text-amber-700 block truncate"><?= htmlspecialchars($phr['site_name']) ?></span>
-                            <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-700 truncate leading-tight"><?= htmlspecialchars($phr['title']) ?></h4>
-                        </div>
+                        <span class="truncate font-medium leading-snug"><?= htmlspecialchars($shr['title']) ?></span>
                     </a>
                 <?php endforeach; ?>
             </div>
         </div>
-    </div>
+    <?php endif; ?>
+
+    <!-- PC専用 ヘッダー下 相互RSS (画像カルーセル/グリッド) -->
+    <?php if ($showRss && !empty($pcHeaderBelowRss)): ?>
+        <div class="hidden lg:block bg-stone-50 border-b border-stone-200 py-3">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6">
+                <div class="flex items-center gap-2 mb-2">
+                    <span class="text-xs font-black text-stone-700">📡 提携アンテナ更新 (相互RSS)</span>
+                    <span class="text-[10px] text-stone-400">| アクセス還元配信中</span>
+                </div>
+                <div class="grid grid-cols-4 gap-4">
+                    <?php foreach ($pcHeaderBelowRss as $phr): ?>
+                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$phr['trade_site_id'], $phr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center p-2 rounded-2xl bg-white border border-stone-200 hover:border-amber-400 transition-all group">
+                            <?php if (!empty($phr['has_image']) && !empty($phr['image_url'])): ?>
+                                <img src="<?= htmlspecialchars($phr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-stone-100">
+                            <?php endif; ?>
+                            <div class="flex-1 min-w-0">
+                                <span class="text-[9px] font-bold text-amber-700 block truncate"><?= htmlspecialchars($phr['site_name']) ?></span>
+                                <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-700 truncate leading-tight"><?= htmlspecialchars($phr['title']) ?></h4>
+                            </div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </div>
+    <?php endif; ?>
 
     <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-    <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-        <?= $adSpHeaderBottom ?>
-    </div>
+    <?php if ($showAds && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
+        </div>
+    <?php endif; ?>
 
     <!-- メインコンテンツレイアウト (記事グリッド + PCサイドバー) -->
     <div class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-8">
@@ -394,46 +410,48 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         <aside class="w-full lg:w-80 flex-shrink-0 space-y-6">
             
             <!-- PCサイドバー上 広告枠 (300x250) -->
-            <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
-                <?= $adPcSidebarTop ?>
-            </div>
+            <?php if ($showAds && !empty($adPcSidebarTop)): ?>
+                <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
+                    <?= $adPcSidebarTop ?>
+                </div>
+            <?php endif; ?>
 
             <!-- PCサイドバー 相互RSS (画像) -->
-            <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-4">
-                <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-                    <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
-                        <span>📡</span> 提携アンテナ更新
-                    </h3>
-                    <span class="text-[10px] text-stone-400 font-bold">画像RSS</span>
+            <?php if ($showRss && !empty($pcSideRss)): ?>
+                <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
+                        <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
+                            <span>📡</span> 提携アンテナ更新
+                        </h3>
+                        <span class="text-[10px] text-stone-400 font-bold">画像RSS</span>
+                    </div>
+                    <div class="space-y-3">
+                        <?php foreach ($pcSideRss as $sr): ?>
+                            <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sr['trade_site_id'], $sr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center group">
+                                <?php if (!empty($sr['image_url'])): ?>
+                                    <img src="<?= htmlspecialchars($sr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover bg-stone-100 flex-shrink-0">
+                                <?php endif; ?>
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-600 line-clamp-2 leading-snug">
+                                        <?= htmlspecialchars($sr['title']) ?>
+                                    </h4>
+                                    <span class="text-[10px] text-stone-400"><?= htmlspecialchars($sr['site_name']) ?></span>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
-                <div class="space-y-3">
-                    <?php foreach ($pcSideRss as $sr): ?>
-                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sr['trade_site_id'], $sr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center group">
-                            <?php if (!empty($sr['image_url'])): ?>
-                                <img src="<?= htmlspecialchars($sr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover bg-stone-100 flex-shrink-0">
-                            <?php endif; ?>
-                            <div class="flex-1 min-w-0">
-                                <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-600 line-clamp-2 leading-snug">
-                                    <?= htmlspecialchars($sr['title']) ?>
-                                </h4>
-                                <span class="text-[10px] text-stone-400"><?= htmlspecialchars($sr['site_name']) ?></span>
-                            </div>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </div>
+            <?php endif; ?>
 
             <!-- PC専用 相互リンク集 (テキストリンク一覧) -->
-            <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-3">
-                <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-                    <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
-                        <span>🤝</span> 相互リンク集
-                    </h3>
-                    <a href="page.php?slug=trade" class="text-[10px] text-amber-600 font-bold hover:underline">依頼はこちら</a>
-                </div>
-                <?php if (empty($approvedLinks)): ?>
-                    <p class="text-[11px] text-stone-400 py-2">現在相互リンクを募集中です。</p>
-                <?php else: ?>
+            <?php if ($showRss && !empty($approvedLinks)): ?>
+                <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
+                        <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
+                            <span>🤝</span> 相互リンク集
+                        </h3>
+                        <a href="page.php?slug=trade" class="text-[10px] text-amber-600 font-bold hover:underline">依頼はこちら</a>
+                    </div>
                     <ul class="space-y-2 text-xs">
                         <?php foreach ($approvedLinks as $al): ?>
                             <li>
@@ -444,57 +462,63 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                <?php endif; ?>
-            </div>
+                </div>
+            <?php endif; ?>
 
             <!-- PCサイドバー下 広告枠 (300x250) -->
-            <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
-                <?= $adPcSidebarBottom ?>
-            </div>
+            <?php if ($showAds && !empty($adPcSidebarBottom)): ?>
+                <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
+                    <?= $adPcSidebarBottom ?>
+                </div>
+            <?php endif; ?>
 
         </aside>
 
     </div>
 
     <!-- PC専用 フッター上 相互RSS (画像) -->
-    <div class="hidden lg:block bg-stone-50 border-t border-stone-200 py-6">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 space-y-3">
-            <div class="flex items-center justify-between">
-                <span class="text-xs font-black text-stone-800">📡 注目の提携ブログ最新記事</span>
-                <a href="page.php?slug=trade" class="text-[11px] text-stone-500 hover:text-stone-900 font-bold">相互リンク・RSS申請はこちら ↗</a>
-            </div>
-            <div class="grid grid-cols-4 gap-4">
-                <?php foreach ($pcFooterAboveRss as $pfr): ?>
-                    <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$pfr['trade_site_id'], $pfr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center p-2.5 rounded-2xl bg-white border border-stone-200 hover:border-amber-400 transition-all group">
-                        <?php if (!empty($pfr['has_image']) && !empty($pfr['image_url'])): ?>
-                            <img src="<?= htmlspecialchars($pfr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-stone-100">
-                        <?php endif; ?>
-                        <div class="flex-1 min-w-0">
-                            <span class="text-[9px] font-bold text-amber-700 block truncate"><?= htmlspecialchars($pfr['site_name']) ?></span>
-                            <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-700 truncate leading-tight"><?= htmlspecialchars($pfr['title']) ?></h4>
-                        </div>
-                    </a>
-                <?php endforeach; ?>
+    <?php if ($showRss && !empty($pcFooterAboveRss)): ?>
+        <div class="hidden lg:block bg-stone-50 border-t border-stone-200 py-6">
+            <div class="max-w-7xl mx-auto px-4 sm:px-6 space-y-3">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs font-black text-stone-800">📡 注目の提携ブログ最新記事</span>
+                    <a href="page.php?slug=trade" class="text-[11px] text-stone-500 hover:text-stone-900 font-bold">相互リンク・RSS申請はこちら ↗</a>
+                </div>
+                <div class="grid grid-cols-4 gap-4">
+                    <?php foreach ($pcFooterAboveRss as $pfr): ?>
+                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$pfr['trade_site_id'], $pfr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center p-2.5 rounded-2xl bg-white border border-stone-200 hover:border-amber-400 transition-all group">
+                            <?php if (!empty($pfr['has_image']) && !empty($pfr['image_url'])): ?>
+                                <img src="<?= htmlspecialchars($pfr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover flex-shrink-0 bg-stone-100">
+                            <?php endif; ?>
+                            <div class="flex-1 min-w-0">
+                                <span class="text-[9px] font-bold text-amber-700 block truncate"><?= htmlspecialchars($pfr['site_name']) ?></span>
+                                <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-700 truncate leading-tight"><?= htmlspecialchars($pfr['title']) ?></h4>
+                            </div>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
             </div>
         </div>
-    </div>
+    <?php endif; ?>
 
     <!-- スマホ専用 フッター 相互RSS (テキスト) -->
-    <div class="lg:hidden bg-stone-50 border-t border-stone-200 p-4 space-y-3">
-        <div class="text-xs font-black text-stone-800 flex items-center justify-between">
-            <span>📡 提携アンテナ更新</span>
-            <a href="page.php?slug=trade" class="text-[10px] text-amber-700 font-bold">相互申請</a>
+    <?php if ($showRss && !empty($spFooterRss)): ?>
+        <div class="lg:hidden bg-stone-50 border-t border-stone-200 p-4 space-y-3">
+            <div class="text-xs font-black text-stone-800 flex items-center justify-between">
+                <span>📡 提携アンテナ更新</span>
+                <a href="page.php?slug=trade" class="text-[10px] text-amber-700 font-bold">相互申請</a>
+            </div>
+            <ul class="space-y-2 text-xs">
+                <?php foreach ($spFooterRss as $sfr): ?>
+                    <li>
+                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sfr['trade_site_id'], $sfr['url'])) ?>" target="_blank" rel="noopener" class="text-stone-700 hover:text-amber-800 line-clamp-1">
+                            • <?= htmlspecialchars($sfr['title']) ?>
+                        </a>
+                    </li>
+                <?php endforeach; ?>
+            </ul>
         </div>
-        <ul class="space-y-2 text-xs">
-            <?php foreach ($spFooterRss as $sfr): ?>
-                <li>
-                    <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sfr['trade_site_id'], $sfr['url'])) ?>" target="_blank" rel="noopener" class="text-stone-700 hover:text-amber-800 line-clamp-1">
-                        • <?= htmlspecialchars($sfr['title']) ?>
-                    </a>
-                </li>
-            <?php endforeach; ?>
-        </ul>
-    </div>
+    <?php endif; ?>
 
     <!-- フッター -->
     <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800">

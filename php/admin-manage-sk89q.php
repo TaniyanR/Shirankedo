@@ -93,7 +93,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "記事ID #{$artId} のステータスを更新しました。";
         }
 
-        // 3. アイキャッチ画像プールの追加（800x450px・キーワード3つ）
+        // 3. アイキャッチ画像プールの追加（URLまたはローカルPCファイルアップロード・800x450px・キーワード3つ）
         if ($op === 'add_pool_image') {
             $url = trim($_POST['url'] ?? '');
             $alt = trim($_POST['alt_text'] ?? 'トレンドアイキャッチ');
@@ -102,8 +102,27 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $kw2 = trim($_POST['kw2'] ?? '');
             $kw3 = trim($_POST['kw3'] ?? '');
 
+            // ローカルファイルアップロード対応
+            if (isset($_FILES['local_image']) && $_FILES['local_image']['error'] === UPLOAD_ERR_OK) {
+                $fileTmp = $_FILES['local_image']['tmp_name'];
+                $fileName = $_FILES['local_image']['name'];
+                $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
+                $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+                if (in_array($ext, $allowed)) {
+                    $uploadDir = __DIR__ . '/uploads';
+                    if (!is_dir($uploadDir)) {
+                        mkdir($uploadDir, 0777, true);
+                    }
+                    $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                    $dest = $uploadDir . '/' . $safeName;
+                    if (move_uploaded_file($fileTmp, $dest)) {
+                        $url = '/uploads/' . $safeName;
+                    }
+                }
+            }
+
             if (empty($url)) {
-                throw new Exception('画像URLを入力してください。');
+                throw new Exception('画像URLを入力するか、画像をアップロードしてください。');
             }
 
             $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active) VALUES (1, ?, 'custom_pool.webp', ?, ?, 1)");
@@ -154,14 +173,28 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "相互リンク・RSSサイトの設定を更新しました。";
         }
 
-        // 5. アフィリエイト広告スロットの更新
+        // 5. アフィリエイト広告スロット & 表示/非表示設定の更新
         if ($op === 'save_ads') {
+            SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
             SettingsManager::set('ad_pc_header', $_POST['ad_pc_header'] ?? '');
             SettingsManager::set('ad_pc_sidebar_top', $_POST['ad_pc_sidebar_top'] ?? '');
             SettingsManager::set('ad_pc_sidebar_bottom', $_POST['ad_pc_sidebar_bottom'] ?? '');
             SettingsManager::set('ad_sp_header_top', $_POST['ad_sp_header_top'] ?? '');
             SettingsManager::set('ad_sp_header_bottom', $_POST['ad_sp_header_bottom'] ?? '');
-            $flashMessage = 'アフィリエイト広告スロット設定を保存しました。';
+            $flashMessage = 'アフィリエイト広告スロット・表示設定を保存しました。';
+        }
+
+        // 5-2. 相互RSS表示/非表示設定の更新
+        if ($op === 'save_rss_settings') {
+            SettingsManager::set('show_rss', isset($_POST['show_rss']) ? '1' : '0');
+            $flashMessage = '相互RSS表示設定を保存しました。';
+        }
+
+        // 5-3. Gemini API設定の更新
+        if ($op === 'save_gemini') {
+            SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
+            SettingsManager::set('gemini_model', trim($_POST['gemini_model'] ?? 'gemini-2.5-flash'));
+            $flashMessage = 'Gemini AI API設定を保存しました。';
         }
 
         // 6. SEO・カスタムタグの更新 (<meta name="referrer" content="unsafe-url"> 等)
@@ -249,14 +282,19 @@ if ($db && $isLoggedIn) {
         // お知らせ一覧
         $announcements = $db->query("SELECT * FROM announcements ORDER BY id DESC LIMIT 20")->fetchAll();
 
+        // アクセス解析データ取得
+        $analyticsStats = AnalyticsTracker::getStats(14);
+
     } catch (Throwable $e) {}
 }
 
 // タブ定義 (WordPress風メニュー)
 $navTabs = [
     'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null],
+    'analytics' => ['icon' => '📈', 'label' => 'アクセス解析', 'badge' => null],
     'articles' => ['icon' => '📝', 'label' => '記事管理・投稿', 'badge' => $totalArticles],
     'images' => ['icon' => '🖼️', 'label' => 'アイキャッチプール', 'badge' => count($poolImages)],
+    'gemini' => ['icon' => '✨', 'label' => 'Gemini API設定', 'badge' => null],
     'trade' => ['icon' => '🔗', 'label' => '相互リンク・RSS返還', 'badge' => count($tradeSites)],
     'ads' => ['icon' => '💰', 'label' => '広告スロット設定', 'badge' => null],
     'seo_tags' => ['icon' => '🏷️', 'label' => 'SEO・タグ設定', 'badge' => null],
@@ -302,7 +340,7 @@ $navTabs = [
                     <input type="hidden" name="action" value="login">
                     <div class="space-y-1.5">
                         <label class="block text-xs font-bold text-slate-700">管理者パスワード</label>
-                        <input type="password" name="password" required autofocus placeholder="初期値: admin1234" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                        <input type="password" name="password" required autofocus placeholder="管理者パスワードを入力してください" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
                     </div>
                     <button type="submit" class="w-full py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all">
                         ログインする →
@@ -324,10 +362,6 @@ $navTabs = [
                     <span class="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs">知</span>
                     <span class="hidden sm:inline">しらんけど サイトを表示 ↗</span>
                 </a>
-                <span class="text-slate-600 hidden sm:inline">|</span>
-                <span class="text-xs text-amber-400 font-bold bg-amber-950/60 px-2.5 py-0.5 rounded-full border border-amber-800/60">
-                    シークレットURL: /<?= htmlspecialchars($thisFileUrl) ?>
-                </span>
             </div>
 
             <div class="flex items-center gap-3 text-xs">
@@ -568,13 +602,26 @@ $navTabs = [
                         <!-- 画像追加フォーム -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
                             <h2 class="text-base font-black text-slate-900">新しいアイキャッチ画像の追加登録</h2>
-                            <form method="POST" class="space-y-4">
+                            <form method="POST" enctype="multipart/form-data" class="space-y-4">
                                 <input type="hidden" name="op" value="add_pool_image">
                                 
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">💻 ローカルPCから画像をアップロード</label>
+                                        <input type="file" name="local_image" accept="image/jpeg,image/png,image/webp,image/gif" class="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-900 file:text-white hover:file:bg-slate-800">
+                                        <p class="text-[10px] text-slate-400">※ JPG, PNG, WEBP, GIF (800x450px推奨)</p>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">🌐 または 画像URLを直接指定</label>
+                                        <input type="url" name="url" placeholder="https://... または /uploads/image.webp" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm bg-white focus:outline-none focus:border-amber-500">
+                                        <p class="text-[10px] text-slate-400">※ ファイルを選択しない場合はURLを入力してください</p>
+                                    </div>
+                                </div>
+
                                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">画像URL (800×450px) <span class="text-rose-600">*</span></label>
-                                        <input type="url" name="url" required placeholder="https://... または /uploads/image.webp" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                        <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト）</label>
+                                        <input type="text" name="alt_text" placeholder="例: お笑いステージ・バラエティ収録イメージ" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
@@ -584,11 +631,6 @@ $navTabs = [
                                             <?php endforeach; ?>
                                         </select>
                                     </div>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト）</label>
-                                    <input type="text" name="alt_text" placeholder="例: お笑いステージ・バラエティ収録イメージ" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
                                 </div>
 
                                 <!-- キーワード3つ設定 -->
@@ -637,9 +679,23 @@ $navTabs = [
                 <!-- 4. 🔗 相互リンク・相互RSS返還 タブ -->
                 <?php elseif ($currentTab === 'trade'): ?>
                     <div class="space-y-6">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">相互リンク・相互RSS & アクセス返還管理</h1>
-                            <p class="text-xs text-slate-500">相手サイトからの流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します</p>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h1 class="text-2xl font-black text-slate-900 tracking-tight">相互リンク・相互RSS & アクセス返還管理</h1>
+                                <p class="text-xs text-slate-500">相手サイトからの流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します</p>
+                            </div>
+
+                            <!-- 相互RSS表示/非表示トグルスイッチ -->
+                            <form method="POST" class="bg-white border border-slate-200 px-4 py-3 rounded-2xl shadow-sm flex items-center gap-3">
+                                <input type="hidden" name="op" value="save_rss_settings">
+                                <label class="flex items-center gap-2 cursor-pointer select-none">
+                                    <input type="checkbox" name="show_rss" value="1" <?= SettingsManager::get('show_rss', '1') === '1' ? 'checked' : '' ?> onchange="this.form.submit()" class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
+                                    <span class="text-xs font-bold text-slate-800">サイト上に相互RSS枠を表示する</span>
+                                </label>
+                                <span class="text-[10px] px-2 py-0.5 rounded-full font-bold <?= SettingsManager::get('show_rss', '1') === '1' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' ?>">
+                                    <?= SettingsManager::get('show_rss', '1') === '1' ? '現在: 表示中' : '現在: 非表示' ?>
+                                </span>
+                            </form>
                         </div>
 
                         <!-- 相互サイト一覧 & 承認・返還率コントロール -->
@@ -722,13 +778,31 @@ $navTabs = [
                 <!-- 5. 💰 アフィリエイト広告スロット設定 タブ -->
                 <?php elseif ($currentTab === 'ads'): ?>
                     <div class="space-y-6">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">アフィリエイト広告スロット設定</h1>
-                            <p class="text-xs text-slate-500">PC・スマホそれぞれの指定サイズ広告タグ（A8, もしも, バリューコマース等）を設置・管理します</p>
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h1 class="text-2xl font-black text-slate-900 tracking-tight">アフィリエイト広告スロット設定</h1>
+                                <p class="text-xs text-slate-500">PC・スマホそれぞれの指定サイズ広告タグ（A8, もしも, バリューコマース等）を設置・管理します</p>
+                            </div>
                         </div>
 
                         <form method="POST" class="space-y-6">
                             <input type="hidden" name="op" value="save_ads">
+
+                            <!-- 広告表示/非表示スイッチ -->
+                            <div class="bg-amber-50 border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div class="space-y-1">
+                                    <div class="text-sm font-black text-amber-950 flex items-center gap-2">
+                                        <span>📢</span> アフィリエイト広告マスター表示切替
+                                    </div>
+                                    <p class="text-xs text-amber-800">
+                                        チェックを外すと、サイト全体の広告枠が一括で非表示になります（審査時や純粋なコンテンツ重視時に便利です）。
+                                    </p>
+                                </div>
+                                <label class="relative flex items-center gap-2.5 cursor-pointer bg-white px-5 py-3 rounded-2xl border border-amber-300 shadow-sm">
+                                    <input type="checkbox" name="show_ads" value="1" <?= SettingsManager::get('show_ads', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded text-amber-500 focus:ring-amber-400">
+                                    <span class="text-xs font-black text-slate-800">サイト全体で広告を表示する</span>
+                                </label>
+                            </div>
 
                             <!-- PC広告スロット -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
@@ -892,6 +966,184 @@ $navTabs = [
                                 <div class="pt-2 flex justify-end">
                                     <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
                                         セキュリティ設定を更新する
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                <!-- 9. 📈 アクセス解析 タブ -->
+                <?php elseif ($currentTab === 'analytics'): ?>
+                    <div class="space-y-6">
+                        <div>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">リアルタイム・アクセス解析</h1>
+                            <p class="text-xs text-slate-500">しらんけど サイトのPV数、流入元（X、Instagram、検索、相互RSS）、端末別比率を詳しく可視化します</p>
+                        </div>
+
+                        <?php 
+                        $stats = AnalyticsTracker::getStats(14);
+                        $totalPv = $stats['total_pv'] ?? 0;
+                        $todayPv = $stats['today_pv'] ?? 0;
+                        $yesterdayPv = $stats['yesterday_pv'] ?? 0;
+                        ?>
+
+                        <!-- サマリーカード -->
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-400">総ページビュー数 (全期間)</div>
+                                <div class="text-3xl font-black text-slate-900"><?= number_format($totalPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                            </div>
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-emerald-600">本日のアクセス数 (Today)</div>
+                                <div class="text-3xl font-black text-emerald-600"><?= number_format($todayPv) ?> <span class="text-xs font-normal text-emerald-500">PV</span></div>
+                            </div>
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-400">昨日のアクセス数 (Yesterday)</div>
+                                <div class="text-3xl font-black text-slate-700"><?= number_format($yesterdayPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                            </div>
+                        </div>
+
+                        <!-- 流入元 & 端末比率 -->
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <!-- 流入元 (リファラー) -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <span>🌐</span> 主な参照元 (Referrer)
+                                </h2>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs border-collapse">
+                                        <thead>
+                                            <tr class="border-b border-slate-100 text-slate-400">
+                                                <th class="py-2 font-bold">ドメイン / 参照元</th>
+                                                <th class="py-2 font-bold text-right">アクセス数</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <?php if (empty($stats['referers'])): ?>
+                                                <tr><td colspan="2" class="py-4 text-center text-slate-400">まだ参照元データがありません</td></tr>
+                                            <?php else: ?>
+                                                <?php foreach ($stats['referers'] as $ref): ?>
+                                                    <tr>
+                                                        <td class="py-2.5 font-bold text-slate-800"><?= htmlspecialchars($ref['referer_host']) ?></td>
+                                                        <td class="py-2.5 font-mono font-bold text-amber-600 text-right"><?= number_format($ref['count']) ?></td>
+                                                    </tr>
+                                                <?php endforeach; ?>
+                                            <?php endif; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <!-- 端末比率 (デバイス) -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <span>📱</span> 端末比率 (Device Ratio)
+                                </h2>
+                                <div class="space-y-3 pt-2">
+                                    <?php 
+                                    $devSum = array_sum($stats['devices'] ?? []) ?: 1;
+                                    $devLabels = ['mobile' => 'スマートフォン (Mobile)', 'pc' => 'パソコン (Desktop)', 'tablet' => 'タブレット (Tablet)'];
+                                    foreach (['mobile', 'pc', 'tablet'] as $d): 
+                                        $cnt = $stats['devices'][$d] ?? 0;
+                                        $pct = round(($cnt / $devSum) * 100, 1);
+                                    ?>
+                                        <div class="space-y-1">
+                                            <div class="flex justify-between text-xs font-bold text-slate-700">
+                                                <span><?= $devLabels[$d] ?></span>
+                                                <span class="font-mono"><?= $cnt ?> PV (<?= $pct ?>%)</span>
+                                            </div>
+                                            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
+                                                <div class="bg-amber-500 h-full rounded-full" style="width: <?= $pct ?>%"></div>
+                                            </div>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 人気記事ランキング -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                <span>🔥</span> 人気記事ランキング (直近14日間)
+                            </h2>
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 text-slate-400">
+                                            <th class="py-2.5 font-bold">順位</th>
+                                            <th class="py-2.5 font-bold">記事タイトル</th>
+                                            <th class="py-2.5 font-bold">しらんけど指数</th>
+                                            <th class="py-2.5 font-bold text-right">閲覧数 (PV)</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <?php if (empty($stats['top_articles'])): ?>
+                                            <tr><td colspan="4" class="py-4 text-center text-slate-400">閲覧ログがまだ記録されていません</td></tr>
+                                        <?php else: ?>
+                                            <?php foreach ($stats['top_articles'] as $idx => $ta): ?>
+                                                <tr class="hover:bg-slate-50">
+                                                    <td class="py-3 font-black text-amber-600">#<?= $idx + 1 ?></td>
+                                                    <td class="py-3 font-bold text-slate-900">
+                                                        <a href="article.php?id=<?= $ta['id'] ?>" target="_blank" class="hover:text-amber-600">
+                                                            <?= htmlspecialchars($ta['title']) ?> ↗
+                                                        </a>
+                                                    </td>
+                                                    <td class="py-3">
+                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
+                                                            <?= $ta['shirankedo_index'] ?>点
+                                                        </span>
+                                                    </td>
+                                                    <td class="py-3 font-mono font-bold text-slate-800 text-right">
+                                                        <?= number_format($ta['pv']) ?> PV
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        <?php endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+
+                <!-- 10. ✨ Gemini API設定 タブ -->
+                <?php elseif ($currentTab === 'gemini'): ?>
+                    <div class="space-y-6">
+                        <div>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Gemini AI 設定</h1>
+                            <p class="text-xs text-slate-500">Google Gemini APIキーを登録し、話題の自動収集・一次情報確認・記事自動生成パイプラインを稼働させます</p>
+                        </div>
+
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <form method="POST" class="space-y-5">
+                                <input type="hidden" name="op" value="save_gemini">
+
+                                <div class="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-xs text-indigo-900 space-y-1">
+                                    <div class="font-bold flex items-center gap-1.5">
+                                        <span>💡</span> Google AI StudioでAPIキーを取得できます
+                                    </div>
+                                    <p class="text-indigo-700">
+                                        Google AI Studio (<a href="https://aistudio.google.com/" target="_blank" class="underline font-bold">https://aistudio.google.com/</a>) で発行したAPIキーを入力してください。
+                                    </p>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
+                                    <input type="password" name="gemini_api_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500">
+                                    <p class="text-[11px] text-slate-400">※ 入力されたキーはデータベースに暗号化保存され、記事自動生成時にのみ利用されます。</p>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
+                                    <select name="gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-amber-500">
+                                        <option value="gemini-2.5-flash" <?= SettingsManager::get('gemini_model', 'gemini-2.5-flash') === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速&高精度)</option>
+                                        <option value="gemini-2.5-pro" <?= SettingsManager::get('gemini_model') === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・長文推論)</option>
+                                        <option value="gemini-1.5-flash" <?= SettingsManager::get('gemini_model') === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (安定版)</option>
+                                    </select>
+                                </div>
+
+                                <div class="pt-2 flex justify-end">
+                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
+                                        Gemini API設定を保存する
                                     </button>
                                 </div>
                             </form>

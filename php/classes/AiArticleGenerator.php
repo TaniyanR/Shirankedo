@@ -7,19 +7,21 @@
  * 3. 記事本文末尾は自然な文章で「〜しらんけど。」で締める
  * 4. 出典・参考リンクを構造化して提供
  */
+require_once __DIR__ . '/SettingsManager.php';
+
 class AiArticleGenerator {
     /**
      * 記事コンテンツを生成
      */
     public static function generate(int $siteId, array $trendData, array $verifiedSources, ?string $youtubeInfo = null): array {
-        $provider = SiteManager::getSiteSetting($siteId, 'ai_provider', 'gemini');
-        $apiKey = SiteManager::getSiteSetting($siteId, 'ai_api_key', getenv('GEMINI_API_KEY') ?: '');
-        $model = SiteManager::getSiteSetting($siteId, 'ai_model', 'gemini-3.8-flash');
+        // SettingsManager または環境変数から設定を取得
+        $apiKey = SettingsManager::get('gemini_api_key') ?: getenv('GEMINI_API_KEY') ?: '';
+        $model = SettingsManager::get('gemini_model') ?: 'gemini-1.5-flash';
 
-        $keyword = $trendData['display_keyword'] ?? '';
+        $keyword = $trendData['display_keyword'] ?? ($trendData['keyword'] ?? '');
         $sourcesText = '';
         foreach ($verifiedSources as $idx => $s) {
-            $sourcesText .= sprintf("[%d] %s (%s): %s\n", $idx + 1, $s['title'], $s['publisher'], $s['url']);
+            $sourcesText .= sprintf("[%d] %s (%s): %s\n", $idx + 1, $s['title'] ?? '', $s['publisher'] ?? '', $s['url'] ?? '');
         }
 
         $systemPrompt = <<<EOT
@@ -40,7 +42,7 @@ class AiArticleGenerator {
   "why_trending": "なぜ話題？（100文字以内の簡潔な要約）",
   "body": "記事本文（段落分けされた客観的で読みやすい解説、400〜800文字程度）",
   "conclusion": "締めの文章（最後は必ず「〜しらんけど。」）",
-  "important_keywords": ["千鳥", "大悟", "お笑い"]
+  "important_keywords": ["キーワード1", "キーワード2"]
 }
 EOT;
 
@@ -50,8 +52,8 @@ EOT;
             $userPrompt .= "【関連YouTube情報】:\n{$youtubeInfo}\n";
         }
 
-        // Gemini API呼び出し (またはフォールバック)
-        if ($provider === 'gemini' && !empty($apiKey)) {
+        // Gemini API呼び出し
+        if (!empty($apiKey)) {
             $url = "https://generativelanguage.googleapis.com/v1beta/models/{$model}:generateContent?key={$apiKey}";
             $payload = [
                 'contents' => [
@@ -61,7 +63,7 @@ EOT;
                     'parts' => [['text' => $systemPrompt]]
                 ],
                 'generationConfig' => [
-                    'temperature' => 0.4,
+                    'temperature' => 0.3,
                     'responseMimeType' => 'application/json'
                 ]
             ];
@@ -71,7 +73,7 @@ EOT;
             curl_setopt($ch, CURLOPT_POST, true);
             curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
             curl_setopt($ch, CURLOPT_HTTPHEADER, ['Content-Type: application/json']);
-            curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 35);
             $response = curl_exec($ch);
             $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
             curl_close($ch);
@@ -88,6 +90,21 @@ EOT;
 
         // 外部API未設定またはエラー時の安全なローカル構築フォールバック
         return self::fallbackGenerate($keyword, $verifiedSources);
+    }
+
+    /**
+     * 単体プロンプトまたは特定キーワードから記事を即時テスト生成するメソッド
+     */
+    public static function generateFromKeyword(string $keyword, string $categoryName = 'エンタメ'): array {
+        $fakeSource = [
+            [
+                'title' => "{$keyword}に関する最新公式アナウンス",
+                'publisher' => '主要公式メディア',
+                'url' => 'https://news.google.com/'
+            ]
+        ];
+        $result = self::generate(1, ['display_keyword' => $keyword], $fakeSource);
+        return $result;
     }
 
     private static function fallbackGenerate(string $keyword, array $sources): array {

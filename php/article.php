@@ -7,6 +7,7 @@ ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
+require_once __DIR__ . '/classes/AnalyticsTracker.php';
 
 // 流入アクセスの自動トラッキング (INカウント加算)
 TradeEngine::trackIncomingReferrer();
@@ -129,14 +130,21 @@ if ($dbConnected) {
     } catch (Throwable $e) {}
 }
 
+// 閲覧トラッキング
+AnalyticsTracker::track('article', (int)($article['id'] ?? null));
+
+// 表示切り替えフラグ
+$showAds = SettingsManager::get('show_ads', '1') === '1';
+$showRss = SettingsManager::get('show_rss', '1') === '1';
+
 // 本文下 相互RSS（画像+テキスト）
-$bodyBelowRss = TradeEngine::getDisplayFeedItems(false, 6);
+$bodyBelowRss = $showRss ? TradeEngine::getDisplayFeedItems(false, 6) : [];
 
 // PCサイドバー 相互RSS（画像付き）
-$sideRss = TradeEngine::getDisplayFeedItems(true, 5);
+$sideRss = $showRss ? TradeEngine::getDisplayFeedItems(true, 5) : [];
 
 // 相互リンク一覧
-$approvedLinks = TradeEngine::getApprovedLinks();
+$approvedLinks = $showRss ? TradeEngine::getApprovedLinks() : [];
 
 // 広告タグ
 $adPcHeader = SettingsManager::get('ad_pc_header');
@@ -208,9 +216,11 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
             </a>
 
             <!-- PCヘッダー広告枠 (468x60) -->
-            <div class="hidden lg:block overflow-hidden max-h-[60px]">
-                <?= $adPcHeader ?>
-            </div>
+            <?php if ($showAds && !empty($adPcHeader)): ?>
+                <div class="hidden lg:block overflow-hidden max-h-[60px]">
+                    <?= $adPcHeader ?>
+                </div>
+            <?php endif; ?>
 
             <div class="flex items-center gap-2 sm:gap-3 text-xs">
                 <a href="index.php" class="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold transition-all">
@@ -221,9 +231,11 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     </header>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-        <?= $adSpHeaderTop ?>
-    </div>
+    <?php if ($showAds && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
+    <?php endif; ?>
 
     <!-- メインコンテンツレイアウト (記事エリア + PCサイドバー) -->
     <div class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-8">
@@ -366,36 +378,40 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
             </article>
 
             <!-- 📡 本文下: 相互RSS (画像＋テキスト) -->
-            <section class="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-sm space-y-4">
-                <div class="flex items-center justify-between border-b border-stone-100 pb-3">
-                    <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
-                        <span class="text-amber-500">📡</span> 提携サイトの最新トピックス (相互RSS)
-                    </h3>
-                    <a href="page.php?slug=trade" class="text-[11px] text-stone-400 hover:text-stone-900 font-bold">相互RSS募集 ↗</a>
-                </div>
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                    <?php foreach ($bodyBelowRss as $rss): ?>
-                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$rss['trade_site_id'], $rss['url'])) ?>" target="_blank" rel="noopener" class="flex gap-3 p-2.5 rounded-2xl hover:bg-amber-50/50 border border-stone-100 hover:border-amber-200 transition-all group">
-                            <?php if (!empty($rss['has_image']) && !empty($rss['image_url'])): ?>
-                                <img src="<?= htmlspecialchars($rss['image_url']) ?>" alt="" class="w-16 h-16 rounded-xl object-cover flex-shrink-0 bg-stone-100">
-                            <?php endif; ?>
-                            <div class="flex-1 min-w-0 space-y-1">
-                                <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded truncate inline-block">
-                                    <?= htmlspecialchars($rss['site_name']) ?>
-                                </span>
-                                <h4 class="text-xs font-bold text-stone-900 group-hover:text-amber-900 leading-snug line-clamp-2">
-                                    <?= htmlspecialchars($rss['title']) ?>
-                                </h4>
-                            </div>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </section>
+            <?php if ($showRss && !empty($bodyBelowRss)): ?>
+                <section class="bg-white rounded-3xl border border-stone-200/80 p-6 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-stone-100 pb-3">
+                        <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
+                            <span class="text-amber-500">📡</span> 提携サイトの最新トピックス (相互RSS)
+                        </h3>
+                        <a href="page.php?slug=trade" class="text-[11px] text-stone-400 hover:text-stone-900 font-bold">相互RSS募集 ↗</a>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                        <?php foreach ($bodyBelowRss as $rss): ?>
+                            <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$rss['trade_site_id'], $rss['url'])) ?>" target="_blank" rel="noopener" class="flex gap-3 p-2.5 rounded-2xl hover:bg-amber-50/50 border border-stone-100 hover:border-amber-200 transition-all group">
+                                <?php if (!empty($rss['has_image']) && !empty($rss['image_url'])): ?>
+                                    <img src="<?= htmlspecialchars($rss['image_url']) ?>" alt="" class="w-16 h-16 rounded-xl object-cover flex-shrink-0 bg-stone-100">
+                                <?php endif; ?>
+                                <div class="flex-1 min-w-0 space-y-1">
+                                    <span class="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded truncate inline-block">
+                                        <?= htmlspecialchars($rss['site_name']) ?>
+                                    </span>
+                                    <h4 class="text-xs font-bold text-stone-900 group-hover:text-amber-900 leading-snug line-clamp-2">
+                                        <?= htmlspecialchars($rss['title']) ?>
+                                    </h4>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
+                </section>
+            <?php endif; ?>
 
             <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-            <div class="lg:hidden flex justify-center py-4 bg-stone-50 rounded-2xl border border-stone-200">
-                <?= $adSpHeaderBottom ?>
-            </div>
+            <?php if ($showAds && !empty($adSpHeaderBottom)): ?>
+                <div class="lg:hidden flex justify-center py-4 bg-stone-50 rounded-2xl border border-stone-200">
+                    <?= $adSpHeaderBottom ?>
+                </div>
+            <?php endif; ?>
 
             <!-- 他のトレンド話題 -->
             <?php if (!empty($recentArticles)): ?>
@@ -427,46 +443,48 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
         <aside class="w-full lg:w-80 flex-shrink-0 space-y-6">
             
             <!-- PCサイドバー上 広告枠 (300x250) -->
-            <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
-                <?= $adPcSidebarTop ?>
-            </div>
+            <?php if ($showAds && !empty($adPcSidebarTop)): ?>
+                <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
+                    <?= $adPcSidebarTop ?>
+                </div>
+            <?php endif; ?>
 
             <!-- PC専用 相互RSS (画像) -->
-            <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-4">
-                <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-                    <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
-                        <span>📡</span> 提携アンテナ更新
-                    </h3>
-                    <span class="text-[10px] text-stone-400 font-bold">画像RSS</span>
+            <?php if ($showRss && !empty($sideRss)): ?>
+                <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-4">
+                    <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
+                        <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
+                            <span>📡</span> 提携アンテナ更新
+                        </h3>
+                        <span class="text-[10px] text-stone-400 font-bold">画像RSS</span>
+                    </div>
+                    <div class="space-y-3">
+                        <?php foreach ($sideRss as $sr): ?>
+                            <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sr['trade_site_id'], $sr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center group">
+                                <?php if (!empty($sr['image_url'])): ?>
+                                    <img src="<?= htmlspecialchars($sr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover bg-stone-100 flex-shrink-0">
+                                <?php endif; ?>
+                                <div class="flex-1 min-w-0">
+                                    <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-600 line-clamp-2 leading-snug">
+                                        <?= htmlspecialchars($sr['title']) ?>
+                                    </h4>
+                                    <span class="text-[10px] text-stone-400"><?= htmlspecialchars($sr['site_name']) ?></span>
+                                </div>
+                            </a>
+                        <?php endforeach; ?>
+                    </div>
                 </div>
-                <div class="space-y-3">
-                    <?php foreach ($sideRss as $sr): ?>
-                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$sr['trade_site_id'], $sr['url'])) ?>" target="_blank" rel="noopener" class="flex gap-2.5 items-center group">
-                            <?php if (!empty($sr['image_url'])): ?>
-                                <img src="<?= htmlspecialchars($sr['image_url']) ?>" alt="" class="w-12 h-12 rounded-xl object-cover bg-stone-100 flex-shrink-0">
-                            <?php endif; ?>
-                            <div class="flex-1 min-w-0">
-                                <h4 class="text-xs font-bold text-stone-800 group-hover:text-amber-600 line-clamp-2 leading-snug">
-                                    <?= htmlspecialchars($sr['title']) ?>
-                                </h4>
-                                <span class="text-[10px] text-stone-400"><?= htmlspecialchars($sr['site_name']) ?></span>
-                            </div>
-                        </a>
-                    <?php endforeach; ?>
-                </div>
-            </div>
+            <?php endif; ?>
 
             <!-- PC専用 相互リンク集 (テキストリンク一覧) -->
-            <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-3">
-                <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
-                    <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
-                        <span>🤝</span> 相互リンク集
-                    </h3>
-                    <a href="page.php?slug=trade" class="text-[10px] text-amber-600 font-bold hover:underline">依頼はこちら</a>
-                </div>
-                <?php if (empty($approvedLinks)): ?>
-                    <p class="text-[11px] text-stone-400 py-2">現在相互リンクを募集中です。</p>
-                <?php else: ?>
+            <?php if ($showRss && !empty($approvedLinks)): ?>
+                <div class="bg-white rounded-3xl border border-stone-200 p-5 shadow-sm space-y-3">
+                    <div class="flex items-center justify-between border-b border-stone-100 pb-2.5">
+                        <h3 class="text-xs font-black text-stone-900 flex items-center gap-1.5">
+                            <span>🤝</span> 相互リンク集
+                        </h3>
+                        <a href="page.php?slug=trade" class="text-[10px] text-amber-600 font-bold hover:underline">依頼はこちら</a>
+                    </div>
                     <ul class="space-y-2 text-xs">
                         <?php foreach ($approvedLinks as $al): ?>
                             <li>
@@ -477,13 +495,15 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                             </li>
                         <?php endforeach; ?>
                     </ul>
-                <?php endif; ?>
-            </div>
+                </div>
+            <?php endif; ?>
 
             <!-- PCサイドバー下 広告枠 (300x250) -->
-            <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
-                <?= $adPcSidebarBottom ?>
-            </div>
+            <?php if ($showAds && !empty($adPcSidebarBottom)): ?>
+                <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
+                    <?= $adPcSidebarBottom ?>
+                </div>
+            <?php endif; ?>
 
         </aside>
 
