@@ -3,13 +3,17 @@
  * 「しらんけど」トレンドサイトシステム 設定ファイル
  */
 
-// DB接続設定
-define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
-define('DB_PORT', getenv('DB_PORT') ?: '3306');
-define('DB_NAME', getenv('DB_NAME') ?: 'shirankedo_db');
-define('DB_USER', getenv('DB_USER') ?: 'root');
-define('DB_PASS', getenv('DB_PASS') ?: '');
-define('DB_CHARSET', 'utf8mb4');
+// DB接続設定 (db_config.php が存在すれば最優先でロード)
+if (file_exists(__DIR__ . '/db_config.php')) {
+    require_once __DIR__ . '/db_config.php';
+}
+
+if (!defined('DB_HOST')) define('DB_HOST', getenv('DB_HOST') ?: 'localhost');
+if (!defined('DB_PORT')) define('DB_PORT', getenv('DB_PORT') ?: '3306');
+if (!defined('DB_NAME')) define('DB_NAME', getenv('DB_NAME') ?: 'shirankedo_db');
+if (!defined('DB_USER')) define('DB_USER', getenv('DB_USER') ?: 'root');
+if (!defined('DB_PASS')) define('DB_PASS', getenv('DB_PASS') ?: '');
+if (!defined('DB_CHARSET')) define('DB_CHARSET', 'utf8mb4');
 
 // ルートURL・ワイルドカードドメイン設定
 define('MAIN_DOMAIN', getenv('MAIN_DOMAIN') ?: ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz'));

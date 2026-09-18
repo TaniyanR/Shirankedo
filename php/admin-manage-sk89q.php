@@ -17,13 +17,20 @@ session_start();
 ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
+require_once __DIR__ . '/classes/Installer.php';
+
+// DB初期設定の自動検出 (未インストールまたはDB未接続時はインストーラーを起動)
+if (isset($_GET['setup']) || !Installer::isInstalled()) {
+    Installer::handleInstallationRequest();
+    Installer::renderWizard();
+}
 
 // 初期セットアップテーブルの存在保証
 try {
     MigrationAddFeatures::run();
 } catch (Throwable $e) {}
 
-// 管理者認証設定（初期値: ID「admin」, パスワード「password」, 登録メールアドレス）
+// 管理者認証設定（登録メールアドレス）
 $adminId = SettingsManager::get('admin_id', 'admin');
 $adminPass = SettingsManager::get('admin_password', 'password');
 $adminEmail = SettingsManager::get('admin_email', 'sogomultilink@gmail.com');
@@ -37,7 +44,7 @@ $baseUrl = "{$protocol}://{$host}";
 
 // 認証・再設定メッセージ
 $loginError = '';
-$loginSuccessMsg = '';
+$loginSuccessMsg = isset($_GET['installed']) ? 'データベース初期セットアップが完了しました！管理者アカウントでログインしてください。' : '';
 $forgotError = '';
 $forgotSuccessMsg = '';
 $previewResetUrl = '';
@@ -130,7 +137,7 @@ if (isset($_POST['action']) && $_POST['action'] === 'login') {
         header("Location: {$thisFileUrl}");
         exit;
     } else {
-        $loginError = 'IDまたはパスワードが正しくありません。（初期値: admin / password）';
+        $loginError = 'IDまたはパスワードが正しくありません。';
     }
 }
 
@@ -490,6 +497,32 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "管理者アカウント（ID・パスワード・メールアドレス）およびセキュリティ設定を更新しました。現在の管理画面URLは 「/{$thisFileUrl}」 です。";
         }
 
+        // 7-2. データベース接続構成（db_config.php）の更新
+        if ($op === 'save_db_config') {
+            $dbHost = trim($_POST['db_host'] ?? 'localhost');
+            $dbPort = trim($_POST['db_port'] ?? '3306');
+            $dbName = trim($_POST['db_name'] ?? '');
+            $dbUser = trim($_POST['db_user'] ?? '');
+            $dbPass = $_POST['db_pass'] ?? '';
+
+            if (empty($dbName) || empty($dbUser)) {
+                throw new Exception('データベース名とユーザー名は必須です。');
+            }
+
+            $testErr = null;
+            $testPdo = Database::testConnection($testErr, $dbHost, $dbPort, $dbName, $dbUser, $dbPass);
+            if (!$testPdo) {
+                throw new Exception("データベース接続テストに失敗しました: " . $testErr);
+            }
+
+            if (!Installer::saveDbConfig($dbHost, $dbPort, $dbName, $dbUser, $dbPass)) {
+                throw new Exception("php/db_config.php への書き込みに失敗しました。パーミッションをご確認ください。");
+            }
+
+            Database::resetConnection();
+            $flashMessage = 'データベース接続構成（php/db_config.php）を正常に更新・保存しました。';
+        }
+
         // 8. トレンド自動収集ワーカー実行
         if ($op === 'run_worker') {
             if (file_exists(__DIR__ . '/cron/worker.php')) {
@@ -729,7 +762,7 @@ $navTabs = [
 
                         <div class="space-y-1.5">
                             <label class="block text-xs font-bold text-slate-700">管理者ID</label>
-                            <input type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? 'admin') ?>" required autofocus placeholder="管理者IDを入力（初期値: admin）" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                            <input type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? '') ?>" required autofocus placeholder="管理者IDを入力" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
                         </div>
 
                         <div class="space-y-1.5">
@@ -739,12 +772,7 @@ $navTabs = [
                                     パスワードをお忘れですか？
                                 </a>
                             </div>
-                            <input type="password" name="password" required placeholder="管理者パスワード（初期値: password）" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
-                        </div>
-
-                        <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500 space-y-0.5">
-                            <div class="font-bold text-slate-700">💡 初期管理者アカウント</div>
-                            <div>ID: <code class="font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">admin</code> / パスワード: <code class="font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">password</code></div>
+                            <input type="password" name="password" required placeholder="管理者パスワードを入力" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
                         </div>
 
                         <button type="submit" class="w-full py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all">
@@ -2026,6 +2054,65 @@ $navTabs = [
                                 <div class="pt-2 flex justify-end">
                                     <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
                                         アカウント・セキュリティ設定を更新する
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- データベース接続情報 (MySQL) セクション -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <div>
+                                <div class="flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-lg">🗄️</span>
+                                        <h2 class="text-sm font-black text-slate-900">データベース接続設定 (MySQL / MariaDB)</h2>
+                                    </div>
+                                    <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold border border-emerald-200">
+                                        ● 接続正常稼働中
+                                    </span>
+                                </div>
+                                <p class="text-xs text-slate-500 mt-2">
+                                    シン・レンタルサーバー、エックスサーバー等の環境に合わせてデータベース接続先を変更・保存できます（保存先: <code>php/db_config.php</code>）。
+                                </p>
+                            </div>
+
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="save_db_config">
+
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="sm:col-span-2 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">ホスト名 (Host) <span class="text-rose-600">*</span></label>
+                                        <input type="text" name="db_host" value="<?= htmlspecialchars(DB_HOST) ?>" required class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                        <p class="text-[11px] text-slate-400">※ 例: <code>localhost</code> または <code>mysql****.xserver.jp</code></p>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">ポート番号</label>
+                                        <input type="number" name="db_port" value="<?= htmlspecialchars(DB_PORT) ?>" required class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">データベース名 (Database) <span class="text-rose-600">*</span></label>
+                                    <input type="text" name="db_name" value="<?= htmlspecialchars(DB_NAME) ?>" required class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">ユーザー名 (User) <span class="text-rose-600">*</span></label>
+                                        <input type="text" name="db_user" value="<?= htmlspecialchars(DB_USER) ?>" required class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">パスワード (Password)</label>
+                                        <input type="password" name="db_pass" value="<?= htmlspecialchars(DB_PASS) ?>" placeholder="パスワード" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                    </div>
+                                </div>
+
+                                <div class="pt-2 flex items-center justify-between">
+                                    <a href="?setup=1" class="text-xs font-bold text-amber-700 hover:underline">
+                                        ⚙️ 初期セットアップウィザードを再表示する
+                                    </a>
+                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all">
+                                        接続テスト & データベース設定を保存する
                                     </button>
                                 </div>
                             </form>

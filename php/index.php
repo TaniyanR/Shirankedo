@@ -8,6 +8,13 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
+require_once __DIR__ . '/classes/Installer.php';
+
+// 初回サーバー設置時・DB未接続時の初期セットアップウィザード
+if (!Installer::isInstalled()) {
+    Installer::handleInstallationRequest();
+    Installer::renderWizard();
+}
 
 // アクセス解析トラッキング & 相互リンク逆アクセスの自動記録
 TradeEngine::trackIncomingReferrer();

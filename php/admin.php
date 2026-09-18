@@ -149,7 +149,7 @@ if ($db) {
                         🔒
                     </div>
                     <h1 class="text-xl font-black text-white">管理者ログイン</h1>
-                    <p class="text-xs text-stone-400">初期パスワードは <code class="bg-stone-800 px-1.5 py-0.5 rounded text-amber-400">admin1234</code> です。</p>
+                    <p class="text-xs text-stone-400">管理者パスワードを入力してログインしてください。</p>
                 </div>
 
                 <?php if ($loginError): ?>
@@ -162,7 +162,7 @@ if ($db) {
                     <input type="hidden" name="action" value="login">
                     <div>
                         <label class="block text-xs font-bold text-stone-400 mb-1.5">管理者パスワード</label>
-                        <input type="password" name="password" required placeholder="admin1234" class="w-full bg-stone-900 border border-stone-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-amber-500">
+                        <input type="password" name="password" required placeholder="管理者パスワードを入力" class="w-full bg-stone-900 border border-stone-800 text-white rounded-xl p-3 text-sm focus:outline-none focus:border-amber-500">
                     </div>
                     <button type="submit" class="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-sm shadow transition active:scale-98">
                         ログインしてコンソールを開く
