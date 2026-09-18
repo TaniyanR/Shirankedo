@@ -55,15 +55,19 @@ $tradeError = '';
 if ($slug === 'trade' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $siteTitle = trim($_POST['site_name'] ?? '');
     $siteUrl = trim($_POST['url'] ?? '');
-    $rssUrl = trim($_POST['rss_url'] ?? '');
+    $rawRss = trim($_POST['rss_url'] ?? '');
     $honeyTrap = trim($_POST['trap_field'] ?? '');
+
+    $validRssUrls = TradeEngine::extractRssUrls($rawRss);
 
     if (!empty($honeyTrap)) {
         $tradeSuccess = true;
-    } elseif (empty($siteTitle) || empty($siteUrl) || empty($rssUrl)) {
+    } elseif (empty($siteTitle) || empty($siteUrl) || empty($rawRss)) {
         $tradeError = 'サイト名、URL、RSSのURLはすべて必須項目です。';
-    } elseif (!filter_var($siteUrl, FILTER_VALIDATE_URL) || !filter_var($rssUrl, FILTER_VALIDATE_URL)) {
-        $tradeError = 'URLおよびRSSのURLは「https://〜」の正しい形式でご入力ください。';
+    } elseif (!filter_var($siteUrl, FILTER_VALIDATE_URL)) {
+        $tradeError = 'サイトURLは「https://〜」の正しい形式でご入力ください。';
+    } elseif (empty($validRssUrls)) {
+        $tradeError = 'RSSのURLは「https://〜」の正しい形式で1つ以上ご入力ください（複数ある場合は改行してください）。';
     } else {
         if ($db) {
             try {
@@ -73,8 +77,9 @@ if ($slug === 'trade' && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 if ($check->fetch()) {
                     $tradeError = 'このサイトURLは既に登録申請済みです。管理者の承認をお待ちください。';
                 } else {
+                    $savedRss = implode("\n", $validRssUrls);
                     $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, created_at) VALUES (?, ?, ?, 'pending', 100, NOW())");
-                    $stmt->execute([$siteTitle, $siteUrl, $rssUrl]);
+                    $stmt->execute([$siteTitle, $siteUrl, $savedRss]);
                     $tradeSuccess = true;
                 }
             } catch (Throwable $e) {
@@ -260,9 +265,10 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
 
                             <div class="space-y-1.5">
                                 <label class="block text-xs font-bold text-stone-800">
-                                    貴サイトRSSフィードURL <span class="text-rose-600">*</span>
+                                    貴サイトRSSフィードURL（複数登録可能） <span class="text-rose-600">*</span>
                                 </label>
-                                <input type="url" name="rss_url" required placeholder="https://example.com/rss.xml または /feed" value="<?= htmlspecialchars($_POST['rss_url'] ?? '') ?>" class="w-full text-xs sm:text-sm p-3.5 rounded-2xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900 transition-colors">
+                                <textarea name="rss_url" required rows="3" placeholder="https://example.com/rss.xml&#10;https://example.com/feed/&#10;（複数ある場合は改行して入力）" class="w-full text-xs sm:text-sm p-3.5 rounded-2xl border border-stone-200 bg-stone-50/50 focus:bg-white focus:outline-none focus:border-stone-900 transition-colors font-mono"><?= htmlspecialchars($_POST['rss_url'] ?? '') ?></textarea>
+                                <p class="text-[11px] text-stone-500">※ カテゴリ別RSSなど複数のフィードをお持ちの場合は、改行して複数入力いただけます。</p>
                             </div>
 
                             <div class="pt-3">

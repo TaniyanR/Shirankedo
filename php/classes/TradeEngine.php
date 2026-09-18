@@ -125,6 +125,263 @@ class TradeEngine {
     }
 
     /**
+     * 文字列から複数RSSフィードのURL配列を抽出（改行・カンマ区切り対応）
+     */
+    public static function extractRssUrls(string $rawRss): array {
+        $lines = preg_split('/[\r\n,]+/', $rawRss);
+        $urls = [];
+        foreach ($lines as $line) {
+            $u = trim($line);
+            if (!empty($u) && filter_var($u, FILTER_VALIDATE_URL)) {
+                $urls[] = $u;
+            }
+        }
+        return array_values(array_unique($urls));
+    }
+
+    /**
+     * 登録された提携サイト（または指定サイト）の全RSSフィードを巡回して記事キャッシュを更新
+     * 1サイトに複数登録されたRSSフィードもすべて巡回します。
+     *
+     * @param int|null $tradeSiteId
+     * @return array
+     */
+    public static function fetchRssFeeds(?int $tradeSiteId = null): array {
+        $stats = [
+            'sites_checked' => 0,
+            'feeds_checked' => 0,
+            'items_saved' => 0,
+            'errors' => []
+        ];
+
+        try {
+            $db = Database::getConnection();
+            if ($tradeSiteId !== null) {
+                $stmt = $db->prepare("SELECT id, site_name, url, rss_url FROM trade_sites WHERE id = ?");
+                $stmt->execute([$tradeSiteId]);
+                $sites = $stmt->fetchAll();
+            } else {
+                $sites = $db->query("SELECT id, site_name, url, rss_url FROM trade_sites WHERE status = 'approved'")->fetchAll();
+            }
+
+            if (empty($sites)) {
+                return $stats;
+            }
+
+            $stats['sites_checked'] = count($sites);
+
+            $insertStmt = $db->prepare("INSERT INTO trade_feed_items 
+                (trade_site_id, title, url, image_url, has_image, published_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE 
+                    title = VALUES(title), 
+                    image_url = VALUES(image_url), 
+                    has_image = VALUES(has_image), 
+                    published_at = VALUES(published_at)");
+
+            $updateSiteStmt = $db->prepare("UPDATE trade_sites SET last_rss_fetched_at = NOW() WHERE id = ?");
+
+            foreach ($sites as $site) {
+                $siteId = (int)$site['id'];
+                $feedUrls = self::extractRssUrls($site['rss_url'] ?? '');
+                if (empty($feedUrls)) {
+                    continue;
+                }
+
+                $siteHadSuccess = false;
+                foreach ($feedUrls as $feedUrl) {
+                    $stats['feeds_checked']++;
+                    try {
+                        $items = self::parseSingleRssFeed($feedUrl);
+                        foreach ($items as $item) {
+                            $insertStmt->execute([
+                                $siteId,
+                                mb_substr($item['title'], 0, 255),
+                                mb_substr($item['url'], 0, 500),
+                                !empty($item['image_url']) ? mb_substr($item['image_url'], 0, 500) : null,
+                                $item['has_image'] ? 1 : 0,
+                                $item['published_at']
+                            ]);
+                            $stats['items_saved']++;
+                        }
+                        $siteHadSuccess = true;
+                    } catch (Throwable $feedErr) {
+                        $stats['errors'][] = "「{$site['site_name']}」({$feedUrl}): " . $feedErr->getMessage();
+                    }
+                }
+
+                if ($siteHadSuccess) {
+                    $updateSiteStmt->execute([$siteId]);
+                }
+            }
+        } catch (Throwable $e) {
+            $stats['errors'][] = "DB接続エラー: " . $e->getMessage();
+        }
+
+        return $stats;
+    }
+
+    /**
+     * 単一のRSS / AtomフィードURLを取得＆パース
+     */
+    private static function parseSingleRssFeed(string $url): array {
+        $xmlString = '';
+        if (function_exists('curl_init')) {
+            $ch = curl_init($url);
+            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+            curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($ch, CURLOPT_TIMEOUT, 6);
+            curl_setopt($ch, CURLOPT_USERAGENT, 'Mozilla/5.0 (compatible; Shirankedo-TradeRSS/1.0; +https://shirankedo.bichi.xyz/)');
+            curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+            $xmlString = curl_exec($ch);
+            curl_close($ch);
+        } else {
+            $ctx = stream_context_create([
+                'http' => [
+                    'timeout' => 6,
+                    'user_agent' => 'Shirankedo-TradeRSS/1.0'
+                ]
+            ]);
+            $xmlString = @file_get_contents($url, false, $ctx);
+        }
+
+        if (empty($xmlString)) {
+            throw new Exception("フィードの取得に失敗しました (空のレスポンス)");
+        }
+
+        libxml_use_internal_errors(true);
+        $xml = simplexml_load_string($xmlString, 'SimpleXMLElement', LIBXML_NOCDATA);
+        if (!$xml) {
+            throw new Exception("XMLパースエラー");
+        }
+
+        $items = [];
+        $namespaces = $xml->getNamespaces(true);
+
+        // 1. RSS 2.0 (<channel><item>)
+        if (isset($xml->channel->item)) {
+            foreach ($xml->channel->item as $it) {
+                $title = trim((string)$it->title);
+                $link = trim((string)$it->link);
+                if (empty($title) || empty($link)) continue;
+
+                $pubDate = !empty($it->pubDate) ? date('Y-m-d H:i:s', strtotime((string)$it->pubDate)) : date('Y-m-d H:i:s');
+                $imageUrl = self::extractImageFromXmlItem($it, $namespaces);
+
+                $items[] = [
+                    'title' => $title,
+                    'url' => $link,
+                    'image_url' => $imageUrl,
+                    'has_image' => !empty($imageUrl),
+                    'published_at' => $pubDate
+                ];
+                if (count($items) >= 20) break;
+            }
+        }
+        // 2. Atom (<entry>)
+        elseif (isset($xml->entry)) {
+            foreach ($xml->entry as $entry) {
+                $title = trim((string)$entry->title);
+                $link = '';
+                if (isset($entry->link)) {
+                    foreach ($entry->link as $l) {
+                        $rel = (string)($l['rel'] ?? 'alternate');
+                        if ($rel === 'alternate' || empty($link)) {
+                            $link = (string)$l['href'];
+                        }
+                    }
+                }
+                if (empty($title) || empty($link)) continue;
+
+                $published = (string)($entry->published ?? $entry->updated ?? '');
+                $pubDate = !empty($published) ? date('Y-m-d H:i:s', strtotime($published)) : date('Y-m-d H:i:s');
+                $imageUrl = self::extractImageFromXmlItem($entry, $namespaces);
+
+                $items[] = [
+                    'title' => $title,
+                    'url' => $link,
+                    'image_url' => $imageUrl,
+                    'has_image' => !empty($imageUrl),
+                    'published_at' => $pubDate
+                ];
+                if (count($items) >= 20) break;
+            }
+        }
+        // 3. RDF / RSS 1.0 (<item>)
+        elseif (isset($xml->item)) {
+            foreach ($xml->item as $it) {
+                $title = trim((string)$it->title);
+                $link = trim((string)$it->link);
+                if (empty($title) || empty($link)) continue;
+
+                $dc = $it->children($namespaces['dc'] ?? '');
+                $dcDate = (string)($dc->date ?? '');
+                $pubDate = !empty($dcDate) ? date('Y-m-d H:i:s', strtotime($dcDate)) : date('Y-m-d H:i:s');
+                $imageUrl = self::extractImageFromXmlItem($it, $namespaces);
+
+                $items[] = [
+                    'title' => $title,
+                    'url' => $link,
+                    'image_url' => $imageUrl,
+                    'has_image' => !empty($imageUrl),
+                    'published_at' => $pubDate
+                ];
+                if (count($items) >= 20) break;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * XMLアイテムノードからアイキャッチ画像URLを抽出
+     */
+    private static function extractImageFromXmlItem(SimpleXMLElement $node, array $namespaces): ?string {
+        // A. <enclosure type="image/..." url="...">
+        if (isset($node->enclosure)) {
+            foreach ($node->enclosure as $enc) {
+                $type = (string)($enc['type'] ?? '');
+                $url = (string)($enc['url'] ?? '');
+                if (str_starts_with($type, 'image/') || preg_match('/\.(jpg|jpeg|png|webp|gif)/i', $url)) {
+                    return $url;
+                }
+            }
+        }
+
+        // B. media:content / media:thumbnail
+        if (isset($namespaces['media'])) {
+            $media = $node->children($namespaces['media']);
+            if (isset($media->content)) {
+                foreach ($media->content as $mc) {
+                    $url = (string)($mc['url'] ?? '');
+                    if (!empty($url)) return $url;
+                }
+            }
+            if (isset($media->thumbnail)) {
+                $thumbUrl = (string)($media->thumbnail['url'] ?? '');
+                if (!empty($thumbUrl)) return $thumbUrl;
+            }
+        }
+
+        // C. description または content:encoded 内の <img> タグ
+        $htmlText = (string)$node->description;
+        if (isset($namespaces['content'])) {
+            $content = $node->children($namespaces['content']);
+            if (isset($content->encoded)) {
+                $htmlText .= ' ' . (string)$content->encoded;
+            }
+        }
+        if (!empty($htmlText) && preg_match('/<img[^>]+src=["\']([^"\']+)["\']/i', $htmlText, $m)) {
+            $imgCandidate = $m[1];
+            if (filter_var($imgCandidate, FILTER_VALIDATE_URL)) {
+                return $imgCandidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
      * 初期デモ用フィードアイテム（相互RSS未登録時）
      */
     private static function getFallbackFeedItems(bool $requireImage, int $limit): array {

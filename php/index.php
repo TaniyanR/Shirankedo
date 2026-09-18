@@ -173,7 +173,13 @@ if ($dbConnected) {
 $showAds = SettingsManager::get('show_ads', '1') === '1';
 $showRss = SettingsManager::get('show_rss', '1') === '1';
 
-// 広告スロット設定の取得
+// 広告スロット設定と個別枠ごとの表示/非表示フラグ
+$adPcHeaderEnabled = $showAds && SettingsManager::get('ad_pc_header_enabled', '1') === '1';
+$adPcSidebarTopEnabled = $showAds && SettingsManager::get('ad_pc_sidebar_top_enabled', '1') === '1';
+$adPcSidebarBottomEnabled = $showAds && SettingsManager::get('ad_pc_sidebar_bottom_enabled', '1') === '1';
+$adSpHeaderTopEnabled = $showAds && SettingsManager::get('ad_sp_header_top_enabled', '1') === '1';
+$adSpHeaderBottomEnabled = $showAds && SettingsManager::get('ad_sp_header_bottom_enabled', '1') === '1';
+
 $adPcHeader = SettingsManager::get('ad_pc_header');
 $adPcSidebarTop = SettingsManager::get('ad_pc_sidebar_top');
 $adPcSidebarBottom = SettingsManager::get('ad_pc_sidebar_bottom');
@@ -236,8 +242,8 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 </div>
             </a>
 
-            <!-- PCヘッダー広告枠 (468x60) -->
-            <?php if ($showAds && !empty($adPcHeader)): ?>
+            <!-- PCヘッダー広告枠 (468x60 / 728x90) -->
+            <?php if ($adPcHeaderEnabled && !empty($adPcHeader)): ?>
                 <div class="hidden lg:block overflow-hidden max-h-[60px]">
                     <?= $adPcHeader ?>
                 </div>
@@ -258,7 +264,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     </header>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($showAds && !empty($adSpHeaderTop)): ?>
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
         <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
             <?= $adSpHeaderTop ?>
         </div>
@@ -410,7 +416,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         <aside class="w-full lg:w-80 flex-shrink-0 space-y-6">
             
             <!-- PCサイドバー上 広告枠 (300x250) -->
-            <?php if ($showAds && !empty($adPcSidebarTop)): ?>
+            <?php if ($adPcSidebarTopEnabled && !empty($adPcSidebarTop)): ?>
                 <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
                     <?= $adPcSidebarTop ?>
                 </div>
@@ -466,7 +472,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
             <?php endif; ?>
 
             <!-- PCサイドバー下 広告枠 (300x250) -->
-            <?php if ($showAds && !empty($adPcSidebarBottom)): ?>
+            <?php if ($adPcSidebarBottomEnabled && !empty($adPcSidebarBottom)): ?>
                 <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
                     <?= $adPcSidebarBottom ?>
                 </div>

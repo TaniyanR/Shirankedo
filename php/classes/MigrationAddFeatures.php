@@ -83,26 +83,42 @@ class MigrationAddFeatures {
           KEY `idx_device` (`device_type`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 5. アフィリエイト広告枠・RSS表示切替・Gemini設定の初期化
+        // 5. アフィリエイト広告枠・RSS表示切替・Gemini設定・管理者アカウントの初期化
         $defaultSettings = [
+            'admin_id' => 'admin',
+            'admin_password' => 'password',
+            'admin_email' => 'sogomultilink@gmail.com',
             'admin_secret_path' => 'manage-sk89q',
             'head_custom_tags' => '<meta name="referrer" content="unsafe-url">' . "\n",
             'body_top_tags' => "<!-- Google Tag Manager または body直下タグ -->\n",
-            // 広告表示フラグ (1: 表示, 0: 非表示)
+            // 広告表示フラグ (1: 表示, 0: 非表示) - マスター設定
             'show_ads' => '1',
+            // 各広告枠ごとの個別表示/非表示スイッチ (1: 表示, 0: 非表示)
+            'ad_pc_header_enabled' => '1',
+            'ad_pc_sidebar_top_enabled' => '1',
+            'ad_pc_sidebar_bottom_enabled' => '1',
+            'ad_sp_header_top_enabled' => '1',
+            'ad_sp_header_bottom_enabled' => '1',
+            'ad_article_middle_enabled' => '1',
+            'ad_article_bottom_enabled' => '1',
             // 相互RSS表示フラグ (1: 表示, 0: 非表示)
             'show_rss' => '1',
             // Gemini API関連
             'gemini_api_key' => '',
-            'gemini_model' => 'gemini-1.5-flash',
+            'gemini_model' => 'gemini-2.5-flash',
             'auto_post_enabled' => '1',
             'auto_post_interval_hours' => '3',
+            // ページの生死判定設定
+            'ai_lifecycle_auto_enabled' => '1',
+            'ai_lifecycle_max_days' => '30',
             // 広告コード
             'ad_pc_header' => '<div class="w-[468px] h-[60px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold">広告 (PCヘッダー: 468x60)</div>',
             'ad_pc_sidebar_top' => '<div class="w-[300px] h-[250px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold mx-auto">広告 (PCサイド上: 300x250)</div>',
             'ad_pc_sidebar_bottom' => '<div class="w-[300px] h-[250px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold mx-auto">広告 (PCサイド下: 300x250)</div>',
             'ad_sp_header_top' => '<div class="w-[300px] h-[250px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold mx-auto">広告 (スマホヘッダー上: 300x250)</div>',
             'ad_sp_header_bottom' => '<div class="w-[300px] h-[250px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold mx-auto">広告 (スマホヘッダー下: 300x250)</div>',
+            'ad_article_middle' => '<div class="w-full py-3 bg-stone-50 border border-dashed border-stone-200 text-center text-xs text-stone-400 font-bold my-4">広告 (記事本文中・300x250)</div>',
+            'ad_article_bottom' => '<div class="w-full py-4 bg-stone-50 border border-dashed border-stone-200 text-center text-xs text-stone-400 font-bold my-4">広告 (記事下部・レスポンシブ)</div>',
             'sns_auto_post_x' => '1',
             'sns_auto_post_insta' => '1',
             'sns_auto_post_pinterest' => '1',
@@ -112,5 +128,24 @@ class MigrationAddFeatures {
             $stmt = $db->prepare("INSERT IGNORE INTO site_settings (site_id, setting_key, setting_value) VALUES (1, ?, ?)");
             $stmt->execute([$key, $val]);
         }
+
+        // 6. ページの生死・AI判定用カラムの追加（存在しない場合のみ安全に追加）
+        try {
+            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_status` ENUM('active', 'warning', 'dormant', 'archived') NOT NULL DEFAULT 'active' AFTER `status`");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_reason` VARCHAR(255) NULL AFTER `lifecycle_status`");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_checked_at` DATETIME NULL AFTER `lifecycle_reason`");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE `articles` ADD COLUMN `auto_lifecycle_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `lifecycle_checked_at`");
+        } catch (Throwable $e) {}
+
+        // 7. 相互リンク・相互RSSの複数RSS登録対応 (rss_url を TEXT に拡張)
+        try {
+            $db->exec("ALTER TABLE `trade_sites` MODIFY COLUMN `rss_url` TEXT NOT NULL COMMENT '相手サイトRSS URL (複数登録可: 改行またはカンマ区切り)'");
+        } catch (Throwable $e) {}
     }
 }

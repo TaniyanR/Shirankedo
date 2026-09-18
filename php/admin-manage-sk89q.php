@@ -16,34 +16,128 @@
 session_start();
 ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/classes/TradeEngine.php';
 
 // 初期セットアップテーブルの存在保証
 try {
     MigrationAddFeatures::run();
 } catch (Throwable $e) {}
 
-// 管理者認証設定
-$adminPass = SettingsManager::get('admin_password', getenv('ADMIN_PASSWORD') ?: 'admin1234');
+// 管理者認証設定（初期値: ID「admin」, パスワード「password」, 登録メールアドレス）
+$adminId = SettingsManager::get('admin_id', 'admin');
+$adminPass = SettingsManager::get('admin_password', 'password');
+$adminEmail = SettingsManager::get('admin_email', 'sogomultilink@gmail.com');
 $currentSecretPath = SettingsManager::get('admin_secret_path', 'manage-sk89q');
 $thisFileUrl = 'admin-' . $currentSecretPath . '.php';
 
-// ログイン処理
+// URL・ホスト情報
+$protocol = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$baseUrl = "{$protocol}://{$host}";
+
+// 認証・再設定メッセージ
 $loginError = '';
+$loginSuccessMsg = '';
+$forgotError = '';
+$forgotSuccessMsg = '';
+$previewResetUrl = '';
+$resetFormError = '';
+
+$authMode = $_GET['auth_mode'] ?? 'login'; // 'login' | 'forgot' | 'reset'
+$resetToken = $_GET['token'] ?? $_POST['token'] ?? '';
+
+// 1. パスワード再設定リクエスト処理（登録メールアドレスへURL送信）
+if (isset($_POST['action']) && $_POST['action'] === 'forgot_password') {
+    $authMode = 'forgot';
+    $inputTarget = trim($_POST['reset_target'] ?? '');
+
+    if (!empty($inputTarget) && ($inputTarget === $adminId || strcasecmp($inputTarget, $adminEmail) === 0)) {
+        $token = bin2hex(random_bytes(24));
+        $expiry = time() + 3600; // 1時間有効
+        SettingsManager::set('admin_reset_token', $token);
+        SettingsManager::set('admin_reset_expires', (string)$expiry);
+
+        $resetUrl = "{$baseUrl}/{$thisFileUrl}?auth_mode=reset&token={$token}";
+        $previewResetUrl = $resetUrl;
+
+        // メール送信処理
+        $subject = "【しらんけど】管理者パスワード再設定のご案内";
+        $body = "しらんけど 管理システムです。\n\n"
+              . "管理者アカウントのパスワード再設定リクエストを受け付けました。\n"
+              . "以下のURLにアクセスして、1時間以内に新しいパスワードを設定してください。\n\n"
+              . "▼ パスワード再設定URL:\n"
+              . "{$resetUrl}\n\n"
+              . "※このURLの有効期限は発行から1時間（" . date('Y/m/d H:i', $expiry) . "まで）です。\n"
+              . "※お心当たりがない場合は本メールを破棄してください。パスワードは変更されません。\n";
+
+        $headers = "From: no-reply@" . ($host ?: 'shirankedo.bichi.xyz') . "\r\n"
+                 . "Reply-To: no-reply@" . ($host ?: 'shirankedo.bichi.xyz') . "\r\n"
+                 . "Content-Type: text/plain; charset=UTF-8\r\n"
+                 . "X-Mailer: Shirankedo-Mail/1.0\r\n";
+
+        @mail($adminEmail, $subject, $body, $headers);
+
+        $parts = explode('@', $adminEmail);
+        $maskedEmail = (strlen($parts[0]) > 2)
+            ? substr($parts[0], 0, 2) . str_repeat('*', max(1, strlen($parts[0]) - 2)) . '@' . ($parts[1] ?? '')
+            : $adminEmail;
+
+        $forgotSuccessMsg = "登録メールアドレス（{$maskedEmail}）宛にパスワード再設定用リンクを送信しました。メール内のリンクを開いて新しいパスワードを設定してください。";
+    } else {
+        $forgotError = '指定された管理者IDまたはメールアドレスが見つかりませんでした。';
+    }
+}
+
+// 2. 新しいパスワードの設定処理
+$savedToken = SettingsManager::get('admin_reset_token');
+$savedExpires = (int)SettingsManager::get('admin_reset_expires', '0');
+$isTokenValid = !empty($resetToken) && !empty($savedToken) && hash_equals($savedToken, $resetToken) && (time() <= $savedExpires);
+
+if ($authMode === 'reset' && !$isTokenValid && empty($_POST['action'])) {
+    $resetFormError = 'パスワード再設定リンクの有効期限が切れているか、無効なURLです。お手数ですが再度申請してください。';
+}
+
+if (isset($_POST['action']) && $_POST['action'] === 'do_reset') {
+    $authMode = 'reset';
+    if ($isTokenValid) {
+        $newPass = trim($_POST['new_password'] ?? '');
+        $newPassConfirm = trim($_POST['new_password_confirm'] ?? '');
+        if (strlen($newPass) < 6) {
+            $resetFormError = '新しいパスワードは6文字以上で入力してください。';
+        } elseif ($newPass !== $newPassConfirm) {
+            $resetFormError = 'パスワード（確認用）が一致しません。';
+        } else {
+            SettingsManager::set('admin_password', $newPass);
+            SettingsManager::set('admin_reset_token', '');
+            SettingsManager::set('admin_reset_expires', '0');
+            $adminPass = $newPass;
+            $authMode = 'login';
+            $loginSuccessMsg = 'パスワードを正常に再設定しました！新しいパスワードでログインしてください。';
+        }
+    } else {
+        $resetFormError = '再設定リンクの有効期限が切れています。もう一度再設定を申請してください。';
+    }
+}
+
+// 3. ログイン処理（IDとパスワードの照合）
 if (isset($_POST['action']) && $_POST['action'] === 'login') {
+    $inputUser = trim($_POST['username'] ?? '');
     $inputPass = $_POST['password'] ?? '';
-    if ($inputPass === $adminPass) {
+    if ($inputUser === $adminId && $inputPass === $adminPass) {
         $_SESSION['admin_logged_in'] = true;
+        $_SESSION['admin_username'] = $adminId;
         $_SESSION['admin_login_time'] = time();
         header("Location: {$thisFileUrl}");
         exit;
     } else {
-        $loginError = 'パスワードが正しくありません。';
+        $loginError = 'IDまたはパスワードが正しくありません。（初期値: admin / password）';
     }
 }
 
 // ログアウト処理
 if (isset($_GET['logout'])) {
     unset($_SESSION['admin_logged_in']);
+    unset($_SESSION['admin_username']);
     session_destroy();
     header("Location: {$thisFileUrl}");
     exit;
@@ -84,13 +178,29 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = '新着記事を正常に作成・公開しました！';
         }
 
-        // 2. 記事ステータス変更（非公開）
+        // 2. 記事ステータス変更（非公開・保留・公開）
         if ($op === 'toggle_article_status') {
             $artId = (int)($_POST['article_id'] ?? 0);
             $newStatus = $_POST['new_status'] ?? 'private';
             $stmt = $db->prepare("UPDATE articles SET status = ? WHERE id = ?");
             $stmt->execute([$newStatus, $artId]);
-            $flashMessage = "記事ID #{$artId} のステータスを更新しました。";
+            $flashMessage = "記事ID #{$artId} のステータスを「{$newStatus}」に更新しました。";
+        }
+
+        // 2-2. AIによるページの生死判定の一括実行
+        if ($op === 'evaluate_lifecycle') {
+            require_once __DIR__ . '/classes/AiLifecycleEngine.php';
+            $res = AiLifecycleEngine::evaluateAll();
+            $flashMessage = "⚡ AIによるページの生死判定を実行しました。（全{$res['total']}件中、生存: {$res['active']}件 / 鮮度注意: {$res['warning']}件 / 休眠・非公開: {$res['dormant']}件）";
+        }
+
+        // 2-3. 個別記事のAI自動管理フラグ切替
+        if ($op === 'toggle_auto_lifecycle') {
+            $artId = (int)($_POST['article_id'] ?? 0);
+            $enabled = (int)($_POST['auto_lifecycle_enabled'] ?? 1);
+            $stmt = $db->prepare("UPDATE articles SET auto_lifecycle_enabled = ? WHERE id = ?");
+            $stmt->execute([$enabled, $artId]);
+            $flashMessage = "記事ID #{$artId} のAI自動判定対象を更新しました。";
         }
 
         // 3. アイキャッチ画像プールの追加（URLまたはローカルPCファイルアップロード・800x450px・キーワード3つ）
@@ -139,26 +249,120 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = 'アイキャッチ画像をプールに登録しました！（キーワード3件設定済み）';
         }
 
-        // 4. 相互リンク・相互RSSの承認・返還率更新
+        // 4-A. 相互リンク・相互RSSの新規個別登録 (複数RSSフィード対応)
+        if ($op === 'add_trade_site') {
+            $siteName = trim($_POST['site_name'] ?? '');
+            $siteUrl = trim($_POST['url'] ?? '');
+            $rawRss = trim($_POST['rss_url'] ?? '');
+            $status = $_POST['status'] ?? 'approved';
+            $rate = (int)($_POST['return_rate'] ?? 100);
+            $isBoosted = !empty($_POST['is_boosted']) ? 1 : 0;
+            $boostWeight = (int)($_POST['boost_weight'] ?? 1);
+            $fetchNow = !empty($_POST['fetch_now']);
+
+            $rssUrls = TradeEngine::extractRssUrls($rawRss);
+
+            if (empty($siteName) || empty($siteUrl)) {
+                $errorMessage = "サイト名とサイトURLは必須項目です。";
+            } elseif (!filter_var($siteUrl, FILTER_VALIDATE_URL)) {
+                $errorMessage = "正しいサイトURL（https://〜）を入力してください。";
+            } elseif (empty($rssUrls)) {
+                $errorMessage = "RSSフィードURLを最低1件以上正しく入力してください（複数ある場合は改行してください）。";
+            } else {
+                $savedRss = implode("\n", $rssUrls);
+                $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, is_boosted, boost_weight, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight]);
+                $newId = (int)$db->lastInsertId();
+
+                if ($status === 'approved') {
+                    $annTitle = "【相互リンク】「" . $siteName . "」様と相互リンク・相互RSSを開始しました";
+                    $annBody = "「" . $siteName . "」様（" . $siteUrl . "）と相互リンクおよび相互RSSの提携を開始いたしました。今後ともよろしくお願い申し上げます。";
+                    $db->prepare("INSERT INTO announcements (title, body, type, trade_site_id, is_public) VALUES (?, ?, 'trade_approved', ?, 1)")
+                       ->execute([$annTitle, $annBody, $newId]);
+                }
+
+                $feedCount = count($rssUrls);
+                $fetchMsg = "";
+                if ($fetchNow) {
+                    $stats = TradeEngine::fetchRssFeeds($newId);
+                    $fetchMsg = " 直ちに全{$feedCount}件のRSSを巡回し、新着記事{$stats['items_saved']}件を取得しました！";
+                }
+                $flashMessage = "相互リンク・RSS提携サイト「{$siteName}」（RSS {$feedCount}件登録）を登録しました！{$fetchMsg}";
+            }
+        }
+
+        // 4-B. 相互リンク・相互RSSの一括バルク登録 (複数RSSフィード対応)
+        if ($op === 'bulk_add_trade_sites') {
+            $bulkText = trim($_POST['bulk_data'] ?? '');
+            $lines = preg_split('/[\r\n]+/', $bulkText);
+            $addedCount = 0;
+            $totalFeeds = 0;
+            foreach ($lines as $line) {
+                $line = trim($line);
+                if (empty($line) || str_starts_with($line, '#')) continue;
+                $parts = array_map('trim', explode('|', $line));
+                if (count($parts) >= 2) {
+                    $bName = $parts[0];
+                    $bUrl = $parts[1];
+                    $bRawRss = $parts[2] ?? '';
+                    $bRssUrls = TradeEngine::extractRssUrls($bRawRss);
+                    if (empty($bRssUrls)) {
+                        continue;
+                    }
+                    if (filter_var($bUrl, FILTER_VALIDATE_URL)) {
+                        $savedRss = implode("\n", $bRssUrls);
+                        $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, created_at) VALUES (?, ?, ?, 'approved', 100, NOW())");
+                        $stmt->execute([$bName, $bUrl, $savedRss]);
+                        $addedCount++;
+                        $totalFeeds += count($bRssUrls);
+                    }
+                }
+            }
+            if ($addedCount > 0) {
+                if (!empty($_POST['fetch_now_bulk'])) {
+                    $stats = TradeEngine::fetchRssFeeds();
+                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録し、新着記事{$stats['items_saved']}件を取得・同期しました！";
+                } else {
+                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録しました！";
+                }
+            } else {
+                $errorMessage = "有効な提携サイトデータが見つかりませんでした。「サイト名 | サイトURL | RSS URL1, RSS URL2」の形式で入力してください。";
+            }
+        }
+
+        // 4-C. 相互リンク・相互RSSの設定更新 (複数RSSフィード対応)
         if ($op === 'update_trade_site') {
             $tradeId = (int)($_POST['trade_id'] ?? 0);
+            $siteName = trim($_POST['site_name'] ?? '');
+            $siteUrl = trim($_POST['url'] ?? '');
+            $rawRss = trim($_POST['rss_url'] ?? '');
             $status = $_POST['status'] ?? 'pending';
             $rate = (int)($_POST['return_rate'] ?? 100);
             $isBoosted = !empty($_POST['is_boosted']) ? 1 : 0;
             $boostWeight = (int)($_POST['boost_weight'] ?? 1);
+
+            $rssUrls = TradeEngine::extractRssUrls($rawRss);
+            $savedRss = !empty($rssUrls) ? implode("\n", $rssUrls) : $rawRss;
 
             // 以前のステータスを取得してお知らせ連動
             $prev = $db->prepare("SELECT site_name, url, status FROM trade_sites WHERE id = ?");
             $prev->execute([$tradeId]);
             $oldSite = $prev->fetch();
 
-            $stmt = $db->prepare("UPDATE trade_sites SET status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
-            $stmt->execute([$status, $rate, $isBoosted, $boostWeight, $tradeId]);
+            if (!empty($siteName) && !empty($siteUrl)) {
+                $stmt = $db->prepare("UPDATE trade_sites SET site_name = ?, url = ?, rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+            } else {
+                $stmt = $db->prepare("UPDATE trade_sites SET rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+            }
 
             // 承認時にお知らせ自動投稿
             if ($oldSite && $oldSite['status'] !== 'approved' && $status === 'approved') {
-                $annTitle = "【相互リンク】「" . $oldSite['site_name'] . "」様と相互リンク・相互RSSを開始しました";
-                $annBody = "「" . $oldSite['site_name'] . "」様（" . $oldSite['url'] . "）と相互リンクおよび相互RSSの提携を開始いたしました。今後ともよろしくお願い申し上げます。";
+                $targetName = !empty($siteName) ? $siteName : $oldSite['site_name'];
+                $targetUrl = !empty($siteUrl) ? $siteUrl : $oldSite['url'];
+                $annTitle = "【相互リンク】「" . $targetName . "」様と相互リンク・相互RSSを開始しました";
+                $annBody = "「" . $targetName . "」様（" . $targetUrl . "）と相互リンクおよび相互RSSの提携を開始いたしました。今後ともよろしくお願い申し上げます。";
                 $db->prepare("INSERT INTO announcements (title, body, type, trade_site_id, is_public) VALUES (?, ?, 'trade_approved', ?, 1)")
                    ->execute([$annTitle, $annBody, $tradeId]);
             }
@@ -170,18 +374,47 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                    ->execute([$annTitle, $annBody, $tradeId]);
             }
 
-            $flashMessage = "相互リンク・RSSサイトの設定を更新しました。";
+            $feedCount = count($rssUrls);
+            $flashMessage = "相互リンク・RSSサイトの設定を更新しました（登録RSS: {$feedCount}件）。";
         }
 
-        // 5. アフィリエイト広告スロット & 表示/非表示設定の更新
+        // 4-D. 相互リンク・RSSサイトの完全削除
+        if ($op === 'delete_trade_site') {
+            $tradeId = (int)($_POST['trade_id'] ?? 0);
+            $db->prepare("DELETE FROM trade_feed_items WHERE trade_site_id = ?")->execute([$tradeId]);
+            $db->prepare("DELETE FROM trade_sites WHERE id = ?")->execute([$tradeId]);
+            $flashMessage = "提携サイトおよび関連RSS記事キャッシュを削除しました。";
+        }
+
+        // 4-E. 登録RSSの今すぐ巡回・取得
+        if ($op === 'fetch_trade_rss') {
+            $targetSiteId = !empty($_POST['trade_id']) ? (int)$_POST['trade_id'] : null;
+            $stats = TradeEngine::fetchRssFeeds($targetSiteId);
+            $errMsg = !empty($stats['errors']) ? ' (※一部エラー: ' . implode(' / ', array_slice($stats['errors'], 0, 2)) . ')' : '';
+            $flashMessage = "RSS巡回完了: 提携{$stats['sites_checked']}サイト、合計{$stats['feeds_checked']}フィードを巡回し、最新記事{$stats['items_saved']}件を同期・更新しました！{$errMsg}";
+        }
+
+        // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
             SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
+            // 個別広告枠ごとの表示/非表示設定
+            SettingsManager::set('ad_pc_header_enabled', isset($_POST['ad_pc_header_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_pc_sidebar_top_enabled', isset($_POST['ad_pc_sidebar_top_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_pc_sidebar_bottom_enabled', isset($_POST['ad_pc_sidebar_bottom_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_sp_header_top_enabled', isset($_POST['ad_sp_header_top_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_sp_header_bottom_enabled', isset($_POST['ad_sp_header_bottom_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_article_middle_enabled', isset($_POST['ad_article_middle_enabled']) ? '1' : '0');
+            SettingsManager::set('ad_article_bottom_enabled', isset($_POST['ad_article_bottom_enabled']) ? '1' : '0');
+
+            // 広告コード
             SettingsManager::set('ad_pc_header', $_POST['ad_pc_header'] ?? '');
             SettingsManager::set('ad_pc_sidebar_top', $_POST['ad_pc_sidebar_top'] ?? '');
             SettingsManager::set('ad_pc_sidebar_bottom', $_POST['ad_pc_sidebar_bottom'] ?? '');
             SettingsManager::set('ad_sp_header_top', $_POST['ad_sp_header_top'] ?? '');
             SettingsManager::set('ad_sp_header_bottom', $_POST['ad_sp_header_bottom'] ?? '');
-            $flashMessage = 'アフィリエイト広告スロット・表示設定を保存しました。';
+            SettingsManager::set('ad_article_middle', $_POST['ad_article_middle'] ?? '');
+            SettingsManager::set('ad_article_bottom', $_POST['ad_article_bottom'] ?? '');
+            $flashMessage = 'アフィリエイト広告スロット・個別表示/非表示設定を保存しました。';
         }
 
         // 5-2. 相互RSS表示/非表示設定の更新
@@ -204,10 +437,43 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = 'SEOメタタグ・body直下カスタムタグを保存しました。';
         }
 
-        // 7. セキュリティ設定（管理画面URLスラッグ変更・パスワード変更）
+        // 7. セキュリティ・アカウント設定（ID変更・パスワード変更・登録メール変更・URLスラッグ変更）
         if ($op === 'save_security') {
-            $newSecret = trim($_POST['admin_secret_path'] ?? '');
+            $newAdminId = trim($_POST['admin_id'] ?? '');
             $newAdminPass = trim($_POST['admin_password'] ?? '');
+            $newAdminPassConfirm = trim($_POST['admin_password_confirm'] ?? '');
+            $newAdminEmail = trim($_POST['admin_email'] ?? '');
+            $newSecret = trim($_POST['admin_secret_path'] ?? '');
+
+            if (!empty($newAdminId)) {
+                if (strlen($newAdminId) >= 3 && preg_match('/^[a-zA-Z0-9_-]+$/', $newAdminId)) {
+                    SettingsManager::set('admin_id', $newAdminId);
+                    $adminId = $newAdminId;
+                    $_SESSION['admin_username'] = $newAdminId;
+                } else {
+                    throw new Exception('管理者IDは3文字以上の半角英数字（ハイフン・アンダースコア可）で指定してください。');
+                }
+            }
+
+            if (!empty($newAdminEmail)) {
+                if (filter_var($newAdminEmail, FILTER_VALIDATE_EMAIL)) {
+                    SettingsManager::set('admin_email', $newAdminEmail);
+                    $adminEmail = $newAdminEmail;
+                } else {
+                    throw new Exception('有効なパスワード再設定用メールアドレスを入力してください。');
+                }
+            }
+
+            if (!empty($newAdminPass)) {
+                if (strlen($newAdminPass) < 6) {
+                    throw new Exception('新しいパスワードは6文字以上で設定してください。');
+                }
+                if ($newAdminPassConfirm !== '' && $newAdminPass !== $newAdminPassConfirm) {
+                    throw new Exception('パスワード（確認用）が一致しません。もう一度ご確認ください。');
+                }
+                SettingsManager::set('admin_password', $newAdminPass);
+                $adminPass = $newAdminPass;
+            }
 
             if (!empty($newSecret)) {
                 // 英数字ハイフンのみ許可
@@ -221,15 +487,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            if (!empty($newAdminPass)) {
-                if (strlen($newAdminPass) >= 6) {
-                    SettingsManager::set('admin_password', $newAdminPass);
-                } else {
-                    throw new Exception('新しいパスワードは6文字以上で設定してください。');
-                }
-            }
-
-            $flashMessage = "セキュリティ設定を保存しました。現在の管理画面URLは 「/{$thisFileUrl}」 です。";
+            $flashMessage = "管理者アカウント（ID・パスワード・メールアドレス）およびセキュリティ設定を更新しました。現在の管理画面URLは 「/{$thisFileUrl}」 です。";
         }
 
         // 8. トレンド自動収集ワーカー実行
@@ -261,18 +519,39 @@ $tradeSites = [];
 $poolImages = [];
 $announcements = [];
 $categories = [];
+$feedItemCount = 0;
+$totalFeedUrlsCount = 0;
 
 if ($db && $isLoggedIn) {
     try {
-        $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles WHERE status = 'published'")->fetchColumn();
-        $articles = $db->query("SELECT id, title, slug, shirankedo_index, index_label, status, published_at FROM articles ORDER BY id DESC LIMIT 20")->fetchAll();
+        $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles")->fetchColumn();
+        $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, a.lifecycle_status, a.lifecycle_reason, a.auto_lifecycle_enabled, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
         $categories = $db->query("SELECT id, name FROM categories WHERE site_id = 1")->fetchAll();
         
+        $countActive = 0;
+        $countWarning = 0;
+        $countDormant = 0;
+        $countOnHold = 0;
+        foreach ($articles as $art) {
+            $st = $art['status'] ?? 'published';
+            $ls = $art['lifecycle_status'] ?? 'active';
+            if ($st === 'on_hold') $countOnHold++;
+            elseif ($ls === 'dormant' || $st === 'private') $countDormant++;
+            elseif ($ls === 'warning') $countWarning++;
+            else $countActive++;
+        }
+
         // 相互リンク・アクセストレード集計
         $tradeSites = $db->query("SELECT * FROM trade_sites ORDER BY id DESC")->fetchAll();
         $inSum = $db->query("SELECT SUM(in_count) as total_in, SUM(out_count) as total_out FROM trade_sites")->fetch();
         $totalIn = (int)($inSum['total_in'] ?? 0);
         $totalOut = (int)($inSum['total_out'] ?? 0);
+
+        $feedItemCount = (int)($db->query("SELECT COUNT(*) FROM trade_feed_items")->fetchColumn() ?: 0);
+        $totalFeedUrlsCount = 0;
+        foreach ($tradeSites as $ts) {
+            $totalFeedUrlsCount += count(TradeEngine::extractRssUrls($ts['rss_url'] ?? ''));
+        }
 
         // アイキャッチ画像プール
         $poolImages = $db->query("SELECT i.*, 
@@ -288,18 +567,23 @@ if ($db && $isLoggedIn) {
     } catch (Throwable $e) {}
 }
 
-// タブ定義 (WordPress風メニュー)
+// 整理されたタブ定義 (順序変更・グループ分け)
 $navTabs = [
-    'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null],
-    'analytics' => ['icon' => '📈', 'label' => 'アクセス解析', 'badge' => null],
-    'articles' => ['icon' => '📝', 'label' => '記事管理・投稿', 'badge' => $totalArticles],
-    'images' => ['icon' => '🖼️', 'label' => 'アイキャッチプール', 'badge' => count($poolImages)],
-    'gemini' => ['icon' => '✨', 'label' => 'Gemini API設定', 'badge' => null],
-    'trade' => ['icon' => '🔗', 'label' => '相互リンク・RSS返還', 'badge' => count($tradeSites)],
-    'ads' => ['icon' => '💰', 'label' => '広告スロット設定', 'badge' => null],
-    'seo_tags' => ['icon' => '🏷️', 'label' => 'SEO・タグ設定', 'badge' => null],
-    'announcements' => ['icon' => '📢', 'label' => 'お知らせ一覧', 'badge' => count($announcements)],
-    'security' => ['icon' => '🔒', 'label' => 'セキュリティ設定', 'badge' => null],
+    // 【メイン運用】
+    'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null, 'group' => 'メイン運用'],
+    'articles' => ['icon' => '📝', 'label' => '記事一覧・生死判定', 'badge' => $totalArticles, 'group' => 'メイン運用'],
+    'gemini' => ['icon' => '✨', 'label' => 'Gemini AI自動生成', 'badge' => null, 'group' => 'メイン運用'],
+    'images' => ['icon' => '🖼️', 'label' => 'アイキャッチプール', 'badge' => count($poolImages), 'group' => 'メイン運用'],
+
+    // 【収益・集客連携】
+    'ads' => ['icon' => '💰', 'label' => '広告・アフィリエイト設定', 'badge' => null, 'group' => '収益・集客'],
+    'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS', 'badge' => count($tradeSites), 'group' => '収益・集客'],
+    'analytics' => ['icon' => '📈', 'label' => 'アクセス解析', 'badge' => null, 'group' => '収益・集客'],
+
+    // 【運用・システム】
+    'seo_tags' => ['icon' => '🏷️', 'label' => 'SEO・タグ設定', 'badge' => null, 'group' => '運用・設定'],
+    'announcements' => ['icon' => '📢', 'label' => 'お知らせ管理', 'badge' => count($announcements), 'group' => '運用・設定'],
+    'security' => ['icon' => '🔒', 'label' => 'セキュリティ・環境', 'badge' => null, 'group' => '運用・設定'],
 ];
 ?>
 <!DOCTYPE html>
@@ -319,7 +603,7 @@ $navTabs = [
 <body class="bg-slate-100 text-slate-800 min-h-screen antialiased flex flex-col">
 
     <?php if (!$isLoggedIn): ?>
-        <!-- ログイン画面 -->
+        <!-- 認証コンテナ（ログイン・パスワード忘れ・再設定） -->
         <div class="flex-1 flex items-center justify-center p-4">
             <div class="bg-white max-w-md w-full rounded-3xl border border-slate-200 p-8 shadow-xl space-y-6">
                 <div class="text-center space-y-2">
@@ -327,29 +611,152 @@ $navTabs = [
                         知
                     </div>
                     <h1 class="text-2xl font-black text-slate-900 tracking-tight">しらんけど 管理コンソール</h1>
-                    <p class="text-xs text-slate-500">認証パスワードを入力してログインしてください</p>
+                    <p class="text-xs text-slate-500">
+                        <?= $authMode === 'forgot' ? 'パスワード再設定の申請' : ($authMode === 'reset' ? '新しいパスワードの設定' : '管理者IDとパスワードを入力してログイン') ?>
+                    </p>
                 </div>
 
+                <!-- 成功メッセージ通知 -->
+                <?php if ($loginSuccessMsg): ?>
+                    <div class="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold text-center">
+                        <?= htmlspecialchars($loginSuccessMsg) ?>
+                    </div>
+                <?php endif; ?>
+
+                <!-- エラーメッセージ通知 -->
                 <?php if ($loginError): ?>
                     <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold text-center">
                         <?= htmlspecialchars($loginError) ?>
                     </div>
                 <?php endif; ?>
 
-                <form method="POST" class="space-y-4">
-                    <input type="hidden" name="action" value="login">
-                    <div class="space-y-1.5">
-                        <label class="block text-xs font-bold text-slate-700">管理者パスワード</label>
-                        <input type="password" name="password" required autofocus placeholder="管理者パスワードを入力してください" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
-                    </div>
-                    <button type="submit" class="w-full py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all">
-                        ログインする →
-                    </button>
-                </form>
+                <?php if ($authMode === 'forgot'): ?>
+                    <!-- パスワード忘れ・再設定申請フォーム -->
+                    <?php if ($forgotSuccessMsg): ?>
+                        <div class="space-y-4">
+                            <div class="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-medium leading-relaxed space-y-2">
+                                <div class="font-bold flex items-center gap-1 text-emerald-800">
+                                    <span>✉️</span> 送信完了
+                                </div>
+                                <p><?= htmlspecialchars($forgotSuccessMsg) ?></p>
+                            </div>
 
-                <div class="text-center text-[11px] text-slate-400">
-                    <a href="/" class="hover:underline">← トップページへ戻る</a>
-                </div>
+                            <?php if ($previewResetUrl): ?>
+                                <div class="p-3 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-1">
+                                    <div class="font-bold">🧪 開発・テスト用ショートカット:</div>
+                                    <a href="<?= htmlspecialchars($previewResetUrl) ?>" class="text-amber-700 font-mono font-bold underline break-all text-[11px] block">
+                                        パスワード再設定画面を開く →
+                                    </a>
+                                </div>
+                            <?php endif; ?>
+
+                            <a href="?auth_mode=login" class="block w-full py-3 text-center rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition-colors">
+                                ← ログイン画面へ戻る
+                            </a>
+                        </div>
+                    <?php else: ?>
+                        <?php if ($forgotError): ?>
+                            <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold text-center">
+                                <?= htmlspecialchars($forgotError) ?>
+                            </div>
+                        <?php endif; ?>
+
+                        <form method="POST" class="space-y-4">
+                            <input type="hidden" name="action" value="forgot_password">
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-slate-700">登録管理者ID または 登録メールアドレス</label>
+                                <input type="text" name="reset_target" required autofocus placeholder="例: admin または sogomultilink@gmail.com" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
+                                <p class="text-[11px] text-slate-400">※ ご登録のメールアドレス宛に再設定URL（1時間有効）を送信します。</p>
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-md transition-all">
+                                再設定メールを送信する →
+                            </button>
+
+                            <div class="pt-2 text-center">
+                                <a href="?auth_mode=login" class="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                                    ← ログイン画面に戻る
+                                </a>
+                            </div>
+                        </form>
+                    <?php endif; ?>
+
+                <?php elseif ($authMode === 'reset'): ?>
+                    <!-- パスワード再設定実行フォーム -->
+                    <?php if ($resetFormError): ?>
+                        <div class="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-700 text-xs font-bold text-center">
+                            <?= htmlspecialchars($resetFormError) ?>
+                        </div>
+                    <?php endif; ?>
+
+                    <?php if ($isTokenValid): ?>
+                        <form method="POST" class="space-y-4">
+                            <input type="hidden" name="action" value="do_reset">
+                            <input type="hidden" name="token" value="<?= htmlspecialchars($resetToken) ?>">
+
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-slate-700">新しいパスワード (6文字以上)</label>
+                                <input type="password" name="new_password" required minlength="6" autofocus placeholder="新しいパスワードを入力" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                            </div>
+
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-slate-700">新しいパスワード（確認用）</label>
+                                <input type="password" name="new_password_confirm" required minlength="6" placeholder="もう一度入力してください" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                            </div>
+
+                            <button type="submit" class="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-sm shadow-md transition-all">
+                                新しいパスワードを保存する →
+                            </button>
+                        </form>
+                    <?php else: ?>
+                        <div class="text-center py-4 space-y-4">
+                            <a href="?auth_mode=forgot" class="inline-block px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs transition-colors">
+                                再設定メールを再度申請する
+                            </a>
+                        </div>
+                    <?php endif; ?>
+
+                    <div class="pt-2 text-center">
+                        <a href="?auth_mode=login" class="text-xs font-bold text-slate-500 hover:text-slate-800 transition-colors">
+                            ← ログイン画面に戻る
+                        </a>
+                    </div>
+
+                <?php else: ?>
+                    <!-- 通常ログインフォーム (ID & パスワード) -->
+                    <form method="POST" class="space-y-4">
+                        <input type="hidden" name="action" value="login">
+
+                        <div class="space-y-1.5">
+                            <label class="block text-xs font-bold text-slate-700">管理者ID</label>
+                            <input type="text" name="username" value="<?= htmlspecialchars($_POST['username'] ?? 'admin') ?>" required autofocus placeholder="管理者IDを入力（初期値: admin）" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                        </div>
+
+                        <div class="space-y-1.5">
+                            <div class="flex items-center justify-between">
+                                <label class="block text-xs font-bold text-slate-700">管理者パスワード</label>
+                                <a href="?auth_mode=forgot" class="text-[11px] font-bold text-amber-600 hover:text-amber-700 transition-colors">
+                                    パスワードをお忘れですか？
+                                </a>
+                            </div>
+                            <input type="password" name="password" required placeholder="管理者パスワード（初期値: password）" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono">
+                        </div>
+
+                        <div class="p-3 rounded-xl bg-slate-50 border border-slate-100 text-[11px] text-slate-500 space-y-0.5">
+                            <div class="font-bold text-slate-700">💡 初期管理者アカウント</div>
+                            <div>ID: <code class="font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">admin</code> / パスワード: <code class="font-bold text-slate-900 bg-white px-1.5 py-0.5 rounded border border-slate-200">password</code></div>
+                        </div>
+
+                        <button type="submit" class="w-full py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-sm shadow-md transition-all">
+                            ログインする →
+                        </button>
+                    </form>
+
+                    <div class="pt-2 flex items-center justify-between text-[11px] text-slate-400">
+                        <a href="/" class="hover:underline">← トップページへ戻る</a>
+                        <a href="?auth_mode=forgot" class="text-amber-600 hover:underline">パスワード再設定</a>
+                    </div>
+                <?php endif; ?>
             </div>
         </div>
     <?php else: ?>
@@ -365,7 +772,7 @@ $navTabs = [
             </div>
 
             <div class="flex items-center gap-3 text-xs">
-                <span class="text-slate-400 hidden sm:inline">管理者ログイン中</span>
+                <span class="text-slate-400 hidden sm:inline">👤 <strong class="text-slate-200 font-bold"><?= htmlspecialchars($_SESSION['admin_username'] ?? $adminId) ?></strong> でログイン中</span>
                 <a href="?logout=1" class="px-3 py-1 rounded-xl bg-slate-800 hover:bg-rose-900/80 text-rose-300 font-bold border border-slate-700 transition-colors">
                     ログアウト
                 </a>
@@ -383,17 +790,28 @@ $navTabs = [
                     <div class="text-[10px] text-slate-500">v2.4 Auto-Trend & Trade Engine</div>
                 </div>
 
-                <!-- メニューナビゲーション -->
-                <nav class="space-y-1">
-                    <?php foreach ($navTabs as $tabKey => $t): 
+                <!-- メニューナビゲーション (グループ分け) -->
+                <nav class="space-y-0.5">
+                    <?php 
+                    $currentGroup = null;
+                    foreach ($navTabs as $tabKey => $t): 
+                        $group = $t['group'] ?? 'その他';
+                        if ($group !== $currentGroup):
+                            $currentGroup = $group;
+                    ?>
+                        <div class="pt-3 pb-1 px-3 text-[10px] font-black tracking-wider text-slate-500">
+                            ▼ <?= htmlspecialchars($group) ?>
+                        </div>
+                    <?php 
+                        endif;
                         $isActive = $currentTab === $tabKey;
                         $btnClass = $isActive 
                             ? 'bg-amber-500 text-slate-950 font-black shadow-md' 
                             : 'text-slate-300 hover:bg-slate-900 hover:text-white font-medium';
                     ?>
-                        <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs transition-all <?= $btnClass ?>">
-                            <div class="flex items-center gap-2.5">
-                                <span class="text-base"><?= $t['icon'] ?></span>
+                        <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all <?= $btnClass ?>">
+                            <div class="flex items-center gap-2">
+                                <span class="text-sm"><?= $t['icon'] ?></span>
                                 <span><?= $t['label'] ?></span>
                             </div>
                             <?php if ($t['badge'] !== null): ?>
@@ -406,11 +824,17 @@ $navTabs = [
                 </nav>
 
                 <!-- 即時実行アクション -->
-                <div class="pt-4 border-t border-slate-800/80 space-y-2">
+                <div class="pt-3 border-t border-slate-800/80 space-y-2">
                     <div class="text-[11px] font-bold text-slate-400 px-2">⚡ ワンクリック実行</div>
                     <form method="POST">
+                        <input type="hidden" name="op" value="evaluate_lifecycle">
+                        <button type="submit" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5">
+                            <span>⚡ AI生死判定を一括実行</span>
+                        </button>
+                    </form>
+                    <form method="POST">
                         <input type="hidden" name="op" value="run_worker">
-                        <button type="submit" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5">
+                        <button type="submit" class="w-full py-2 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5">
                             <span>🚀 トレンド自動収集を実行</span>
                         </button>
                     </form>
@@ -533,16 +957,218 @@ $navTabs = [
                         </div>
                     </div>
 
-                <!-- 2. 記事管理・新規手動投稿 タブ -->
+                <!-- 2. 📝 記事一覧・ページの生死判定 (AI自動ライフサイクル管理) タブ -->
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">記事管理・新規投稿</h1>
-                            <p class="text-xs text-slate-500">Gemini AI による自動生成に加え、手動でのトレンド記事作成も可能です</p>
+                        <!-- ヘッダーと一括AI判定ボタン -->
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                            <div>
+                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
+                                    <span>📝</span> 記事一覧・ページの生死判定
+                                </h1>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
+                                </p>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <form method="POST">
+                                    <input type="hidden" name="op" value="evaluate_lifecycle">
+                                    <button type="submit" class="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
+                                        <span>⚡ AIによる全記事の生死判定を一括実行</span>
+                                    </button>
+                                </form>
+                                <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
+                                    <span>＋ 新規記事を手動投稿</span>
+                                </button>
+                            </div>
                         </div>
 
-                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                            <h2 class="text-base font-black text-slate-900">記事の新規作成</h2>
+                        <!-- ページの生死サマリーカード -->
+                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
+                                    <span>🟢 生存・公開中</span>
+                                    <span class="text-xs">良好</span>
+                                </div>
+                                <div class="text-2xl font-black text-emerald-600"><?= $countActive ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
+                                <div class="text-[11px] text-slate-400">需要継続・鮮度良好</div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
+                                    <span>🟡 鮮度注意</span>
+                                    <span class="text-xs">要観察</span>
+                                </div>
+                                <div class="text-2xl font-black text-amber-500"><?= $countWarning ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
+                                <div class="text-[11px] text-slate-400">公開14日経過 / 懐疑投票有</div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
+                                    <span>🔴 AI自動休眠</span>
+                                    <span class="text-xs">非公開</span>
+                                </div>
+                                <div class="text-2xl font-black text-rose-600"><?= $countDormant ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
+                                <div class="text-[11px] text-slate-400">トレンド終息のためAI休眠</div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
+                                    <span>⚠️ 安全保留・下書き</span>
+                                    <span class="text-xs">ブレーキ</span>
+                                </div>
+                                <div class="text-2xl font-black text-purple-600"><?= $countOnHold ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
+                                <div class="text-[11px] text-slate-400">危険キーワード検知中</div>
+                            </div>
+                        </div>
+
+                        <!-- 記事一覧テーブル (検索・フィルタ機能付き) -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-black text-slate-900 text-sm">全記事リスト (計 <?= count($articles) ?> 件)</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <input 
+                                        type="text" 
+                                        id="article-search-input" 
+                                        placeholder="タイトル・理由で絞り込み..." 
+                                        oninput="filterArticles()"
+                                        class="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs w-64 focus:outline-none focus:border-amber-500"
+                                    >
+                                </div>
+                            </div>
+
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 text-slate-400 font-bold">
+                                            <th class="py-2.5 w-14">画像</th>
+                                            <th class="py-2.5">タイトル / カテゴリ</th>
+                                            <th class="py-2.5">しらんけど指数</th>
+                                            <th class="py-2.5">公開日・経過</th>
+                                            <th class="py-2.5">AI生死判定ステータス</th>
+                                            <th class="py-2.5">AI判定理由</th>
+                                            <th class="py-2.5 text-center">AI自動管理</th>
+                                            <th class="py-2.5 text-right">手動ステータス操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="articles-tbody" class="divide-y divide-slate-100">
+                                        <?php foreach ($articles as $a): 
+                                            $pubTime = strtotime($a['published_at'] ?? 'now');
+                                            $daysOld = max(0, round((time() - $pubTime) / 86400));
+                                            $ls = $a['lifecycle_status'] ?? 'active';
+                                            $status = $a['status'] ?? 'published';
+                                            $autoEnabled = (int)($a['auto_lifecycle_enabled'] ?? 1);
+
+                                            if ($status === 'on_hold') {
+                                                $badgeText = '⚠️ 安全保留';
+                                                $badgeClass = 'bg-purple-50 text-purple-800 border-purple-200';
+                                            } elseif ($ls === 'dormant' || $status === 'private') {
+                                                $badgeText = '🔴 休眠 (非公開)';
+                                                $badgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
+                                            } elseif ($ls === 'warning') {
+                                                $badgeText = '🟡 鮮度低下注意';
+                                                $badgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+                                            } else {
+                                                $badgeText = '🟢 生存 (公開中)';
+                                                $badgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                            }
+                                        ?>
+                                            <tr class="hover:bg-slate-50 article-row" data-search="<?= htmlspecialchars(mb_strtolower($a['title'] . ' ' . ($a['lifecycle_reason'] ?? ''))) ?>">
+                                                <td class="py-3">
+                                                    <div class="w-12 h-8 rounded-lg bg-slate-200 overflow-hidden border border-slate-200">
+                                                        <?php if (!empty($a['image_url'])): ?>
+                                                            <img src="<?= htmlspecialchars($a['image_url']) ?>" alt="" class="w-full h-full object-cover">
+                                                        <?php else: ?>
+                                                            <div class="w-full h-full flex items-center justify-center text-[10px] text-slate-400">画像無</div>
+                                                        <?php endif; ?>
+                                                    </div>
+                                                </td>
+
+                                                <td class="py-3 max-w-xs">
+                                                    <div class="font-bold text-slate-900 leading-snug">
+                                                        <a href="article.php?id=<?= $a['id'] ?>" target="_blank" class="hover:text-amber-600 transition-colors">
+                                                            <?= htmlspecialchars($a['title']) ?> ↗
+                                                        </a>
+                                                    </div>
+                                                    <div class="text-[10px] text-slate-400 flex items-center gap-2 mt-0.5">
+                                                        <span class="bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">
+                                                            <?= htmlspecialchars($a['category_name'] ?? '総合') ?>
+                                                        </span>
+                                                        <span>ID #<?= $a['id'] ?></span>
+                                                    </div>
+                                                </td>
+
+                                                <td class="py-3 whitespace-nowrap">
+                                                    <span class="px-2 py-0.5 rounded-md text-[10px] font-black bg-amber-50 text-amber-800 border border-amber-200">
+                                                        <?= $a['shirankedo_index'] ?>点
+                                                    </span>
+                                                </td>
+
+                                                <td class="py-3 whitespace-nowrap">
+                                                    <div class="text-slate-700 font-bold"><?= $daysOld === 0 ? '本日公開' : "公開{$daysOld}日目" ?></div>
+                                                    <div class="text-[10px] text-slate-400"><?= substr($a['published_at'] ?? '', 0, 10) ?></div>
+                                                </td>
+
+                                                <td class="py-3 whitespace-nowrap">
+                                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black border <?= $badgeClass ?>">
+                                                        <?= $badgeText ?>
+                                                    </span>
+                                                </td>
+
+                                                <td class="py-3 max-w-sm">
+                                                    <div class="text-[11px] text-slate-600 leading-tight">
+                                                        <?= htmlspecialchars($a['lifecycle_reason'] ?: ($daysOld >= 30 ? '公開後30日以上経過' : '鮮度良好')) ?>
+                                                    </div>
+                                                </td>
+
+                                                <td class="py-3 text-center whitespace-nowrap">
+                                                    <form method="POST" class="inline">
+                                                        <input type="hidden" name="op" value="toggle_auto_lifecycle">
+                                                        <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
+                                                        <input type="hidden" name="auto_lifecycle_enabled" value="<?= $autoEnabled ? '0' : '1' ?>">
+                                                        <button type="submit" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors <?= $autoEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200' ?>" title="クリックで手動固定/自動判定を切替">
+                                                            <?= $autoEnabled ? '🤖 AI自動判定: ON' : '✋ 手動固定: OFF' ?>
+                                                        </button>
+                                                    </form>
+                                                </td>
+
+                                                <td class="py-3 text-right whitespace-nowrap">
+                                                    <form method="POST" class="inline">
+                                                        <input type="hidden" name="op" value="toggle_article_status">
+                                                        <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
+                                                        <input type="hidden" name="new_status" value="<?= $status === 'published' ? 'private' : 'published' ?>">
+                                                        <button type="submit" class="px-3 py-1 rounded-xl text-xs font-bold transition-colors <?= $status === 'published' ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200' ?>">
+                                                            <?= $status === 'published' ? '非公開へ' : '公開へ' ?>
+                                                        </button>
+                                                    </form>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <script>
+                        function filterArticles() {
+                            const query = document.getElementById('article-search-input').value.toLowerCase().trim();
+                            const rows = document.querySelectorAll('.article-row');
+                            rows.forEach(r => {
+                                const text = r.getAttribute('data-search') || '';
+                                if (!query || text.includes(query)) {
+                                    r.style.display = '';
+                                } else {
+                                    r.style.display = 'none';
+                                }
+                            });
+                        }
+                        </script>
+
+                        <!-- 手動新規記事作成カード (折りたたみ可能) -->
+                        <div id="manual-create-card" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <h2 class="text-base font-black text-slate-900">記事の新規作成（手動投稿）</h2>
                             <form method="POST" class="space-y-4">
                                 <input type="hidden" name="op" value="create_article">
                                 
@@ -567,7 +1193,7 @@ $navTabs = [
                                 </div>
 
                                 <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">記事本文（事実確認済みファクト）</label>
+                                    <label class="block text-xs font-bold text-slate-700">記事本文（客観的事実に基づいたファクト）</label>
                                     <textarea name="body" rows="6" placeholder="客観的事実に基づいた本文を入力..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500 leading-relaxed"></textarea>
                                 </div>
 
@@ -679,94 +1305,371 @@ $navTabs = [
                 <!-- 4. 🔗 相互リンク・相互RSS返還 タブ -->
                 <?php elseif ($currentTab === 'trade'): ?>
                     <div class="space-y-6">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <!-- ヘッダー & トップ操作バー -->
+                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                             <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight">相互リンク・相互RSS & アクセス返還管理</h1>
-                                <p class="text-xs text-slate-500">相手サイトからの流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します</p>
+                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                    <span>🔗</span> 相互リンク・相互RSS & アクセス返還管理
+                                </h1>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    1サイトにつき<strong>複数のRSSフィード</strong>（通常フィード・カテゴリ別・速報用など）を登録可能。流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します。
+                                </p>
                             </div>
 
-                            <!-- 相互RSS表示/非表示トグルスイッチ -->
-                            <form method="POST" class="bg-white border border-slate-200 px-4 py-3 rounded-2xl shadow-sm flex items-center gap-3">
-                                <input type="hidden" name="op" value="save_rss_settings">
-                                <label class="flex items-center gap-2 cursor-pointer select-none">
-                                    <input type="checkbox" name="show_rss" value="1" <?= SettingsManager::get('show_rss', '1') === '1' ? 'checked' : '' ?> onchange="this.form.submit()" class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
-                                    <span class="text-xs font-bold text-slate-800">サイト上に相互RSS枠を表示する</span>
-                                </label>
-                                <span class="text-[10px] px-2 py-0.5 rounded-full font-bold <?= SettingsManager::get('show_rss', '1') === '1' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' ?>">
-                                    <?= SettingsManager::get('show_rss', '1') === '1' ? '現在: 表示中' : '現在: 非表示' ?>
-                                </span>
+                            <div class="flex flex-wrap items-center gap-3">
+                                <!-- 全RSS一括巡回ボタン -->
+                                <form method="POST" class="inline">
+                                    <input type="hidden" name="op" value="fetch_trade_rss">
+                                    <button type="submit" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all">
+                                        <span>⚡</span> 全提携サイトのRSSを一括巡回・更新
+                                    </button>
+                                </form>
+
+                                <!-- 相互RSS表示/非表示トグルスイッチ -->
+                                <form method="POST" class="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-sm flex items-center gap-3">
+                                    <input type="hidden" name="op" value="save_rss_settings">
+                                    <label class="flex items-center gap-2 cursor-pointer select-none">
+                                        <input type="checkbox" name="show_rss" value="1" <?= SettingsManager::get('show_rss', '1') === '1' ? 'checked' : '' ?> onchange="this.form.submit()" class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
+                                        <span class="text-xs font-bold text-slate-800">相互RSS枠を表示</span>
+                                    </label>
+                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold <?= SettingsManager::get('show_rss', '1') === '1' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' ?>">
+                                        <?= SettingsManager::get('show_rss', '1') === '1' ? '表示中' : '非表示' ?>
+                                    </span>
+                                </form>
+                            </div>
+                        </div>
+
+                        <!-- サマリーメトリクス (4カラム) -->
+                        <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                            <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                                <div class="text-[11px] font-bold text-slate-400">提携サイト数</div>
+                                <div class="text-2xl font-black text-slate-900 mt-1"><?= count($tradeSites) ?> <span class="text-xs font-normal text-slate-400">サイト</span></div>
+                                <div class="text-[11px] text-slate-500 mt-1">承認・保留中を含む</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                                <div class="text-[11px] font-bold text-indigo-500">登録RSSフィード総数</div>
+                                <div class="text-2xl font-black text-indigo-600 mt-1"><?= $totalFeedUrlsCount ?> <span class="text-xs font-normal text-slate-400">フィード</span></div>
+                                <div class="text-[11px] text-slate-500 mt-1">複数登録フィード合算</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                                <div class="text-[11px] font-bold text-emerald-500">取得済み最新記事</div>
+                                <div class="text-2xl font-black text-emerald-600 mt-1"><?= number_format($feedItemCount) ?> <span class="text-xs font-normal text-slate-400">件</span></div>
+                                <div class="text-[11px] text-slate-500 mt-1">RSSキャッシュ保持</div>
+                            </div>
+                            <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
+                                <div class="text-[11px] font-bold text-amber-500">アクセストレード比率</div>
+                                <div class="text-base font-black text-slate-900 mt-1">
+                                    <span class="text-emerald-600">IN <?= number_format($totalIn) ?></span> / <span class="text-amber-600">OUT <?= number_format($totalOut) ?></span>
+                                </div>
+                                <div class="text-[11px] text-slate-500 mt-1">返還率: <?= $totalIn > 0 ? round(($totalOut / $totalIn) * 100) : 0 ?>%</div>
+                            </div>
+                        </div>
+
+                        <!-- 相互リンク・相互RSSの新規登録フォーム (複数RSSフィード対応) -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <span>➕</span> 提携サイト & 複数RSSフィードの新規登録
+                                </h2>
+                                <span class="text-xs text-indigo-600 font-bold bg-indigo-50 px-2.5 py-1 rounded-full">複数RSS登録対応</span>
+                            </div>
+
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="add_trade_site">
+                                
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">提携先サイト名 <span class="text-rose-500">*</span></label>
+                                        <input type="text" name="site_name" required placeholder="例: 爆速まとめアンテナ" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">提携先サイトURL <span class="text-rose-500">*</span></label>
+                                        <input type="url" name="url" required placeholder="https://example.com/" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                                    </div>
+                                </div>
+
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                                        RSSフィードURL <span class="text-rose-500">*</span>
+                                        <span class="text-indigo-600 font-normal ml-1">（複数ある場合は改行して1行に1URLずつ入力してください）</span>
+                                    </label>
+                                    <textarea name="rss_url" rows="3" required placeholder="https://example.com/feed/&#10;https://example.com/category/tech/rss/&#10;https://example.com/rss.xml" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none leading-relaxed"></textarea>
+                                    <p class="text-[11px] text-slate-500 mt-1">
+                                        💡 <strong>複数RSS対応:</strong> 1つのサイトに複数のRSSフィード（カテゴリ別、更新頻度別など）を登録できます。自動的に巡回・集約して記事を取得します。
+                                    </p>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-1">
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">アクセス返還率</label>
+                                        <select name="return_rate" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                            <option value="80">80% 返還</option>
+                                            <option value="100" selected>100% 返還 (等倍)</option>
+                                            <option value="120">120% 返還</option>
+                                            <option value="150">150% 返還 (還元)</option>
+                                            <option value="200">200% 返還 (倍返し)</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label class="block text-xs font-bold text-slate-700 mb-1">ステータス</label>
+                                        <select name="status" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                            <option value="approved" selected>承認（掲載開始）</option>
+                                            <option value="pending">保留（未承認）</option>
+                                        </select>
+                                    </div>
+
+                                    <div class="flex flex-col justify-end">
+                                        <label class="flex items-center gap-2 cursor-pointer pb-2">
+                                            <input type="checkbox" name="is_boosted" value="1" class="rounded border-slate-300 text-amber-500 focus:ring-amber-400">
+                                            <span class="text-xs font-bold text-amber-800">特別優遇枠（優先表示）</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="flex items-center justify-between pt-2 border-t border-slate-100">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" name="fetch_now" value="1" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400">
+                                        <span class="text-xs font-bold text-slate-700">登録直後に全RSSフィードを巡回して記事を取得する</span>
+                                    </label>
+
+                                    <button type="submit" class="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all">
+                                        提携サイト & 複数RSSを登録する
+                                    </button>
+                                </div>
                             </form>
                         </div>
 
-                        <!-- 相互サイト一覧 & 承認・返還率コントロール -->
+                        <!-- 一括バルク登録フォーム (折りたたみ) -->
+                        <details class="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm group">
+                            <summary class="font-bold text-xs text-slate-700 cursor-pointer flex items-center justify-between">
+                                <span class="flex items-center gap-2">
+                                    <span>📋</span> 提携サイトのまとめて一括インポート（バルク登録）
+                                </span>
+                                <span class="text-indigo-600 text-[11px] group-open:hidden">開いて入力 ▾</span>
+                                <span class="text-slate-400 text-[11px] hidden group-open:inline">閉じる ▴</span>
+                            </summary>
+                            <form method="POST" class="mt-4 space-y-3 pt-3 border-t border-slate-100">
+                                <input type="hidden" name="op" value="bulk_add_trade_sites">
+                                <p class="text-xs text-slate-500">
+                                    1行に1サイトずつ「<code>サイト名 | サイトURL | RSS URL1, RSS URL2...</code>」の形式で入力してください。複数RSSはカンマまたはスペース区切りで指定できます。
+                                </p>
+                                <textarea name="bulk_data" rows="4" placeholder="テストアンテナ1 | https://site1.example.com | https://site1.example.com/rss1.xml, https://site1.example.com/rss2.xml&#10;テストアンテナ2 | https://site2.example.com | https://site2.example.com/feed/" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
+                                <div class="flex items-center justify-between">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" name="fetch_now_bulk" value="1" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400">
+                                        <span class="text-xs font-bold text-slate-700">登録後に全RSSを自動巡回する</span>
+                                    </label>
+                                    <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm">
+                                        一括インポートを実行
+                                    </button>
+                                </div>
+                            </form>
+                        </details>
+
+                        <!-- 提携サイト一覧 & 各サイト複数RSS管理テーブル -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                            <h2 class="text-base font-black text-slate-900">提携サイト一覧 (アクセス比率コントロール)</h2>
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">提携サイト一覧 (アクセス比率 & 登録RSS管理)</h2>
+                                    <p class="text-xs text-slate-500">各サイトの登録RSSフィード数やURLの編集、即時クローラー実行が可能です</p>
+                                </div>
+                                <span class="text-xs font-bold text-slate-400">全 <?= count($tradeSites) ?> 件</span>
+                            </div>
                             
                             <?php if (empty($tradeSites)): ?>
-                                <p class="text-xs text-slate-400 py-6 text-center">まだ相互リンクの依頼はありません。「相互リンク依頼」ページから受け付け可能です。</p>
+                                <p class="text-xs text-slate-400 py-6 text-center">まだ提携サイトはありません。上のフォームから登録するか、「相互リンク依頼」ページから受け付け可能です。</p>
                             <?php else: ?>
                                 <div class="overflow-x-auto">
                                     <table class="w-full text-left text-xs border-collapse">
                                         <thead>
                                             <tr class="border-b border-slate-100 text-slate-400">
-                                                <th class="py-2.5 font-bold">サイト名</th>
-                                                <th class="py-2.5 font-bold">URL / RSS</th>
+                                                <th class="py-2.5 font-bold">提携サイト名 & URL</th>
+                                                <th class="py-2.5 font-bold">登録RSSフィード</th>
                                                 <th class="py-2.5 font-bold">IN / OUT</th>
                                                 <th class="py-2.5 font-bold">返還率設定</th>
                                                 <th class="py-2.5 font-bold">特別優遇</th>
                                                 <th class="py-2.5 font-bold">ステータス</th>
-                                                <th class="py-2.5 font-bold text-right">保存</th>
+                                                <th class="py-2.5 font-bold text-right">操作</th>
                                             </tr>
                                         </thead>
                                         <tbody class="divide-y divide-slate-100">
-                                            <?php foreach ($tradeSites as $ts): ?>
-                                                <form method="POST">
-                                                    <input type="hidden" name="op" value="update_trade_site">
-                                                    <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
-                                                    <tr class="hover:bg-slate-50">
-                                                        <td class="py-3 font-bold text-slate-900"><?= htmlspecialchars($ts['site_name']) ?></td>
-                                                        <td class="py-3 text-[11px] text-slate-500 space-y-0.5">
-                                                            <a href="<?= htmlspecialchars($ts['url']) ?>" target="_blank" class="text-indigo-600 hover:underline block truncate max-w-xs">
-                                                                🌐 <?= htmlspecialchars($ts['url']) ?>
-                                                            </a>
-                                                            <span class="text-slate-400 block truncate max-w-xs">
-                                                                📡 <?= htmlspecialchars($ts['rss_url']) ?>
+                                            <?php foreach ($tradeSites as $ts): 
+                                                $siteRssList = TradeEngine::extractRssUrls($ts['rss_url'] ?? '');
+                                                $rssCount = count($siteRssList);
+                                            ?>
+                                                <tr class="hover:bg-slate-50 transition-colors">
+                                                    <!-- サイト情報 & 編集トリガー -->
+                                                    <td class="py-3 max-w-[200px]">
+                                                        <div class="font-bold text-slate-900 truncate" title="<?= htmlspecialchars($ts['site_name']) ?>">
+                                                            <?= htmlspecialchars($ts['site_name']) ?>
+                                                        </div>
+                                                        <a href="<?= htmlspecialchars($ts['url']) ?>" target="_blank" class="text-indigo-600 hover:underline block truncate text-[11px] mt-0.5" title="<?= htmlspecialchars($ts['url']) ?>">
+                                                            🌐 <?= htmlspecialchars($ts['url']) ?>
+                                                        </a>
+                                                    </td>
+
+                                                    <!-- 登録RSSフィード一覧 (複数URL表示) -->
+                                                    <td class="py-3 max-w-[280px]">
+                                                        <div class="flex items-center gap-1.5 mb-1">
+                                                            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold <?= $rssCount > 1 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-700' ?>">
+                                                                📡 RSS <?= $rssCount ?>件登録
                                                             </span>
-                                                        </td>
-                                                        <td class="py-3 font-mono">
-                                                            <span class="text-emerald-600 font-bold">IN: <?= $ts['in_count'] ?></span> / 
-                                                            <span class="text-amber-600 font-bold">OUT: <?= $ts['out_count'] ?></span>
-                                                        </td>
+                                                            <button type="button" onclick="document.getElementById('edit-modal-<?= $ts['id'] ?>').classList.remove('hidden')" class="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline">
+                                                                ✏️ RSS編集
+                                                            </button>
+                                                        </div>
+                                                        <div class="space-y-0.5 max-h-16 overflow-y-auto pr-1">
+                                                            <?php if (empty($siteRssList)): ?>
+                                                                <span class="text-slate-400 text-[10px]">RSS未設定</span>
+                                                            <?php else: ?>
+                                                                <?php foreach ($siteRssList as $feedIdx => $fUrl): ?>
+                                                                    <div class="text-[10px] text-slate-600 font-mono truncate flex items-center gap-1" title="<?= htmlspecialchars($fUrl) ?>">
+                                                                        <span class="text-slate-400">#<?= $feedIdx + 1 ?></span>
+                                                                        <a href="<?= htmlspecialchars($fUrl) ?>" target="_blank" class="hover:text-indigo-600 hover:underline truncate">
+                                                                            <?= htmlspecialchars($fUrl) ?>
+                                                                        </a>
+                                                                    </div>
+                                                                <?php endforeach; ?>
+                                                            <?php endif; ?>
+                                                        </div>
+                                                    </td>
+
+                                                    <!-- IN / OUT -->
+                                                    <td class="py-3 font-mono">
+                                                        <div class="text-emerald-600 font-bold">IN: <?= number_format($ts['in_count']) ?></div>
+                                                        <div class="text-amber-600 font-bold">OUT: <?= number_format($ts['out_count']) ?></div>
+                                                    </td>
+
+                                                    <!-- インライン更新フォーム -->
+                                                    <form method="POST">
+                                                        <input type="hidden" name="op" value="update_trade_site">
+                                                        <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
+                                                        <input type="hidden" name="rss_url" value="<?= htmlspecialchars($ts['rss_url'] ?? '') ?>">
+
                                                         <td class="py-3">
-                                                            <select name="return_rate" class="px-2.5 py-1 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                                            <select name="return_rate" class="px-2 py-1 rounded-xl border border-slate-200 text-xs font-bold bg-white">
                                                                 <option value="80" <?= $ts['return_rate'] == 80 ? 'selected' : '' ?>>80% 返還</option>
-                                                                <option value="100" <?= $ts['return_rate'] == 100 ? 'selected' : '' ?>>100% 返還 (等倍)</option>
+                                                                <option value="100" <?= $ts['return_rate'] == 100 ? 'selected' : '' ?>>100% (等倍)</option>
                                                                 <option value="120" <?= $ts['return_rate'] == 120 ? 'selected' : '' ?>>120% 返還</option>
-                                                                <option value="150" <?= $ts['return_rate'] == 150 ? 'selected' : '' ?>>150% 返還 (還元)</option>
-                                                                <option value="200" <?= $ts['return_rate'] == 200 ? 'selected' : '' ?>>200% 返還 (倍返し)</option>
+                                                                <option value="150" <?= $ts['return_rate'] == 150 ? 'selected' : '' ?>>150% (還元)</option>
+                                                                <option value="200" <?= $ts['return_rate'] == 200 ? 'selected' : '' ?>>200% (倍返し)</option>
                                                             </select>
                                                         </td>
+
                                                         <td class="py-3">
                                                             <label class="inline-flex items-center gap-1.5 cursor-pointer">
                                                                 <input type="checkbox" name="is_boosted" value="1" <?= $ts['is_boosted'] ? 'checked' : '' ?> class="rounded border-slate-300 text-amber-500">
-                                                                <span class="text-[11px] font-bold text-amber-800">特別優遇枠</span>
+                                                                <span class="text-[11px] font-bold text-amber-800">優遇枠</span>
                                                             </label>
                                                         </td>
+
                                                         <td class="py-3">
-                                                            <select name="status" class="px-2.5 py-1 rounded-xl border border-slate-200 text-xs font-bold <?= $ts['status'] === 'approved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : 'bg-amber-50 text-amber-800' ?>">
-                                                                <option value="pending" <?= $ts['status'] === 'pending' ? 'selected' : '' ?>>保留（未承認）</option>
-                                                                <option value="approved" <?= $ts['status'] === 'approved' ? 'selected' : '' ?>>承認（掲載中）</option>
+                                                            <select name="status" class="px-2 py-1 rounded-xl border border-slate-200 text-xs font-bold <?= $ts['status'] === 'approved' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' : ($ts['status'] === 'pending' ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-slate-100 text-slate-600') ?>">
+                                                                <option value="pending" <?= $ts['status'] === 'pending' ? 'selected' : '' ?>>保留</option>
+                                                                <option value="approved" <?= $ts['status'] === 'approved' ? 'selected' : '' ?>>承認 (掲載中)</option>
                                                                 <option value="rejected" <?= $ts['status'] === 'rejected' ? 'selected' : '' ?>>非承認</option>
-                                                                <option value="deleted" <?= $ts['status'] === 'deleted' ? 'selected' : '' ?>>リンク解除</option>
+                                                                <option value="deleted" <?= $ts['status'] === 'deleted' ? 'selected' : '' ?>>解除</option>
                                                             </select>
                                                         </td>
-                                                        <td class="py-3 text-right">
-                                                            <button type="submit" class="px-3 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px]">
+
+                                                        <td class="py-3 text-right space-x-1 whitespace-nowrap">
+                                                            <button type="submit" class="px-2.5 py-1 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] shadow-sm">
                                                                 保存
                                                             </button>
-                                                        </td>
-                                                    </tr>
-                                                </form>
+                                                    </form>
+
+                                                    <!-- 個別RSS巡回ボタン -->
+                                                    <form method="POST" class="inline">
+                                                        <input type="hidden" name="op" value="fetch_trade_rss">
+                                                        <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
+                                                        <button type="submit" title="このサイトの全RSSを今すぐ取得" class="px-2 py-1 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200">
+                                                            ⚡
+                                                        </button>
+                                                    </form>
+
+                                                    <!-- 削除ボタン -->
+                                                    <form method="POST" class="inline" onsubmit="return confirm('提携サイト「<?= htmlspecialchars($ts['site_name']) ?>」と取得記事キャッシュを完全に削除しますか？');">
+                                                        <input type="hidden" name="op" value="delete_trade_site">
+                                                        <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
+                                                        <button type="submit" title="削除" class="px-2 py-1 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] border border-rose-200">
+                                                            🗑️
+                                                        </button>
+                                                    </form>
+                                                    </td>
+                                                </tr>
+
+                                                <!-- 各提携サイトの複数RSS編集モーダル -->
+                                                <div id="edit-modal-<?= $ts['id'] ?>" class="hidden fixed inset-0 z-50 bg-slate-900/50 backdrop-blur-sm flex items-center justify-center p-4">
+                                                    <div class="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-200">
+                                                        <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                                            <h3 class="text-sm font-black text-slate-900 flex items-center gap-2">
+                                                                <span>📡</span> 提携サイト & 複数RSSフィードの編集
+                                                            </h3>
+                                                            <button type="button" onclick="document.getElementById('edit-modal-<?= $ts['id'] ?>').classList.add('hidden')" class="text-slate-400 hover:text-slate-600 text-lg font-bold">
+                                                                ✕
+                                                            </button>
+                                                        </div>
+
+                                                        <form method="POST" class="space-y-4">
+                                                            <input type="hidden" name="op" value="update_trade_site">
+                                                            <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
+
+                                                            <div>
+                                                                <label class="block text-xs font-bold text-slate-700 mb-1">サイト名</label>
+                                                                <input type="text" name="site_name" value="<?= htmlspecialchars($ts['site_name']) ?>" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                                                            </div>
+
+                                                            <div>
+                                                                <label class="block text-xs font-bold text-slate-700 mb-1">サイトURL</label>
+                                                                <input type="url" name="url" value="<?= htmlspecialchars($ts['url']) ?>" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                                                            </div>
+
+                                                            <div>
+                                                                <label class="block text-xs font-bold text-slate-700 mb-1">
+                                                                    RSSフィードURL一覧
+                                                                    <span class="text-indigo-600 font-normal ml-1">（複数ある場合は改行して入力）</span>
+                                                                </label>
+                                                                <textarea name="rss_url" rows="4" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-mono leading-relaxed focus:ring-2 focus:ring-indigo-500 focus:outline-none"><?= htmlspecialchars($ts['rss_url'] ?? '') ?></textarea>
+                                                                <p class="text-[11px] text-slate-500 mt-1">
+                                                                    ※ 1行に1つずつURLを記述してください。保存時に自動的に全フィードが登録されます。
+                                                                </p>
+                                                            </div>
+
+                                                            <div class="grid grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label class="block text-xs font-bold text-slate-700 mb-1">返還率</label>
+                                                                    <select name="return_rate" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                                                        <option value="80" <?= $ts['return_rate'] == 80 ? 'selected' : '' ?>>80% 返還</option>
+                                                                        <option value="100" <?= $ts['return_rate'] == 100 ? 'selected' : '' ?>>100% (等倍)</option>
+                                                                        <option value="120" <?= $ts['return_rate'] == 120 ? 'selected' : '' ?>>120% 返還</option>
+                                                                        <option value="150" <?= $ts['return_rate'] == 150 ? 'selected' : '' ?>>150% (還元)</option>
+                                                                        <option value="200" <?= $ts['return_rate'] == 200 ? 'selected' : '' ?>>200% (倍返し)</option>
+                                                                    </select>
+                                                                </div>
+
+                                                                <div>
+                                                                    <label class="block text-xs font-bold text-slate-700 mb-1">ステータス</label>
+                                                                    <select name="status" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                                                        <option value="pending" <?= $ts['status'] === 'pending' ? 'selected' : '' ?>>保留</option>
+                                                                        <option value="approved" <?= $ts['status'] === 'approved' ? 'selected' : '' ?>>承認（掲載中）</option>
+                                                                        <option value="rejected" <?= $ts['status'] === 'rejected' ? 'selected' : '' ?>>非承認</option>
+                                                                        <option value="deleted" <?= $ts['status'] === 'deleted' ? 'selected' : '' ?>>解除</option>
+                                                                    </select>
+                                                                </div>
+                                                            </div>
+
+                                                            <div class="flex items-center justify-between pt-3 border-t border-slate-100">
+                                                                <button type="button" onclick="document.getElementById('edit-modal-<?= $ts['id'] ?>').classList.add('hidden')" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold">
+                                                                    キャンセル
+                                                                </button>
+                                                                <button type="submit" class="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm">
+                                                                    変更を保存する
+                                                                </button>
+                                                            </div>
+                                                        </form>
+                                                    </div>
+                                                </div>
                                             <?php endforeach; ?>
                                         </tbody>
                                     </table>
@@ -780,22 +1683,26 @@ $navTabs = [
                     <div class="space-y-6">
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight">アフィリエイト広告スロット設定</h1>
-                                <p class="text-xs text-slate-500">PC・スマホそれぞれの指定サイズ広告タグ（A8, もしも, バリューコマース等）を設置・管理します</p>
+                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                    <span>💰</span> アフィリエイト広告・個別枠設定
+                                </h1>
+                                <p class="text-xs text-slate-500 mt-0.5">
+                                    広告枠ごとに個別に「表示 / 非表示」を設定できます。A8.net、もしもアフィリエイト、バリューコマース等の広告タグを配置できます。
+                                </p>
                             </div>
                         </div>
 
                         <form method="POST" class="space-y-6">
                             <input type="hidden" name="op" value="save_ads">
 
-                            <!-- 広告表示/非表示スイッチ -->
+                            <!-- マスター表示切替 -->
                             <div class="bg-amber-50 border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                                 <div class="space-y-1">
                                     <div class="text-sm font-black text-amber-950 flex items-center gap-2">
-                                        <span>📢</span> アフィリエイト広告マスター表示切替
+                                        <span>📢</span> アフィリエイト広告 全体マスター表示切替
                                     </div>
                                     <p class="text-xs text-amber-800">
-                                        チェックを外すと、サイト全体の広告枠が一括で非表示になります（審査時や純粋なコンテンツ重視時に便利です）。
+                                        チェックを外すと、個別設定にかかわらずサイト全体の広告枠が一括で非表示になります（審査時などに便利です）。
                                     </p>
                                 </div>
                                 <label class="relative flex items-center gap-2.5 cursor-pointer bg-white px-5 py-3 rounded-2xl border border-amber-300 shadow-sm">
@@ -804,52 +1711,156 @@ $navTabs = [
                                 </label>
                             </div>
 
-                            <!-- PC広告スロット -->
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+                            <!-- PC専用広告スロット -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                                 <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                                     <span class="text-lg">💻</span>
-                                    <h2 class="text-base font-black text-slate-900">PC専用 広告スロット</h2>
+                                    <h2 class="text-base font-black text-slate-900">PC専用 広告スロット（個別表示・非表示対応）</h2>
                                 </div>
 
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">PC ヘッダー内 (468×60px)</label>
-                                    <textarea name="ad_pc_header" rows="3" class="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_header')) ?></textarea>
+                                <!-- 1. PCヘッダー -->
+                                <?php $pcHeaderOn = SettingsManager::get('ad_pc_header_enabled', '1') === '1'; ?>
+                                <div class="p-4 rounded-2xl border <?= $pcHeaderOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                                        <div>
+                                            <div class="text-xs font-black text-slate-900 flex items-center gap-2">
+                                                <span>① PC ヘッダー内 (468×60px / 728×90px)</span>
+                                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $pcHeaderOn ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-200 text-slate-600' ?>">
+                                                    <?= $pcHeaderOn ? '🟢 個別表示: ON' : '⚪ 個別非表示: OFF' ?>
+                                                </span>
+                                            </div>
+                                            <p class="text-[11px] text-slate-500">PCトップ及び記事ページ上部のヘッダー横・ロゴ横に配置されます。</p>
+                                        </div>
+                                        <label class="flex items-center gap-2 cursor-pointer bg-white px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-700 shadow-xs">
+                                            <input type="checkbox" name="ad_pc_header_enabled" value="1" <?= $pcHeaderOn ? 'checked' : '' ?> class="w-4 h-4 rounded text-amber-500">
+                                            <span>この枠を表示する</span>
+                                        </label>
+                                    </div>
+                                    <textarea name="ad_pc_header" rows="3" placeholder="<a href='...'><img src='...' alt='広告'></a> または JavaScriptタグ" class="w-full p-3 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_header')) ?></textarea>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">PC サイド上 (300×250px)</label>
-                                        <textarea name="ad_pc_sidebar_top" rows="3" class="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_sidebar_top')) ?></textarea>
+                                    <!-- 2. PCサイドバー上 -->
+                                    <?php $pcSideTopOn = SettingsManager::get('ad_pc_sidebar_top_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $pcSideTopOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">② PC サイド上 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">サイドバー最上部レクタングル</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_pc_sidebar_top_enabled" value="1" <?= $pcSideTopOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_pc_sidebar_top" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_sidebar_top')) ?></textarea>
                                     </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">PC サイド下 (300×250px)</label>
-                                        <textarea name="ad_pc_sidebar_bottom" rows="3" class="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_sidebar_bottom')) ?></textarea>
+
+                                    <!-- 3. PCサイドバー下 -->
+                                    <?php $pcSideBottomOn = SettingsManager::get('ad_pc_sidebar_bottom_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $pcSideBottomOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">③ PC サイド下 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">ランキング・RSS下部の追従領域</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_pc_sidebar_bottom_enabled" value="1" <?= $pcSideBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_pc_sidebar_bottom" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_pc_sidebar_bottom')) ?></textarea>
                                     </div>
                                 </div>
                             </div>
 
-                            <!-- スマホ広告スロット -->
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-5">
+                            <!-- スマホ専用広告スロット -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                                 <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                                     <span class="text-lg">📱</span>
-                                    <h2 class="text-base font-black text-slate-900">スマホ専用 広告スロット</h2>
+                                    <h2 class="text-base font-black text-slate-900">スマホ専用 広告スロット（個別表示・非表示対応）</h2>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">スマホ ヘッダー上 (300×250px)</label>
-                                        <textarea name="ad_sp_header_top" rows="3" class="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_sp_header_top')) ?></textarea>
+                                    <!-- 4. スマホヘッダー上 -->
+                                    <?php $spHeadTopOn = SettingsManager::get('ad_sp_header_top_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $spHeadTopOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">④ スマホ ヘッダー上 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">ファーストビュー最上部</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_sp_header_top_enabled" value="1" <?= $spHeadTopOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_sp_header_top" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_sp_header_top')) ?></textarea>
                                     </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">スマホ ヘッダー下 (300×250px)</label>
-                                        <textarea name="ad_sp_header_bottom" rows="3" class="w-full p-3 rounded-2xl border border-slate-200 font-mono text-xs bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_sp_header_bottom')) ?></textarea>
+
+                                    <!-- 5. スマホヘッダー下 -->
+                                    <?php $spHeadBottomOn = SettingsManager::get('ad_sp_header_bottom_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $spHeadBottomOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">⑤ スマホ ヘッダー下 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">記事タイトル直下</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_sp_header_bottom_enabled" value="1" <?= $spHeadBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_sp_header_bottom" rows="3" class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_sp_header_bottom')) ?></textarea>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- 記事詳細ページ内 広告スロット -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                                <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
+                                    <span class="text-lg">📄</span>
+                                    <h2 class="text-base font-black text-slate-900">記事ページ内 広告スロット（インフィード・本文下）</h2>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <!-- 6. 記事本文中 -->
+                                    <?php $artMiddleOn = SettingsManager::get('ad_article_middle_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $artMiddleOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">⑥ 記事本文中 (インフィード / 300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">なぜ話題ボックスと本文の間</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_article_middle_enabled" value="1" <?= $artMiddleOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_article_middle" rows="3" placeholder="本文中インフィード広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_middle')) ?></textarea>
+                                    </div>
+
+                                    <!-- 7. 記事下部 -->
+                                    <?php $artBottomOn = SettingsManager::get('ad_article_bottom_enabled', '1') === '1'; ?>
+                                    <div class="p-4 rounded-2xl border <?= $artBottomOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
+                                        <div class="flex items-center justify-between gap-2">
+                                            <div>
+                                                <div class="text-xs font-black text-slate-900">⑦ 記事下部 (関連記事上 / 300×250px〜)</div>
+                                                <div class="text-[10px] text-slate-500">本文読了後・投票ボタンの直下</div>
+                                            </div>
+                                            <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
+                                                <input type="checkbox" name="ad_article_bottom_enabled" value="1" <?= $artBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
+                                                <span>表示</span>
+                                            </label>
+                                        </div>
+                                        <textarea name="ad_article_bottom" rows="3" placeholder="記事直下広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom')) ?></textarea>
                                     </div>
                                 </div>
                             </div>
 
                             <div class="flex justify-end">
                                 <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
-                                    広告設定を保存する
+                                    広告の個別表示・コード設定を保存する
                                 </button>
                             </div>
                         </form>
@@ -923,49 +1934,98 @@ $navTabs = [
                         </div>
                     </div>
 
-                <!-- 8. 🔒 セキュリティ設定 タブ (推測不能URL & パスワード) -->
+                <!-- 8. 🔒 セキュリティ・アカウント設定 タブ (ID・パスワード・メール・URL) -->
                 <?php elseif ($currentTab === 'security'): ?>
                     <div class="space-y-6">
                         <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">セキュリティ設定（管理画面URL・パスワード）</h1>
-                            <p class="text-xs text-slate-500">外部から想像できない独自のシークレットURLを設定し、第三者の不正アクセスをブロックします</p>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">アカウント・セキュリティ設定</h1>
+                            <p class="text-xs text-slate-500">管理者ログインID、パスワード、再設定用メールアドレス、推測不能なシークレットURLを設定・変更できます</p>
                         </div>
 
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                            <form method="POST" class="space-y-5">
+                            <form method="POST" class="space-y-6">
                                 <input type="hidden" name="op" value="save_security">
 
-                                <div class="space-y-2 bg-amber-50 border border-amber-200 p-4 rounded-2xl">
-                                    <div class="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                                        <span>🛡️</span> 現在のアクセスURL
+                                <!-- アカウント認証情報セクション -->
+                                <div class="space-y-4">
+                                    <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                        <span class="text-lg">👤</span>
+                                        <h2 class="text-sm font-black text-slate-900">管理者ログインアカウント設定</h2>
                                     </div>
-                                    <div class="text-sm font-mono font-bold text-amber-950">
-                                        https://<?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') ?>/<?= htmlspecialchars($thisFileUrl) ?>
+
+                                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                        <!-- 管理者ID -->
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">
+                                                管理者ログインID <span class="text-rose-600">*</span>
+                                            </label>
+                                            <input type="text" name="admin_id" value="<?= htmlspecialchars($adminId) ?>" required minlength="3" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                            <p class="text-[11px] text-slate-400">※ 3文字以上の半角英数字（初期値: admin）</p>
+                                        </div>
+
+                                        <!-- パスワード再設定用メールアドレス -->
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">
+                                                パスワード再設定用メールアドレス <span class="text-rose-600">*</span>
+                                            </label>
+                                            <input type="email" name="admin_email" value="<?= htmlspecialchars($adminEmail) ?>" required class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-amber-500 bg-slate-50 focus:bg-white">
+                                            <p class="text-[11px] text-slate-400">※ パスワード紛失時に再設定用リンクを受信するアドレスです</p>
+                                        </div>
+                                    </div>
+
+                                    <!-- パスワード変更 -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                                        <div class="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                            <span>🔑</span> パスワード変更（変更する場合のみ入力）
+                                        </div>
+                                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                            <div class="space-y-1">
+                                                <label class="block text-[11px] font-bold text-slate-600">新しいパスワード</label>
+                                                <input type="password" name="admin_password" placeholder="変更する場合のみ入力（6文字以上）" class="w-full px-4 py-2 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500 bg-white">
+                                            </div>
+                                            <div class="space-y-1">
+                                                <label class="block text-[11px] font-bold text-slate-600">新しいパスワード（確認用）</label>
+                                                <input type="password" name="admin_password_confirm" placeholder="もう一度入力" class="w-full px-4 py-2 rounded-xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500 bg-white">
+                                            </div>
+                                        </div>
+                                        <p class="text-[11px] text-slate-400">※ 空欄のまま保存した場合は現在のパスワードが維持されます。</p>
                                     </div>
                                 </div>
 
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">
-                                        管理画面シークレットURLスラッグ <span class="text-rose-600">*</span>
-                                    </label>
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-xs font-mono text-slate-400">/admin-</span>
-                                        <input type="text" name="admin_secret_path" value="<?= htmlspecialchars($currentSecretPath) ?>" required minlength="6" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500">
-                                        <span class="text-xs font-mono text-slate-400">.php</span>
+                                <!-- URLスラッグセクション -->
+                                <div class="space-y-4 pt-4 border-t border-slate-100">
+                                    <div class="flex items-center gap-2 border-b border-slate-100 pb-2">
+                                        <span class="text-lg">🛡️</span>
+                                        <h2 class="text-sm font-black text-slate-900">推測不能なシークレット管理URL</h2>
                                     </div>
-                                    <p class="text-[11px] text-slate-400">
-                                        ※ ランダムな英数字を設定することで、攻撃者が管理画面の場所を特定できなくなります。
-                                    </p>
-                                </div>
 
-                                <div class="space-y-1.5 pt-2 border-t border-slate-100">
-                                    <label class="block text-xs font-bold text-slate-700">管理者パスワード変更</label>
-                                    <input type="password" name="admin_password" placeholder="変更する場合のみ新しいパスワードを入力（6文字以上）" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500">
+                                    <div class="space-y-2 bg-amber-50 border border-amber-200 p-4 rounded-2xl">
+                                        <div class="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                                            <span>🔗</span> 現在のアクセスURL
+                                        </div>
+                                        <div class="text-sm font-mono font-bold text-amber-950 break-all">
+                                            https://<?= htmlspecialchars($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') ?>/<?= htmlspecialchars($thisFileUrl) ?>
+                                        </div>
+                                    </div>
+
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">
+                                            管理画面シークレットURLスラッグ <span class="text-rose-600">*</span>
+                                        </label>
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-xs font-mono text-slate-400">/admin-</span>
+                                            <input type="text" name="admin_secret_path" value="<?= htmlspecialchars($currentSecretPath) ?>" required minlength="6" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500">
+                                            <span class="text-xs font-mono text-slate-400">.php</span>
+                                        </div>
+                                        <p class="text-[11px] text-slate-400">
+                                            ※ ランダムな英数字を設定することで、攻撃者が管理画面の場所を特定できなくなります。
+                                        </p>
+                                    </div>
                                 </div>
 
                                 <div class="pt-2 flex justify-end">
                                     <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
-                                        セキュリティ設定を更新する
+                                        アカウント・セキュリティ設定を更新する
                                     </button>
                                 </div>
                             </form>

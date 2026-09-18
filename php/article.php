@@ -146,12 +146,22 @@ $sideRss = $showRss ? TradeEngine::getDisplayFeedItems(true, 5) : [];
 // 相互リンク一覧
 $approvedLinks = $showRss ? TradeEngine::getApprovedLinks() : [];
 
-// 広告タグ
+// 広告タグと個別枠ごとの表示/非表示フラグ
+$adPcHeaderEnabled = $showAds && SettingsManager::get('ad_pc_header_enabled', '1') === '1';
+$adPcSidebarTopEnabled = $showAds && SettingsManager::get('ad_pc_sidebar_top_enabled', '1') === '1';
+$adPcSidebarBottomEnabled = $showAds && SettingsManager::get('ad_pc_sidebar_bottom_enabled', '1') === '1';
+$adSpHeaderTopEnabled = $showAds && SettingsManager::get('ad_sp_header_top_enabled', '1') === '1';
+$adSpHeaderBottomEnabled = $showAds && SettingsManager::get('ad_sp_header_bottom_enabled', '1') === '1';
+$adArticleMiddleEnabled = $showAds && SettingsManager::get('ad_article_middle_enabled', '1') === '1';
+$adArticleBottomEnabled = $showAds && SettingsManager::get('ad_article_bottom_enabled', '1') === '1';
+
 $adPcHeader = SettingsManager::get('ad_pc_header');
 $adPcSidebarTop = SettingsManager::get('ad_pc_sidebar_top');
 $adPcSidebarBottom = SettingsManager::get('ad_pc_sidebar_bottom');
 $adSpHeaderTop = SettingsManager::get('ad_sp_header_top');
 $adSpHeaderBottom = SettingsManager::get('ad_sp_header_bottom');
+$adArticleMiddle = SettingsManager::get('ad_article_middle');
+$adArticleBottom = SettingsManager::get('ad_article_bottom');
 
 // カスタムタグ
 $headCustomTags = SettingsManager::get('head_custom_tags');
@@ -215,8 +225,8 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 </div>
             </a>
 
-            <!-- PCヘッダー広告枠 (468x60) -->
-            <?php if ($showAds && !empty($adPcHeader)): ?>
+            <!-- PCヘッダー広告枠 (468x60 / 728x90) -->
+            <?php if ($adPcHeaderEnabled && !empty($adPcHeader)): ?>
                 <div class="hidden lg:block overflow-hidden max-h-[60px]">
                     <?= $adPcHeader ?>
                 </div>
@@ -231,7 +241,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     </header>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($showAds && !empty($adSpHeaderTop)): ?>
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
         <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
             <?= $adSpHeaderTop ?>
         </div>
@@ -296,6 +306,13 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                         <?= htmlspecialchars($article['why_trending']) ?>
                     </p>
                 </div>
+
+                <!-- 記事本文中 広告枠 (インフィード / 300x250) -->
+                <?php if ($adArticleMiddleEnabled && !empty($adArticleMiddle)): ?>
+                    <div class="flex justify-center my-4 overflow-hidden">
+                        <?= $adArticleMiddle ?>
+                    </div>
+                <?php endif; ?>
 
                 <!-- 記事本文 -->
                 <div class="prose max-w-none text-stone-800 leading-relaxed text-sm sm:text-base space-y-4 font-sans whitespace-pre-wrap">
@@ -407,9 +424,16 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
             <?php endif; ?>
 
             <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-            <?php if ($showAds && !empty($adSpHeaderBottom)): ?>
+            <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
                 <div class="lg:hidden flex justify-center py-4 bg-stone-50 rounded-2xl border border-stone-200">
                     <?= $adSpHeaderBottom ?>
+                </div>
+            <?php endif; ?>
+
+            <!-- 記事下部 広告枠 (300x250 / レスポンシブ) -->
+            <?php if ($adArticleBottomEnabled && !empty($adArticleBottom)): ?>
+                <div class="flex justify-center my-6 p-4 bg-stone-50 rounded-2xl border border-stone-200 overflow-hidden">
+                    <?= $adArticleBottom ?>
                 </div>
             <?php endif; ?>
 
@@ -443,7 +467,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
         <aside class="w-full lg:w-80 flex-shrink-0 space-y-6">
             
             <!-- PCサイドバー上 広告枠 (300x250) -->
-            <?php if ($showAds && !empty($adPcSidebarTop)): ?>
+            <?php if ($adPcSidebarTopEnabled && !empty($adPcSidebarTop)): ?>
                 <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
                     <?= $adPcSidebarTop ?>
                 </div>
@@ -499,7 +523,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
             <?php endif; ?>
 
             <!-- PCサイドバー下 広告枠 (300x250) -->
-            <?php if ($showAds && !empty($adPcSidebarBottom)): ?>
+            <?php if ($adPcSidebarBottomEnabled && !empty($adPcSidebarBottom)): ?>
                 <div class="hidden lg:flex justify-center bg-white p-3 rounded-3xl border border-stone-200 shadow-sm">
                     <?= $adPcSidebarBottom ?>
                 </div>

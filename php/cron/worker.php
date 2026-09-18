@@ -117,4 +117,11 @@ foreach ($sites as $site) {
 // 3. SNSキュー処理
 $snsProcessed = SnsDispatcher::processQueue(5);
 echo "[SNS] キュー配信処理完了: {$snsProcessed}件\n";
+
+// 4. 相互リンク・相互RSS巡回（複数登録RSSフィード巡回）
+require_once __DIR__ . '/../classes/TradeEngine.php';
+echo "[TradeEngine] 相互RSSフィード巡回中...\n";
+$rssStats = TradeEngine::fetchRssFeeds();
+echo "  → 巡回完了: 提携{$rssStats['sites_checked']}サイト / {$rssStats['feeds_checked']}フィード / 取得記事{$rssStats['items_saved']}件\n";
+
 echo "[Worker] 終了: " . date('Y-m-d H:i:s') . "\n";
