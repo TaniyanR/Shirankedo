@@ -67,7 +67,7 @@ class Installer {
     /**
      * データベーススキーマと初期データをセットアップ
      */
-    public static function setupTables(PDO $pdo, string $adminId = 'admin', string $adminPass = 'password', string $adminEmail = 'sogomultilink@gmail.com'): void {
+    public static function setupTables(PDO $pdo): void {
         // 1. database.sql の実行
         $sqlPath = dirname(__DIR__) . '/database.sql';
         if (file_exists($sqlPath)) {
@@ -117,11 +117,11 @@ class Installer {
         require_once __DIR__ . '/MigrationAddFeatures.php';
         MigrationAddFeatures::run();
 
-        // 6. 管理者アカウントの初期保存
+        // 6. 管理者アカウントの初期保存 (admin / password)
         $settingsStmt = $pdo->prepare("INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
-        $settingsStmt->execute(['admin_id', $adminId]);
-        $settingsStmt->execute(['admin_password', $adminPass]);
-        $settingsStmt->execute(['admin_email', $adminEmail]);
+        $settingsStmt->execute(['admin_id', 'admin']);
+        $settingsStmt->execute(['admin_password', 'password']);
+        $settingsStmt->execute(['admin_email', 'sogomultilink@gmail.com']);
         $settingsStmt->execute(['admin_secret_path', 'manage-sk89q']);
     }
 
@@ -134,9 +134,6 @@ class Installer {
         $name = $defaults['name'] ?? (defined('DB_NAME') ? DB_NAME : '');
         $user = $defaults['user'] ?? (defined('DB_USER') ? DB_USER : '');
         $pass = $defaults['pass'] ?? (defined('DB_PASS') ? DB_PASS : '');
-        $adminId = $defaults['admin_id'] ?? 'admin';
-        $adminPass = $defaults['admin_pass'] ?? '';
-        $adminEmail = $defaults['admin_email'] ?? 'sogomultilink@gmail.com';
 
         ?>
         <!DOCTYPE html>
@@ -224,29 +221,6 @@ class Installer {
                         </div>
                     </div>
 
-                    <!-- 管理者アカウント設定セクション -->
-                    <div class="space-y-3 pt-2">
-                        <h2 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
-                            <span>👤</span> 管理者アカウント初期設定
-                        </h2>
-
-                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                            <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-700">管理者ID <span class="text-rose-500">*</span></label>
-                                <input type="text" name="admin_id" value="<?= htmlspecialchars($adminId) ?>" required placeholder="admin" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
-                            </div>
-                            <div class="space-y-1">
-                                <label class="block text-xs font-bold text-slate-700">管理者パスワード <span class="text-rose-500">*</span></label>
-                                <input type="password" name="admin_pass" value="<?= htmlspecialchars($adminPass) ?>" required minlength="6" placeholder="6文字以上の安全なパスワード" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
-                            </div>
-                        </div>
-
-                        <div class="space-y-1">
-                            <label class="block text-xs font-bold text-slate-700">管理者メールアドレス (パスワード再設定用) <span class="text-rose-500">*</span></label>
-                            <input type="email" name="admin_email" value="<?= htmlspecialchars($adminEmail) ?>" required placeholder="sogomultilink@gmail.com" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs">
-                        </div>
-                    </div>
-
                     <button type="submit" class="w-full py-4 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-sm shadow-md transition-all flex items-center justify-center gap-2 mt-4">
                         <span>⚡</span> 接続テスト & データベース初期セットアップを実行する
                     </button>
@@ -269,27 +243,16 @@ class Installer {
             $user = trim($_POST['db_user'] ?? '');
             $pass = $_POST['db_pass'] ?? '';
 
-            $adminId = trim($_POST['admin_id'] ?? 'admin');
-            $adminPass = trim($_POST['admin_pass'] ?? '');
-            $adminEmail = trim($_POST['admin_email'] ?? 'sogomultilink@gmail.com');
-
             $defaults = [
                 'host' => $host,
                 'port' => $port,
                 'name' => $name,
                 'user' => $user,
                 'pass' => $pass,
-                'admin_id' => $adminId,
-                'admin_pass' => $adminPass,
-                'admin_email' => $adminEmail,
             ];
 
             if (empty($name) || empty($user)) {
                 self::renderWizard('データベース名とユーザー名は必須です。', $defaults);
-            }
-
-            if (empty($adminPass) || strlen($adminPass) < 6) {
-                self::renderWizard('管理者パスワードは6文字以上で入力してください。', $defaults);
             }
 
             // 1. 接続テスト
@@ -319,7 +282,7 @@ class Installer {
 
             // 3. テーブルおよび初期データの作成
             try {
-                self::setupTables($pdo, $adminId, $adminPass, $adminEmail);
+                self::setupTables($pdo);
             } catch (Throwable $e) {
                 self::renderWizard("テーブル作成中にエラーが発生しました: " . $e->getMessage(), $defaults);
             }
@@ -327,7 +290,7 @@ class Installer {
             // 4. セッションリセット & 自動ログイン
             if (session_status() === PHP_SESSION_ACTIVE) {
                 $_SESSION['admin_logged_in'] = true;
-                $_SESSION['admin_username'] = $adminId;
+                $_SESSION['admin_username'] = 'admin';
                 $_SESSION['admin_login_time'] = time();
             }
 
