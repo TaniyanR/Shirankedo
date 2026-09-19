@@ -129,11 +129,17 @@ class Installer {
      * セットアップウィザード画面を表示してスクリプト終了
      */
     public static function renderWizard(?string $errorMessage = null, array $defaults = []): void {
-        $host = $defaults['host'] ?? (defined('DB_HOST') ? DB_HOST : 'localhost');
-        $port = $defaults['port'] ?? (defined('DB_PORT') ? DB_PORT : '3306');
-        $name = $defaults['name'] ?? (defined('DB_NAME') ? DB_NAME : '');
-        $user = $defaults['user'] ?? (defined('DB_USER') ? DB_USER : '');
-        $pass = $defaults['pass'] ?? (defined('DB_PASS') ? DB_PASS : '');
+        $host = $_POST['db_host'] ?? ($defaults['host'] ?? (defined('DB_HOST') ? DB_HOST : ''));
+        if (empty($host)) {
+            $host = 'localhost';
+        }
+        $port = $_POST['db_port'] ?? ($defaults['port'] ?? (defined('DB_PORT') ? DB_PORT : '3306'));
+        $name = $_POST['db_name'] ?? ($defaults['name'] ?? (defined('DB_NAME') && DB_NAME !== 'shirankedo_db' ? DB_NAME : ''));
+        $user = $_POST['db_user'] ?? ($defaults['user'] ?? (defined('DB_USER') && DB_USER !== 'root' ? DB_USER : ''));
+        $pass = $_POST['db_pass'] ?? ($defaults['pass'] ?? '');
+
+        // シン・レンタルサーバー特有の localhost エラー検知
+        $isLocalhostAccessDenied = ($errorMessage && stripos($errorMessage, "Access denied") !== false && stripos($host, "localhost") !== false);
 
         ?>
         <!DOCTYPE html>
@@ -157,32 +163,50 @@ class Installer {
                     </div>
                     <h1 class="text-2xl font-black text-slate-900 tracking-tight">データベース初期セットアップ</h1>
                     <p class="text-xs text-slate-500">
-                        新しいサーバー環境（シン・レンタルサーバー等）のMySQL接続情報を入力してください。<br>
+                        サーバー環境（シン・レンタルサーバー等）のMySQL接続情報を入力してください。<br>
                         接続確認後、必要なテーブルと初期データを自動構築します。
                     </p>
                 </div>
 
                 <?php if ($errorMessage): ?>
-                    <div class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium space-y-1">
-                        <div class="font-bold flex items-center gap-1.5 text-rose-700">
+                    <div class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium space-y-2">
+                        <div class="font-bold flex items-center gap-1.5 text-rose-700 text-sm">
                             <span>⚠️</span> 接続・設定エラーが発生しました
                         </div>
-                        <p class="break-all"><?= htmlspecialchars($errorMessage) ?></p>
-                        <p class="text-[11px] text-rose-600 mt-1">
-                            ※ シン・レンタルサーバー等のサーバー管理画面でMySQLデータベース名・ユーザー・パスワードが作成されているかご確認ください。
-                        </p>
-                    </div>
-                <?php else: ?>
-                    <div class="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2.5">
-                        <span class="text-base">💡</span>
-                        <div class="text-[11px] leading-relaxed">
-                            <strong>サーバー別ホスト名の目安：</strong><br>
-                            ・<strong>シン・レンタルサーバー / エックスサーバー:</strong> 管理パネルに記載の「MySQLホスト名」（例: <code>mysql1234.xserver.jp</code> など）または <code>localhost</code><br>
-                            ・<strong>さくらインターネット:</strong> <code>mysql***.db.sakura.ne.jp</code><br>
-                            ・<strong>ローカル / VPS:</strong> <code>localhost</code>
-                        </div>
+                        <p class="break-all font-mono text-[11px] bg-white/70 p-2 rounded-lg border border-rose-100"><?= htmlspecialchars($errorMessage) ?></p>
+
+                        <?php if ($isLocalhostAccessDenied): ?>
+                            <div class="p-3 bg-amber-50 border border-amber-300 rounded-xl text-amber-900 space-y-1.5 mt-2">
+                                <div class="font-black flex items-center gap-1 text-amber-800">
+                                    <span>💡</span> 【重要】シン・レンタルサーバー / エックスサーバーでの解決手順
+                                </div>
+                                <div class="text-[11px] leading-relaxed space-y-1">
+                                    <p><strong>① ホスト名は「localhost」ではありません：</strong><br>
+                                    サーバーパネルの「データベース」＞「MySQL設定」の最下部に記載されている<strong>『MySQLホスト名』</strong>（例: <code class="bg-amber-100 px-1 rounded font-bold">mysql○○○○.shin-server.jp</code> または <code class="bg-amber-100 px-1 rounded font-bold">mysql○○○○.xserver.jp</code>）を「データベースホスト名」欄に入力してください。</p>
+                                    <p><strong>② ユーザーのアクセス権追加：</strong><br>
+                                    サーバーパネル「MySQL設定」＞「MySQL一覧」の表にて、該当データベースの「アクセス権所有ユーザ」に作成したユーザー（<?= htmlspecialchars($user ?: 'DBユーザー') ?>）が追加されているかご確認ください。</p>
+                                    <p><strong>③ パスワード：</strong><br>
+                                    MySQLユーザー追加時にご自身で決めたパスワードを入力してください。</p>
+                                </div>
+                            </div>
+                        <?php else: ?>
+                            <p class="text-[11px] text-rose-600">
+                                ※ サーバー管理画面でMySQLデータベース名・ユーザー・パスワードが作成され、アクセス権が付与されているかご確認ください。
+                            </p>
+                        <?php endif; ?>
                     </div>
                 <?php endif; ?>
+
+                <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-slate-700 text-xs space-y-1.5">
+                    <div class="font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>📋</span> シン・レンタルサーバー / エックスサーバーの設定確認手順
+                    </div>
+                    <ol class="list-decimal list-inside text-[11px] text-slate-600 space-y-1 leading-relaxed">
+                        <li>サーバーパネル「データベース」＞<strong>「MySQL設定」</strong>を開く</li>
+                        <li>画面最下部の<strong>「MySQLホスト名」</strong>（例: <code>mysql1001.shin-server.jp</code> 等）をコピーして下記ホスト名に入力</li>
+                        <li>「MySQL一覧」で作成したDBにユーザーが<strong>「アクセス権所有ユーザ」</strong>として登録されていることを確認</li>
+                    </ol>
+                </div>
 
                 <form method="POST" class="space-y-5">
                     <input type="hidden" name="__installer_action" value="install">
@@ -196,7 +220,8 @@ class Installer {
                         <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                             <div class="sm:col-span-2 space-y-1">
                                 <label class="block text-xs font-bold text-slate-700">データベースホスト名 <span class="text-rose-500">*</span></label>
-                                <input type="text" name="db_host" value="<?= htmlspecialchars($host) ?>" required placeholder="localhost または mysql***.xserver.jp" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
+                                <input type="text" name="db_host" value="<?= htmlspecialchars($host) ?>" required placeholder="例: mysql1001.shin-server.jp または localhost" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
+                                <p class="text-[10px] text-slate-400">※ シン・レンタルサーバーの場合はサーバーパネル記載のホスト名を入力</p>
                             </div>
                             <div class="space-y-1">
                                 <label class="block text-xs font-bold text-slate-700">ポート番号</label>
@@ -206,17 +231,17 @@ class Installer {
 
                         <div class="space-y-1">
                             <label class="block text-xs font-bold text-slate-700">データベース名 (Database Name) <span class="text-rose-500">*</span></label>
-                            <input type="text" name="db_name" value="<?= htmlspecialchars($name) ?>" required placeholder="例: shirankedo_db または ユーザー名_db" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
+                            <input type="text" name="db_name" value="<?= htmlspecialchars($name) ?>" required placeholder="例: ganmodokir_db" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
                         </div>
 
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
                             <div class="space-y-1">
                                 <label class="block text-xs font-bold text-slate-700">ユーザー名 (User) <span class="text-rose-500">*</span></label>
-                                <input type="text" name="db_user" value="<?= htmlspecialchars($user) ?>" required placeholder="例: root または DBユーザー名" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
+                                <input type="text" name="db_user" value="<?= htmlspecialchars($user) ?>" required placeholder="例: ganmodokir_shi" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
                             </div>
                             <div class="space-y-1">
                                 <label class="block text-xs font-bold text-slate-700">パスワード (Password)</label>
-                                <input type="password" name="db_pass" value="<?= htmlspecialchars($pass) ?>" placeholder="MySQLパスワード" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
+                                <input type="password" name="db_pass" value="<?= htmlspecialchars($pass) ?>" placeholder="MySQLユーザーのパスワード" class="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-400 text-xs font-mono">
                             </div>
                         </div>
                     </div>
