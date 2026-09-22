@@ -8,13 +8,6 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
-require_once __DIR__ . '/classes/Installer.php';
-
-// 初回サーバー設置時・DB未接続時の初期セットアップウィザード
-if (!Installer::isInstalled()) {
-    Installer::handleInstallationRequest();
-    Installer::renderWizard();
-}
 
 // アクセス解析トラッキング & 相互リンク逆アクセスの自動記録
 TradeEngine::trackIncomingReferrer();
@@ -414,6 +407,12 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                             </div>
                         </article>
                     <?php endforeach; ?>
+                </div>
+            <?php else: ?>
+                <div class="bg-white rounded-3xl border border-stone-200 p-8 text-center space-y-3">
+                    <div class="text-3xl">📭</div>
+                    <p class="text-sm font-bold text-stone-700">現在表示できる記事がありません</p>
+                    <p class="text-xs text-stone-400">新しい記事が投稿・取得されるまでしばらくお待ちください。</p>
                 </div>
             <?php endif; ?>
 
