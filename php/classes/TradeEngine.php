@@ -113,15 +113,39 @@ class TradeEngine {
     }
 
     /**
-     * 承認済み全サイトのリンク一覧（PC専用 相互リンク集）
+     * 承認済み全サイトのリンク一覧（相互リンク集用）
      */
     public static function getApprovedLinks(): array {
         try {
             $db = Database::getConnection();
-            return $db->query("SELECT id, site_name, url FROM trade_sites WHERE status = 'approved' ORDER BY in_count DESC, id ASC")->fetchAll();
+            $sites = $db->query("SELECT id, site_name, url FROM trade_sites WHERE status = 'approved' ORDER BY is_boosted DESC, in_count DESC, id ASC LIMIT 100")->fetchAll();
+            if (!empty($sites)) {
+                return $sites;
+            }
+            return self::getFallbackApprovedLinks();
         } catch (Throwable $e) {
-            return [];
+            return self::getFallbackApprovedLinks();
         }
+    }
+
+    /**
+     * 初期表示用 フォールバック相互リンク一覧
+     */
+    public static function getFallbackApprovedLinks(): array {
+        return [
+            ['id' => 1, 'site_name' => '2chまとめアンテナ', 'url' => 'https://2ch-c.net/'],
+            ['id' => 2, 'site_name' => 'しぃアンテナ(*ﾟーﾟ)', 'url' => 'http://2ch-c.net/'],
+            ['id' => 3, 'site_name' => 'だめぽアンテナ', 'url' => 'https://damepo.net/'],
+            ['id' => 4, 'site_name' => 'ヌルポアンテナ', 'url' => 'https://nullpoantenna.com/'],
+            ['id' => 5, 'site_name' => 'ニュース速報まとめアンテナ', 'url' => 'https://news-matome-antenna.com/'],
+            ['id' => 6, 'site_name' => '芸能・エンタメ速報アンテナ', 'url' => 'https://geinou-antenna.com/'],
+            ['id' => 7, 'site_name' => 'ゲームトレンド速報アンテナ', 'url' => 'https://gametrend-antenna.com/'],
+            ['id' => 8, 'site_name' => 'IT・ガジェットまとめアンテナ', 'url' => 'https://itgadget-antenna.net/'],
+            ['id' => 9, 'site_name' => 'スポーツ速報ナビ', 'url' => 'https://sports-navi-antenna.com/'],
+            ['id' => 10, 'site_name' => 'カルチャートレンド総合アンテナ', 'url' => 'https://culture-trend-antenna.jp/'],
+            ['id' => 11, 'site_name' => '話題のバズニュースまとめ', 'url' => 'https://buzz-matome-news.com/'],
+            ['id' => 12, 'site_name' => 'SNSホットワードアンテナ', 'url' => 'https://snshotword-antenna.net/']
+        ];
     }
 
     /**

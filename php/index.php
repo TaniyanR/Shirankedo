@@ -132,7 +132,7 @@ if ($dbConnected) {
         $catStmt->execute([$site['id'] ?? 1]);
         $categories = $catStmt->fetchAll();
 
-        $whereSql = "WHERE a.site_id = ? AND a.status = 'published'";
+        $whereSql = "WHERE a.site_id = ? AND a.status = 'published' AND a.image_url IS NOT NULL AND TRIM(a.image_url) != ''";
         $params = [$site['id'] ?? 1];
 
         if ($selectedCategory !== 'all') {
@@ -172,6 +172,10 @@ if ($dbConnected) {
 // 表示切り替えフラグ
 $showAds = SettingsManager::get('show_ads', '1') === '1';
 $showRss = SettingsManager::get('show_rss', '1') === '1';
+
+// ステマ規制法対応 アフィリエイト広告表記 (PR表記)
+$affiliatePrNoticeEnabled = SettingsManager::get('affiliate_pr_notice_enabled', '1') === '1';
+$affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。');
 
 // 広告スロット設定と個別枠ごとの表示/非表示フラグ
 $adPcHeaderEnabled = $showAds && SettingsManager::get('ad_pc_header_enabled', '1') === '1';
@@ -262,6 +266,14 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
             </div>
         </div>
     </header>
+
+    <!-- ステマ規制法対応 アフィリエイト広告表記 (PRバー) -->
+    <?php if ($affiliatePrNoticeEnabled): ?>
+        <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 py-1.5 text-center text-[11px] text-amber-950 font-medium tracking-wide flex items-center justify-center gap-1.5 shadow-xs">
+            <span class="inline-block px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 font-black text-[10px]">PR</span>
+            <span><?= htmlspecialchars($affiliatePrNoticeText) ?></span>
+        </div>
+    <?php endif; ?>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
     <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
@@ -532,8 +544,34 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         </div>
     <?php endif; ?>
 
+    <!-- 相互リンク・提携アンテナサイト集 (全幅グリッド表示で相互リンク枠を大幅拡充) -->
+    <?php if ($showRss && !empty($approvedLinks)): ?>
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 my-6 w-full">
+            <div class="bg-white rounded-3xl border border-stone-200 p-5 sm:p-6 shadow-sm space-y-4">
+                <div class="flex items-center justify-between border-b border-stone-100 pb-3">
+                    <div class="flex items-center gap-2">
+                        <span class="text-base">🤝</span>
+                        <h2 class="text-xs sm:text-sm font-black text-stone-900 tracking-tight">相互リンク・提携アンテナサイト一覧</h2>
+                        <span class="px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 text-[10px] font-bold border border-amber-200">随時募集中</span>
+                    </div>
+                    <a href="page.php?slug=trade" class="text-xs text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 hover:underline">
+                        <span>＋ 相互リンク・RSS提携依頼はこちら</span>
+                    </a>
+                </div>
+                <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 text-xs">
+                    <?php foreach ($approvedLinks as $al): ?>
+                        <a href="<?= htmlspecialchars(TradeEngine::getOutboundLink((int)$al['id'], $al['url'])) ?>" target="_blank" rel="noopener" class="p-2.5 rounded-xl bg-stone-50 hover:bg-amber-50 border border-stone-200/70 hover:border-amber-300 text-stone-700 hover:text-amber-900 font-medium transition-all flex items-center justify-between group truncate" title="<?= htmlspecialchars($al['site_name']) ?>">
+                            <span class="truncate"><?= htmlspecialchars($al['site_name']) ?></span>
+                            <span class="text-stone-300 group-hover:text-amber-500 text-[10px] ml-1 shrink-0">↗</span>
+                        </a>
+                    <?php endforeach; ?>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
+
     <!-- フッター -->
-    <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800">
+    <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800 mt-auto">
         <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="space-y-1 text-center sm:text-left">
                 <div class="text-white font-black text-sm tracking-wider">
@@ -542,6 +580,11 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
+                <?php if ($affiliatePrNoticeEnabled): ?>
+                    <p class="text-[11px] text-amber-400/90 font-medium pt-1">
+                        ※ <?= htmlspecialchars($affiliatePrNoticeText) ?>
+                    </p>
+                <?php endif; ?>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold">
                 <a href="page.php?slug=about" class="hover:text-amber-400 transition-colors">サイトについて</a>

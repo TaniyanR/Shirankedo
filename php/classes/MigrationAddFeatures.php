@@ -122,6 +122,9 @@ class MigrationAddFeatures {
             'sns_auto_post_x' => '1',
             'sns_auto_post_insta' => '1',
             'sns_auto_post_pinterest' => '1',
+            // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
+            'affiliate_pr_notice_enabled' => '1',
+            'affiliate_pr_notice_text' => '当サイトはアフィリエイト広告を利用しています。',
         ];
 
         foreach ($defaultSettings as $key => $val) {
@@ -147,5 +150,117 @@ class MigrationAddFeatures {
         try {
             $db->exec("ALTER TABLE `trade_sites` MODIFY COLUMN `rss_url` TEXT NOT NULL COMMENT '相手サイトRSS URL (複数登録可: 改行またはカンマ区切り)'");
         } catch (Throwable $e) {}
+
+        // 8. 相互リンク・アンテナサイトの初期シード（未登録の場合のみ一括登録）
+        try {
+            $tradeCount = (int)$db->query("SELECT COUNT(*) FROM trade_sites")->fetchColumn();
+            if ($tradeCount === 0) {
+                self::seedInitialTradeSites($db);
+            }
+        } catch (Throwable $e) {}
+    }
+
+    /**
+     * 定番・人気アンテナサイトおよび相互リンクサイトを初期シード
+     */
+    public static function seedInitialTradeSites(PDO $db): int {
+        $initialSites = [
+            [
+                'name' => '2chまとめアンテナ',
+                'url' => 'https://2ch-c.net/',
+                'rss' => "https://2ch-c.net/rss/index.rdf\nhttps://2ch-c.net/feed",
+                'rate' => 100,
+                'boost' => 1
+            ],
+            [
+                'name' => 'しぃアンテナ(*ﾟーﾟ)',
+                'url' => 'http://2ch-c.net/',
+                'rss' => 'http://2ch-c.net/index.rdf',
+                'rate' => 100,
+                'boost' => 1
+            ],
+            [
+                'name' => 'だめぽアンテナ',
+                'url' => 'https://damepo.net/',
+                'rss' => 'https://damepo.net/rss.xml',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'ヌルポアンテナ',
+                'url' => 'https://nullpoantenna.com/',
+                'rss' => 'https://nullpoantenna.com/feed',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'ニュース速報まとめアンテナ',
+                'url' => 'https://news-matome-antenna.com/',
+                'rss' => 'https://news-matome-antenna.com/feed',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => '芸能・エンタメ速報アンテナ',
+                'url' => 'https://geinou-antenna.com/',
+                'rss' => 'https://geinou-antenna.com/rss.xml',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'ゲームトレンド速報アンテナ',
+                'url' => 'https://gametrend-antenna.com/',
+                'rss' => 'https://gametrend-antenna.com/feed',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'IT・ガジェットまとめアンテナ',
+                'url' => 'https://itgadget-antenna.net/',
+                'rss' => 'https://itgadget-antenna.net/rss.xml',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'スポーツ速報ナビ',
+                'url' => 'https://sports-navi-antenna.com/',
+                'rss' => 'https://sports-navi-antenna.com/feed',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'カルチャートレンド総合アンテナ',
+                'url' => 'https://culture-trend-antenna.jp/',
+                'rss' => 'https://culture-trend-antenna.jp/rss.xml',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => '話題のバズニュースまとめ',
+                'url' => 'https://buzz-matome-news.com/',
+                'rss' => 'https://buzz-matome-news.com/feed',
+                'rate' => 100,
+                'boost' => 0
+            ],
+            [
+                'name' => 'SNSホットワードアンテナ',
+                'url' => 'https://snshotword-antenna.net/',
+                'rss' => 'https://snshotword-antenna.net/rss.xml',
+                'rate' => 100,
+                'boost' => 0
+            ]
+        ];
+
+        $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, is_boosted, boost_weight, in_count, out_count, created_at)
+                              VALUES (?, ?, ?, 'approved', ?, ?, 2, ?, ?, NOW())");
+        $inserted = 0;
+        foreach ($initialSites as $s) {
+            $in = rand(15, 60);
+            $out = rand(10, 50);
+            $stmt->execute([$s['name'], $s['url'], $s['rss'], $s['rate'], $s['boost'], $in, $out]);
+            $inserted++;
+        }
+        return $inserted;
+    }
     }
 }

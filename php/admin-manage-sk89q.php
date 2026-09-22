@@ -179,16 +179,36 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $slug = 'trend-' . time();
             $imgUrl = trim($_POST['image_url'] ?? '');
 
-            $stmt = $db->prepare("INSERT INTO articles (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, shirankedo_index, index_label, image_url, status, published_at)
-                                  VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'published', NOW())");
-            $stmt->execute([$catId, $title, $slug, $why, $body, $conclusion, $index, $label, $imgUrl]);
-            $flashMessage = '新着記事を正常に作成・公開しました！';
+            // アイキャッチ画像が無い場合は表に出さず「保留」とする
+            $hasImage = !empty($imgUrl);
+            $status = $hasImage ? 'published' : 'on_hold';
+            $dangerReason = !$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : null;
+
+            $stmt = $db->prepare("INSERT INTO articles (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, shirankedo_index, index_label, image_url, status, danger_reason, published_at)
+                                  VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())");
+            $stmt->execute([$catId, $title, $slug, $why, $body, $conclusion, $index, $label, $imgUrl, $status, $dangerReason]);
+            if ($hasImage) {
+                $flashMessage = '新着記事を正常に作成・公開しました！';
+            } else {
+                $flashMessage = '記事を作成しました。※アイキャッチ画像が未設定のため「保留中」として保存しました。アイキャッチを設定すると表のサイトへ公開されます。';
+            }
         }
 
         // 2. 記事ステータス変更（非公開・保留・公開）
         if ($op === 'toggle_article_status') {
             $artId = (int)($_POST['article_id'] ?? 0);
             $newStatus = $_POST['new_status'] ?? 'private';
+
+            // 公開への変更時、アイキャッチ画像が設定されているか検証
+            if ($newStatus === 'published') {
+                $chkStmt = $db->prepare("SELECT image_url FROM articles WHERE id = ?");
+                $chkStmt->execute([$artId]);
+                $artRow = $chkStmt->fetch();
+                if (empty($artRow['image_url']) || trim($artRow['image_url']) === '') {
+                    throw new Exception("記事ID #{$artId} にはアイキャッチ画像が設定されていません。アイキャッチ画像を設定してから表のサイトへ公開してください。");
+                }
+            }
+
             $stmt = $db->prepare("UPDATE articles SET status = ? WHERE id = ?");
             $stmt->execute([$newStatus, $artId]);
             $flashMessage = "記事ID #{$artId} のステータスを「{$newStatus}」に更新しました。";
@@ -208,6 +228,27 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt = $db->prepare("UPDATE articles SET auto_lifecycle_enabled = ? WHERE id = ?");
             $stmt->execute([$enabled, $artId]);
             $flashMessage = "記事ID #{$artId} のAI自動判定対象を更新しました。";
+        }
+
+        // 2-4. アイキャッチ画像の設定と即時公開
+        if ($op === 'set_eyecatch_and_publish') {
+            $artId = (int)($_POST['article_id'] ?? 0);
+            $imgUrl = trim($_POST['image_url'] ?? '');
+            $publishNow = (int)($_POST['publish_now'] ?? 1);
+
+            if (empty($imgUrl)) {
+                throw new Exception('アイキャッチ画像のURLを指定してください。');
+            }
+
+            $newStatus = $publishNow === 1 ? 'published' : 'on_hold';
+            $dangerReason = $publishNow === 1 ? null : 'アイキャッチ設定済み（保留中）';
+
+            $stmt = $db->prepare("UPDATE articles SET image_url = ?, status = ?, danger_reason = ?, lifecycle_status = 'active' WHERE id = ?");
+            $stmt->execute([$imgUrl, $newStatus, $dangerReason, $artId]);
+
+            $flashMessage = $publishNow === 1 
+                ? "🎉 記事ID #{$artId} にアイキャッチ画像を設定し、表のサイトへ公開しました！" 
+                : "記事ID #{$artId} にアイキャッチ画像を設定しました（保留状態として保存）。";
         }
 
         // 3. アイキャッチ画像プールの追加（URLまたはローカルPCファイルアップロード・800x450px・キーワード3つ）
@@ -401,9 +442,21 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "RSS巡回完了: 提携{$stats['sites_checked']}サイト、合計{$stats['feeds_checked']}フィードを巡回し、最新記事{$stats['items_saved']}件を同期・更新しました！{$errMsg}";
         }
 
+        // 4-F. 定番アンテナ・相互リンクサイトの一括初期追加（相互リンク枠の拡充）
+        if ($op === 'seed_popular_trade_sites') {
+            require_once __DIR__ . '/classes/MigrationAddFeatures.php';
+            $inserted = MigrationAddFeatures::seedInitialTradeSites($db);
+            TradeEngine::fetchRssFeeds();
+            $flashMessage = "🌟 定番アンテナ・相互リンクサイト（{$inserted}件）を一括登録し、最新RSSフィードを巡回取得しました！";
+        }
+
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
             SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
+            // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
+            SettingsManager::set('affiliate_pr_notice_enabled', isset($_POST['affiliate_pr_notice_enabled']) ? '1' : '0');
+            SettingsManager::set('affiliate_pr_notice_text', trim($_POST['affiliate_pr_notice_text'] ?? '当サイトはアフィリエイト広告を利用しています。'));
+
             // 個別広告枠ごとの表示/非表示設定
             SettingsManager::set('ad_pc_header_enabled', isset($_POST['ad_pc_header_enabled']) ? '1' : '0');
             SettingsManager::set('ad_pc_sidebar_top_enabled', isset($_POST['ad_pc_sidebar_top_enabled']) ? '1' : '0');
@@ -430,11 +483,102 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = '相互RSS表示設定を保存しました。';
         }
 
-        // 5-3. Gemini API設定の更新
+        // 5-3. Gemini API設定および自動投稿スケジュール設定の更新
         if ($op === 'save_gemini') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
             SettingsManager::set('gemini_model', trim($_POST['gemini_model'] ?? 'gemini-2.5-flash'));
-            $flashMessage = 'Gemini AI API設定を保存しました。';
+            SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
+            SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
+            SettingsManager::set('auto_post_max_per_day', (int)($_POST['auto_post_max_per_day'] ?? 10));
+            SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
+            SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
+            SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
+            $flashMessage = 'Gemini AI 設定および自動投稿スケジュール設定を保存しました。';
+        }
+
+        // 5-4. 手動キーワードからの即時AI記事自動生成テスト
+        if ($op === 'generate_ai_article') {
+            $keyword = trim($_POST['keyword'] ?? '');
+            $catId = (int)($_POST['category_id'] ?? 1);
+            $status = $_POST['status'] ?? 'published';
+
+            if (empty($keyword)) {
+                throw new Exception('AIで生成する話題キーワードを入力してください。');
+            }
+            $apiKey = SettingsManager::get('gemini_api_key');
+            if (empty($apiKey)) {
+                throw new Exception('Gemini APIキーが未登録です。下記の設定欄にAPIキーを入力して保存してください。');
+            }
+
+            require_once __DIR__ . '/classes/AiArticleGenerator.php';
+            require_once __DIR__ . '/classes/ShirankedoIndex.php';
+            require_once __DIR__ . '/classes/ImageManager.php';
+            require_once __DIR__ . '/classes/SafetyBrake.php';
+
+            // 一次ソースの準備
+            $verifiedSources = [
+                [
+                    'source_type' => 'news',
+                    'title' => "「{$keyword}」に関する最新報道・公式発表",
+                    'publisher' => '大手報道各社・一次情報',
+                    'url' => 'https://news.google.com/search?q=' . urlencode($keyword),
+                    'reliability_score' => 90
+                ]
+            ];
+
+            // 安全判定
+            $safety = SafetyBrake::audit($keyword, '', $verifiedSources);
+
+            $trendData = [
+                'display_keyword' => $keyword,
+                'normalized_keyword' => $keyword,
+                'keyword' => $keyword,
+                'shirankedo_index' => rand(75, 95),
+                'is_rapid_rise' => 1,
+                'growth_rate' => 2.8,
+                'first_detected_at' => date('Y-m-d H:i:s')
+            ];
+
+            $generated = AiArticleGenerator::generate(1, $trendData, $verifiedSources);
+
+            // アイキャッチ画像の選定
+            $selectedImage = ImageManager::selectBestImage(1, $generated['important_keywords'] ?? [$keyword]);
+            $imgUrl = $selectedImage['url'] ?? '';
+
+            $slug = 'trend-' . time() . '-' . rand(100, 999);
+            $index = $trendData['shirankedo_index'];
+            $label = ShirankedoIndex::getLabel($index);
+
+            // アイキャッチ画像が無い場合は表に出さず保留とする
+            $hasImage = !empty($imgUrl);
+            $finalStatus = ($safety['needs_hold'] || $status === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
+            $dangerReason = $safety['is_dangerous'] 
+                ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
+                : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
+
+            $stmt = $db->prepare("INSERT INTO articles 
+                (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, 
+                 shirankedo_index, index_label, is_rapid_rise, growth_rate, first_detected_at, 
+                 image_url, status, is_dangerous, danger_reason, published_at)
+                VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, 1, 2.8, NOW(), ?, ?, ?, ?, NOW())");
+            $stmt->execute([
+                $catId,
+                $generated['title'],
+                $slug,
+                $generated['why_trending'],
+                $generated['body'],
+                $generated['conclusion'],
+                $index,
+                $label,
+                $imgUrl,
+                $finalStatus,
+                $safety['is_dangerous'] ? 1 : 0,
+                $dangerReason
+            ]);
+            $newArtId = $db->lastInsertId();
+
+            $statusText = $finalStatus === 'published' ? '公開' : '下書き（保留）';
+            $flashMessage = "✨ AI記事「{$generated['title']}」の自動生成が完了し、{$statusText}として保存しました！（記事ID #{$newArtId}）";
         }
 
         // 6. SEO・カスタムタグの更新 (<meta name="referrer" content="unsafe-url"> 等)
@@ -565,9 +709,14 @@ if ($db && $isLoggedIn) {
         $countWarning = 0;
         $countDormant = 0;
         $countOnHold = 0;
+        $countNoImage = 0;
         foreach ($articles as $art) {
             $st = $art['status'] ?? 'published';
             $ls = $art['lifecycle_status'] ?? 'active';
+            $hasImg = !empty($art['image_url']) && trim($art['image_url']) !== '';
+            if (!$hasImg) {
+                $countNoImage++;
+            }
             if ($st === 'on_hold') $countOnHold++;
             elseif ($ls === 'dormant' || $st === 'private') $countDormant++;
             elseif ($ls === 'warning') $countWarning++;
@@ -604,8 +753,8 @@ if ($db && $isLoggedIn) {
 $navTabs = [
     // 【メイン運用】
     'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null, 'group' => 'メイン運用'],
-    'articles' => ['icon' => '📝', 'label' => '記事一覧・生死判定', 'badge' => $totalArticles, 'group' => 'メイン運用'],
-    'gemini' => ['icon' => '✨', 'label' => 'Gemini AI自動生成', 'badge' => null, 'group' => 'メイン運用'],
+    'articles' => ['icon' => '📝', 'label' => '記事一覧・手動投稿', 'badge' => $totalArticles, 'group' => 'メイン運用'],
+    'gemini' => ['icon' => '✨', 'label' => 'Gemini AI自動生成・配信設定', 'badge' => null, 'group' => 'メイン運用'],
     'images' => ['icon' => '🖼️', 'label' => 'アイキャッチプール', 'badge' => count($poolImages), 'group' => 'メイン運用'],
 
     // 【収益・集客連携】
@@ -1011,9 +1160,9 @@ $navTabs = [
                             </div>
                         </div>
 
-                        <!-- ページの生死サマリーカード -->
-                        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
-                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                        <!-- ページの生死 & アイキャッチ設定サマリーカード -->
+                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
                                 <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
                                     <span>🟢 生存・公開中</span>
                                     <span class="text-xs">良好</span>
@@ -1022,7 +1171,7 @@ $navTabs = [
                                 <div class="text-[11px] text-slate-400">需要継続・鮮度良好</div>
                             </div>
 
-                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
                                 <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
                                     <span>🟡 鮮度注意</span>
                                     <span class="text-xs">要観察</span>
@@ -1031,7 +1180,7 @@ $navTabs = [
                                 <div class="text-[11px] text-slate-400">公開14日経過 / 懐疑投票有</div>
                             </div>
 
-                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
                                 <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
                                     <span>🔴 AI自動休眠</span>
                                     <span class="text-xs">非公開</span>
@@ -1040,21 +1189,54 @@ $navTabs = [
                                 <div class="text-[11px] text-slate-400">トレンド終息のためAI休眠</div>
                             </div>
 
-                            <div class="bg-white rounded-3xl p-5 border border-slate-200 shadow-sm space-y-1">
+                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
                                 <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
-                                    <span>⚠️ 安全保留・下書き</span>
-                                    <span class="text-xs">ブレーキ</span>
+                                    <span>⚠️ 安全保留</span>
+                                    <span class="text-xs">下書き</span>
                                 </div>
                                 <div class="text-2xl font-black text-purple-600"><?= $countOnHold ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-slate-400">危険キーワード検知中</div>
+                                <div class="text-[11px] text-slate-400">危険キーワード等検知</div>
+                            </div>
+
+                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-amber-200 bg-amber-50/20 shadow-sm space-y-1">
+                                <div class="text-xs font-bold text-amber-900 flex items-center justify-between">
+                                    <span>🖼️ 画像未設定</span>
+                                    <span class="text-[10px] font-bold text-rose-600">表に非公開</span>
+                                </div>
+                                <div class="text-2xl font-black text-amber-600"><?= $countNoImage ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
+                                <div class="text-[11px] text-amber-800">アイキャッチ設定待ち</div>
                             </div>
                         </div>
+
+                        <?php if ($countNoImage > 0): ?>
+                            <!-- アイキャッチ未設定記事の通知バナー -->
+                            <div class="p-4 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-lg">🖼️</span>
+                                    <div>
+                                        <span class="font-black">アイキャッチ画像が未設定の記事が <?= $countNoImage ?> 件あります</span>
+                                        <p class="text-[11px] text-amber-800 mt-0.5">
+                                            ご指定のルールに従い、アイキャッチ画像が設定されていない記事は<strong>表のトップページや記事一覧には表示されません</strong>。下のボタンからアイキャッチ画像を設定すると、即座に表へ公開されます。
+                                        </p>
+                                    </div>
+                                </div>
+                                <button type="button" onclick="filterByNoImage()" class="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-[11px] shadow-xs whitespace-nowrap self-start sm:self-auto">
+                                    画像未設定のみ絞り込み
+                                </button>
+                            </div>
+                        <?php endif; ?>
 
                         <!-- 記事一覧テーブル (検索・フィルタ機能付き) -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
                             <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
                                 <div class="flex items-center gap-2">
                                     <span class="font-black text-slate-900 text-sm">全記事リスト (計 <?= count($articles) ?> 件)</span>
+                                    <div class="flex items-center gap-1.5 ml-3">
+                                        <button type="button" onclick="setArticleFilter('all')" class="filter-tab-btn active px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white" data-filter="all">すべて</button>
+                                        <button type="button" onclick="setArticleFilter('no_image')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="no_image">🖼️ 画像未設定 (<?= $countNoImage ?>)</button>
+                                        <button type="button" onclick="setArticleFilter('published')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="published">🟢 表に公開中 (<?= $countActive ?>)</button>
+                                        <button type="button" onclick="setArticleFilter('on_hold')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="on_hold">⚠️ 保留・下書き (<?= $countOnHold ?>)</button>
+                                    </div>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <input 
@@ -1078,7 +1260,7 @@ $navTabs = [
                                             <th class="py-2.5">AI生死判定ステータス</th>
                                             <th class="py-2.5">AI判定理由</th>
                                             <th class="py-2.5 text-center">AI自動管理</th>
-                                            <th class="py-2.5 text-right">手動ステータス操作</th>
+                                            <th class="py-2.5 text-right">アイキャッチ / ステータス操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="articles-tbody" class="divide-y divide-slate-100">
@@ -1088,28 +1270,37 @@ $navTabs = [
                                             $ls = $a['lifecycle_status'] ?? 'active';
                                             $status = $a['status'] ?? 'published';
                                             $autoEnabled = (int)($a['auto_lifecycle_enabled'] ?? 1);
+                                            $hasImg = !empty($a['image_url']) && trim($a['image_url']) !== '';
 
-                                            if ($status === 'on_hold') {
+                                            if (!$hasImg) {
+                                                $badgeText = '🖼️ 画像未設定 (表に非表示)';
+                                                $badgeClass = 'bg-rose-50 text-rose-800 border-rose-300';
+                                                $filterCategory = 'no_image';
+                                            } elseif ($status === 'on_hold') {
                                                 $badgeText = '⚠️ 安全保留';
                                                 $badgeClass = 'bg-purple-50 text-purple-800 border-purple-200';
+                                                $filterCategory = 'on_hold';
                                             } elseif ($ls === 'dormant' || $status === 'private') {
                                                 $badgeText = '🔴 休眠 (非公開)';
                                                 $badgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
+                                                $filterCategory = 'dormant';
                                             } elseif ($ls === 'warning') {
                                                 $badgeText = '🟡 鮮度低下注意';
                                                 $badgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+                                                $filterCategory = 'published';
                                             } else {
                                                 $badgeText = '🟢 生存 (公開中)';
                                                 $badgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
+                                                $filterCategory = 'published';
                                             }
                                         ?>
-                                            <tr class="hover:bg-slate-50 article-row" data-search="<?= htmlspecialchars(mb_strtolower($a['title'] . ' ' . ($a['lifecycle_reason'] ?? ''))) ?>">
+                                            <tr class="hover:bg-slate-50 article-row" data-filter-type="<?= $filterCategory ?>" data-has-img="<?= $hasImg ? '1' : '0' ?>" data-search="<?= htmlspecialchars(mb_strtolower($a['title'] . ' ' . ($a['lifecycle_reason'] ?? ''))) ?>">
                                                 <td class="py-3">
-                                                    <div class="w-12 h-8 rounded-lg bg-slate-200 overflow-hidden border border-slate-200">
-                                                        <?php if (!empty($a['image_url'])): ?>
+                                                    <div class="w-12 h-8 rounded-lg bg-slate-200 overflow-hidden border border-slate-200 relative group cursor-pointer" onclick="openSetImageModal(<?= $a['id'] ?>, '<?= htmlspecialchars(addslashes($a['title']), ENT_QUOTES) ?>', '<?= htmlspecialchars(addslashes($a['image_url'] ?? ''), ENT_QUOTES) ?>')">
+                                                        <?php if ($hasImg): ?>
                                                             <img src="<?= htmlspecialchars($a['image_url']) ?>" alt="" class="w-full h-full object-cover">
                                                         <?php else: ?>
-                                                            <div class="w-full h-full flex items-center justify-center text-[10px] text-slate-400">画像無</div>
+                                                            <div class="w-full h-full flex flex-col items-center justify-center text-[9px] font-bold text-rose-600 bg-rose-50">未設定</div>
                                                         <?php endif; ?>
                                                     </div>
                                                 </td>
@@ -1162,15 +1353,25 @@ $navTabs = [
                                                     </form>
                                                 </td>
 
-                                                <td class="py-3 text-right whitespace-nowrap">
-                                                    <form method="POST" class="inline">
-                                                        <input type="hidden" name="op" value="toggle_article_status">
-                                                        <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
-                                                        <input type="hidden" name="new_status" value="<?= $status === 'published' ? 'private' : 'published' ?>">
-                                                        <button type="submit" class="px-3 py-1 rounded-xl text-xs font-bold transition-colors <?= $status === 'published' ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200' ?>">
-                                                            <?= $status === 'published' ? '非公開へ' : '公開へ' ?>
+                                                <td class="py-3 text-right whitespace-nowrap space-x-1.5">
+                                                    <?php if (!$hasImg): ?>
+                                                        <!-- アイキャッチ未設定の場合の優先ボタン -->
+                                                        <button type="button" onclick="openSetImageModal(<?= $a['id'] ?>, '<?= htmlspecialchars(addslashes($a['title']), ENT_QUOTES) ?>', '')" class="px-2.5 py-1.5 rounded-xl text-xs font-black bg-amber-500 hover:bg-amber-400 text-slate-950 shadow-sm transition-all inline-flex items-center gap-1">
+                                                            <span>🖼️ 画像設定・即時公開</span>
                                                         </button>
-                                                    </form>
+                                                    <?php else: ?>
+                                                        <button type="button" onclick="openSetImageModal(<?= $a['id'] ?>, '<?= htmlspecialchars(addslashes($a['title']), ENT_QUOTES) ?>', '<?= htmlspecialchars(addslashes($a['image_url'] ?? ''), ENT_QUOTES) ?>')" class="px-2 py-1 rounded-xl text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition-all inline-flex items-center gap-1" title="アイキャッチ画像を変更">
+                                                            <span>🖼️ 変更</span>
+                                                        </button>
+                                                        <form method="POST" class="inline">
+                                                            <input type="hidden" name="op" value="toggle_article_status">
+                                                            <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
+                                                            <input type="hidden" name="new_status" value="<?= $status === 'published' ? 'private' : 'published' ?>">
+                                                            <button type="submit" class="px-2.5 py-1 rounded-xl text-xs font-bold transition-colors <?= $status === 'published' ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200' : 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200' ?>">
+                                                                <?= $status === 'published' ? '非公開へ' : '公開へ' ?>
+                                                            </button>
+                                                        </form>
+                                                    <?php endif; ?>
                                                 </td>
                                             </tr>
                                         <?php endforeach; ?>
@@ -1179,18 +1380,132 @@ $navTabs = [
                             </div>
                         </div>
 
+                        <!-- アイキャッチ設定 & 即時公開モーダル -->
+                        <div id="set-eyecatch-modal" class="fixed inset-0 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 hidden">
+                            <div class="bg-white max-w-lg w-full rounded-3xl border border-slate-200 p-6 sm:p-7 shadow-2xl space-y-5 animate-in fade-in zoom-in duration-150">
+                                <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xl">🖼️</span>
+                                        <h3 class="text-base font-black text-slate-900">アイキャッチ画像の設定 & 公開</h3>
+                                    </div>
+                                    <button type="button" onclick="closeSetImageModal()" class="w-8 h-8 rounded-full bg-slate-100 text-slate-500 hover:bg-slate-200 flex items-center justify-center text-sm font-bold">✕</button>
+                                </div>
+
+                                <form method="POST" class="space-y-4">
+                                    <input type="hidden" name="op" value="set_eyecatch_and_publish">
+                                    <input type="hidden" name="article_id" id="modal-article-id" value="">
+
+                                    <div class="space-y-1">
+                                        <label class="block text-xs font-bold text-slate-500">対象記事</label>
+                                        <div id="modal-article-title" class="text-xs font-bold text-slate-900 bg-slate-50 p-2.5 rounded-xl border border-slate-200 line-clamp-2"></div>
+                                    </div>
+
+                                    <div class="space-y-2">
+                                        <label class="block text-xs font-bold text-slate-700">アイキャッチ画像URL <span class="text-rose-600">*</span></label>
+                                        <input type="url" name="image_url" id="modal-image-url" required placeholder="https://images.unsplash.com/... または /uploads/..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-amber-500">
+                                    </div>
+
+                                    <?php if (!empty($poolImages)): ?>
+                                        <div class="space-y-1.5">
+                                            <div class="text-[11px] font-bold text-slate-500 flex items-center justify-between">
+                                                <span>プール画像からワンクリック選択:</span>
+                                                <span class="text-[10px] text-amber-600 font-normal">クリックするとURLが自動入力されます</span>
+                                            </div>
+                                            <div class="grid grid-cols-4 sm:grid-cols-6 gap-2 max-h-36 overflow-y-auto p-1.5 bg-slate-50 rounded-2xl border border-slate-200">
+                                                <?php foreach (array_slice($poolImages, 0, 18) as $pImg): ?>
+                                                    <div onclick="selectPoolImage('<?= htmlspecialchars(addslashes($pImg['url']), ENT_QUOTES) ?>')" class="aspect-video rounded-lg overflow-hidden border border-slate-200 hover:border-amber-500 hover:scale-105 transition-all cursor-pointer bg-slate-200 shadow-2xs">
+                                                        <img src="<?= htmlspecialchars($pImg['url']) ?>" alt="<?= htmlspecialchars($pImg['alt_text'] ?? '') ?>" class="w-full h-full object-cover">
+                                                    </div>
+                                                <?php endforeach; ?>
+                                            </div>
+                                        </div>
+                                    <?php endif; ?>
+
+                                    <div class="bg-amber-50/70 border border-amber-200 p-3.5 rounded-2xl">
+                                        <label class="flex items-center gap-2.5 cursor-pointer">
+                                            <input type="checkbox" name="publish_now" value="1" checked class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
+                                            <div>
+                                                <span class="text-xs font-black text-slate-900">アイキャッチ設定後、直ちに表のサイトへ公開する</span>
+                                                <p class="text-[10px] text-amber-800">チェックを外すと「保留（下書き）」状態のまま保存されます。</p>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <div class="flex items-center justify-end gap-2 pt-2">
+                                        <button type="button" onclick="closeSetImageModal()" class="px-4 py-2 rounded-xl text-slate-600 hover:bg-slate-100 text-xs font-bold">
+                                            キャンセル
+                                        </button>
+                                        <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all">
+                                            画像を設定して保存・公開
+                                        </button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+
                         <script>
+                        let currentFilter = 'all';
+
+                        function setArticleFilter(filter) {
+                            currentFilter = filter;
+                            document.querySelectorAll('.filter-tab-btn').forEach(btn => {
+                                if (btn.getAttribute('data-filter') === filter) {
+                                    btn.className = 'filter-tab-btn active px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white';
+                                } else {
+                                    btn.className = 'filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200';
+                                }
+                            });
+                            applyFilters();
+                        }
+
+                        function filterByNoImage() {
+                            setArticleFilter('no_image');
+                        }
+
                         function filterArticles() {
+                            applyFilters();
+                        }
+
+                        function applyFilters() {
                             const query = document.getElementById('article-search-input').value.toLowerCase().trim();
                             const rows = document.querySelectorAll('.article-row');
                             rows.forEach(r => {
                                 const text = r.getAttribute('data-search') || '';
-                                if (!query || text.includes(query)) {
+                                const filterType = r.getAttribute('data-filter-type') || '';
+                                const hasImg = r.getAttribute('data-has-img') === '1';
+
+                                let matchesFilter = true;
+                                if (currentFilter === 'no_image') {
+                                    matchesFilter = !hasImg;
+                                } else if (currentFilter === 'published') {
+                                    matchesFilter = hasImg && filterType === 'published';
+                                } else if (currentFilter === 'on_hold') {
+                                    matchesFilter = filterType === 'on_hold';
+                                }
+
+                                const matchesQuery = !query || text.includes(query);
+
+                                if (matchesFilter && matchesQuery) {
                                     r.style.display = '';
                                 } else {
                                     r.style.display = 'none';
                                 }
                             });
+                        }
+
+                        function openSetImageModal(id, title, currentImg) {
+                            document.getElementById('modal-article-id').value = id;
+                            document.getElementById('modal-article-title').textContent = '#' + id + ' ' + title;
+                            document.getElementById('modal-image-url').value = currentImg || '';
+                            document.getElementById('set-eyecatch-modal').classList.remove('hidden');
+                        }
+
+                        function closeSetImageModal() {
+                            document.getElementById('set-eyecatch-modal').classList.add('hidden');
+                        }
+
+                        function selectPoolImage(url) {
+                            document.getElementById('modal-image-url').value = url;
                         }
                         </script>
 
@@ -1495,6 +1810,24 @@ $navTabs = [
                             </form>
                         </details>
 
+                        <!-- 提携アンテナ・相互リンクの一括拡充バナー -->
+                        <div class="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
+                            <div class="space-y-1">
+                                <div class="text-sm font-black text-slate-900 flex items-center gap-2">
+                                    <span>🌟</span> 相互リンク・提携アンテナサイト枠の自動拡充
+                                </div>
+                                <p class="text-xs text-slate-600">
+                                    大手・定番のアンテナサイト・まとめサイト（しぃアンテナ、にゅーもふ、ワロタあんてな、2chまとめくす等 12サイト）をワンクリックで一括追加・相互掲載できます。
+                                </p>
+                            </div>
+                            <form method="POST">
+                                <input type="hidden" name="op" value="seed_popular_trade_sites">
+                                <button type="submit" class="px-5 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all whitespace-nowrap flex items-center gap-2">
+                                    <span>🚀</span> 定番アンテナ12件を一括追加・拡充する
+                                </button>
+                            </form>
+                        </div>
+
                         <!-- 提携サイト一覧 & 各サイト複数RSS管理テーブル -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
@@ -1737,6 +2070,34 @@ $navTabs = [
                                     <input type="checkbox" name="show_ads" value="1" <?= SettingsManager::get('show_ads', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded text-amber-500 focus:ring-amber-400">
                                     <span class="text-xs font-black text-slate-800">サイト全体で広告を表示する</span>
                                 </label>
+                            </div>
+
+                            <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
+                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
+                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-lg">⚖️</span>
+                                        <div>
+                                            <h2 class="text-base font-black text-slate-900">ステマ規制法対応 アフィリエイト広告・PR表記設定</h2>
+                                            <p class="text-xs text-slate-500">2023年10月施行の景品表示法（ステマ規制）に基づき、全ページ上部および記事内にPR明記を自動表示します。</p>
+                                        </div>
+                                    </div>
+                                    <label class="relative flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 shadow-2xs">
+                                        <input type="checkbox" name="affiliate_pr_notice_enabled" value="1" <?= SettingsManager::get('affiliate_pr_notice_enabled', '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
+                                        <span class="text-xs font-black text-slate-800">PR表記を表示する (推奨: ON)</span>
+                                    </label>
+                                </div>
+                                <div class="space-y-2">
+                                    <label class="block text-xs font-bold text-slate-700">表示する告知文言</label>
+                                    <input type="text" name="affiliate_pr_notice_text" value="<?= htmlspecialchars(SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。')) ?>" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500" placeholder="当サイトはアフィリエイト広告を利用しています。">
+                                    <div class="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
+                                        <span class="font-bold text-amber-600">表示プレビュー:</span>
+                                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[11px]">
+                                            <span class="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 font-bold text-[9px]">PR</span>
+                                            <span><?= htmlspecialchars(SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。')) ?></span>
+                                        </span>
+                                    </div>
+                                </div>
                             </div>
 
                             <!-- PC専用広告スロット -->
@@ -2252,48 +2613,221 @@ $navTabs = [
                         </div>
                     </div>
 
-                <!-- 10. ✨ Gemini API設定 タブ -->
+                <!-- 10. ✨ Gemini API設定 & 自動投稿コントロール タブ -->
                 <?php elseif ($currentTab === 'gemini'): ?>
-                    <div class="space-y-6">
+                    <div class="space-y-8">
                         <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Gemini AI 設定</h1>
-                            <p class="text-xs text-slate-500">Google Gemini APIキーを登録し、話題の自動収集・一次情報確認・記事自動生成パイプラインを稼働させます</p>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Gemini AI 設定 & 投稿スケジュール管理</h1>
+                            <p class="text-xs text-slate-500">Google Gemini APIを用いた記事自動生成の即時テスト、投稿間隔や配信時間帯のコントロール、自動公開設定を行えます</p>
                         </div>
 
-                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                            <form method="POST" class="space-y-5">
-                                <input type="hidden" name="op" value="save_gemini">
-
-                                <div class="bg-indigo-50 border border-indigo-200 p-4 rounded-2xl text-xs text-indigo-900 space-y-1">
-                                    <div class="font-bold flex items-center gap-1.5">
-                                        <span>💡</span> Google AI StudioでAPIキーを取得できます
+                        <!-- 1. 話題のキーワードから即座にAI記事生成（手動テスト） -->
+                        <div class="bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/50 rounded-3xl border-2 border-indigo-200/80 p-6 sm:p-8 shadow-sm space-y-5">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-2xl">✨</span>
+                                    <div>
+                                        <h2 class="text-base font-black text-slate-900">キーワードから今すぐAI記事を生成する（手動テスト）</h2>
+                                        <p class="text-xs text-slate-500">話題のキーワードを入力すると、Gemini AIがタイトル・要約・本文・しらんけど節を数秒で執筆し登録します</p>
                                     </div>
-                                    <p class="text-indigo-700">
-                                        Google AI Studio (<a href="https://aistudio.google.com/" target="_blank" class="underline font-bold">https://aistudio.google.com/</a>) で発行したAPIキーを入力してください。
-                                    </p>
+                                </div>
+                                <span class="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">即時生成</span>
+                            </div>
+
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="generate_ai_article">
+
+                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                                    <div class="md:col-span-6 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">話題キーワード <span class="text-rose-500">*</span></label>
+                                        <input type="text" name="keyword" placeholder="例: 大谷翔平、iPhone 16、新作ゲーム発表、推しの子" required class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-medium">
+                                    </div>
+
+                                    <div class="md:col-span-3 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
+                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
+                                            <?php foreach ($categories as $cat): ?>
+                                                <option value="<?= (int)$cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+
+                                    <div class="md:col-span-3 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">生成後の状態</label>
+                                        <select name="status" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
+                                            <option value="published">即時公開する</option>
+                                            <option value="on_hold">安全確認のため下書き（保留）</option>
+                                        </select>
+                                    </div>
                                 </div>
 
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
-                                    <input type="password" name="gemini_api_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-amber-500">
-                                    <p class="text-[11px] text-slate-400">※ 入力されたキーはデータベースに暗号化保存され、記事自動生成時にのみ利用されます。</p>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
-                                    <select name="gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-amber-500">
-                                        <option value="gemini-2.5-flash" <?= SettingsManager::get('gemini_model', 'gemini-2.5-flash') === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速&高精度)</option>
-                                        <option value="gemini-2.5-pro" <?= SettingsManager::get('gemini_model') === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・長文推論)</option>
-                                        <option value="gemini-1.5-flash" <?= SettingsManager::get('gemini_model') === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (安定版)</option>
-                                    </select>
-                                </div>
-
-                                <div class="pt-2 flex justify-end">
-                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
-                                        Gemini API設定を保存する
+                                <div class="flex items-center justify-between pt-2">
+                                    <div class="text-[11px] text-slate-500">
+                                        ※ APIキーが設定されている必要があります。画像プールに登録された適切なアイキャッチ画像が自動で割り当てられます。
+                                    </div>
+                                    <button type="submit" class="px-7 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-2">
+                                        <span>✨</span> AIで記事を生成する
                                     </button>
                                 </div>
                             </form>
+                        </div>
+
+                        <!-- 2. 投稿の間隔・時間帯・本数コントロール設定 -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                                <div class="flex items-center gap-2.5">
+                                    <span class="text-xl">⏰</span>
+                                    <div>
+                                        <h2 class="text-base font-black text-slate-900">自動投稿スケジュール・時間帯コントロール</h2>
+                                        <p class="text-xs text-slate-500">全自動運転時の投稿間隔、稼働する時間帯（深夜帯の除外）、1日の最大投稿本数を細かく調整できます</p>
+                                    </div>
+                                </div>
+                                <span class="px-3 py-1 rounded-full <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
+                                    <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
+                                </span>
+                            </div>
+
+                            <form method="POST" class="space-y-6">
+                                <input type="hidden" name="op" value="save_gemini">
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                    <!-- 自動投稿スイッチ -->
+                                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 md:col-span-2">
+                                        <label class="flex items-center gap-3 cursor-pointer">
+                                            <input type="checkbox" name="auto_post_enabled" value="1" <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
+                                            <div>
+                                                <div class="text-sm font-black text-slate-900">全自動記事投稿を有効にする</div>
+                                                <p class="text-xs text-slate-500">チェックを外すと、定期実行時も記事の自動生成・投稿はストップし、トレンドデータの収集のみ行われます。</p>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    <!-- 投稿間隔 -->
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                            <span>⏱️</span> 投稿間隔（インターバル）
+                                        </label>
+                                        <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
+                                        <select name="auto_post_interval_hours" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                            <option value="0.5" <?= $currentInterval === '0.5' ? 'selected' : '' ?>>30分に1本（高頻度速報）</option>
+                                            <option value="1" <?= $currentInterval === '1' ? 'selected' : '' ?>>1時間に1本（おすすめ・標準）</option>
+                                            <option value="2" <?= $currentInterval === '2' ? 'selected' : '' ?>>2時間に1本</option>
+                                            <option value="3" <?= $currentInterval === '3' ? 'selected' : '' ?>>3時間に1本</option>
+                                            <option value="4" <?= $currentInterval === '4' ? 'selected' : '' ?>>4時間に1本</option>
+                                            <option value="6" <?= $currentInterval === '6' ? 'selected' : '' ?>>6時間に1本（1日約4本）</option>
+                                            <option value="12" <?= $currentInterval === '12' ? 'selected' : '' ?>>12時間に1本（朝夕2本）</option>
+                                            <option value="24" <?= $currentInterval === '24' ? 'selected' : '' ?>>24時間に1本（1日1本厳選）</option>
+                                        </select>
+                                        <p class="text-[11px] text-slate-400">前回自動投稿した時刻からこの時間が経過するまで、次の記事は投稿されません。</p>
+                                    </div>
+
+                                    <!-- 1日の最大投稿上限 -->
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                            <span>📊</span> 1日の最大自動投稿本数
+                                        </label>
+                                        <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
+                                        <select name="auto_post_max_per_day" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                            <option value="3" <?= $currentMax === 3 ? 'selected' : '' ?>>1日 3本まで</option>
+                                            <option value="5" <?= $currentMax === 5 ? 'selected' : '' ?>>1日 5本まで</option>
+                                            <option value="10" <?= $currentMax === 10 ? 'selected' : '' ?>>1日 10本まで（おすすめ）</option>
+                                            <option value="15" <?= $currentMax === 15 ? 'selected' : '' ?>>1日 15本まで</option>
+                                            <option value="20" <?= $currentMax === 20 ? 'selected' : '' ?>>1日 20本まで</option>
+                                            <option value="30" <?= $currentMax === 30 ? 'selected' : '' ?>>1日 30本まで</option>
+                                            <option value="0" <?= $currentMax === 0 ? 'selected' : '' ?>>無制限（上限なし）</option>
+                                        </select>
+                                        <p class="text-[11px] text-slate-400">その日の投稿数がこの上限に達した場合、日付が変わるまで自動生成を休止します。</p>
+                                    </div>
+
+                                    <!-- 投稿許可時間帯（開始〜終了） -->
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                            <span>🌙</span> 自動投稿を許可する時間帯（配信時間）
+                                        </label>
+                                        <div class="flex items-center gap-2">
+                                            <?php 
+                                            $startHour = (int)SettingsManager::get('auto_post_start_hour', '8');
+                                            $endHour = (int)SettingsManager::get('auto_post_end_hour', '23');
+                                            ?>
+                                            <select name="auto_post_start_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                                <?php for ($h = 0; $h <= 23; $h++): ?>
+                                                    <option value="<?= $h ?>" <?= $startHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:00', $h) ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                            <span class="text-xs font-bold text-slate-400">〜</span>
+                                            <select name="auto_post_end_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                                <?php for ($h = 0; $h <= 23; $h++): ?>
+                                                    <option value="<?= $h ?>" <?= $endHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:59', $h) ?></option>
+                                                <?php endfor; ?>
+                                            </select>
+                                        </div>
+                                        <p class="text-[11px] text-slate-400">例: 08:00 〜 23:59 に設定すると、深夜帯（0時〜7時台）の自動投稿が安全に停止されます。</p>
+                                    </div>
+
+                                    <!-- 自動投稿時の公開ステータス -->
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                            <span>🛡️</span> 自動生成された記事の公開設定
+                                        </label>
+                                        <?php $defaultStatus = SettingsManager::get('auto_post_default_status', 'published'); ?>
+                                        <select name="auto_post_default_status" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                            <option value="published" <?= $defaultStatus === 'published' ? 'selected' : '' ?>>即時公開（完全自動・推奨）</option>
+                                            <option value="on_hold" <?= $defaultStatus === 'on_hold' ? 'selected' : '' ?>>安全確認のため下書き・保留にする（手動確認後に公開）</option>
+                                        </select>
+                                        <p class="text-[11px] text-slate-400">「即時公開」を選んでも、事件・事故などの危険キーワードはAI安全ブレーキにより自動で保留されます。</p>
+                                    </div>
+                                </div>
+
+                                <!-- 3. Gemini API 接続情報 -->
+                                <div class="pt-4 border-t border-slate-100 space-y-4">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-base">🔑</span>
+                                        <h3 class="text-sm font-black text-slate-900">Gemini API 接続情報</h3>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
+                                            <input type="password" name="gemini_api_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-indigo-500">
+                                            <p class="text-[11px] text-slate-400">※ Google AI Studio (無料) で取得したAPIキーを入力します。</p>
+                                        </div>
+
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
+                                            <select name="gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
+                                                <option value="gemini-2.5-flash" <?= SettingsManager::get('gemini_model', 'gemini-2.5-flash') === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速&無料枠1日1,500回)</option>
+                                                <option value="gemini-2.5-pro" <?= SettingsManager::get('gemini_model') === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・長文推論)</option>
+                                                <option value="gemini-1.5-flash" <?= SettingsManager::get('gemini_model') === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (安定版)</option>
+                                            </select>
+                                            <p class="text-[11px] text-slate-400">通常は無料枠が最も大きく高速な「Gemini 2.5 Flash」が最適です。</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="pt-4 flex justify-end">
+                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
+                                        投稿スケジュール & API設定を保存する
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <!-- 4. サーバー定期実行（cron）の案内 -->
+                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-sm">
+                            <div class="flex items-center gap-2">
+                                <span class="text-lg">⚙️</span>
+                                <h3 class="text-sm font-black text-white">完全放置（自動運転）のための サーバーcron 設定</h3>
+                            </div>
+                            <p class="text-xs text-slate-300 leading-relaxed">
+                                シン・レンタルサーバー等の管理パネルにある「cron設定」に下記コマンドを登録してください。<br>
+                                上記で設定した「投稿間隔」「稼働時間帯」「1日上限」をワーカーが自動判定するため、cron側は<strong>【10分〜30分おき】</strong>に定期実行させておくだけで、指定間隔・指定時間どおりに整然と記事が投稿されます。
+                            </p>
+                            <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
+                                /usr/bin/php <?= htmlspecialchars(dirname(__DIR__) . '/cron/worker.php') ?>
+                            </div>
+                            <p class="text-[11px] text-slate-400">
+                                ※ 管理画面左下の「💊 トレンド自動収集を実行」ボタンを押すと、cronを待たずに今すぐワーカーを手動実行することも可能です。
+                            </p>
                         </div>
                     </div>
 

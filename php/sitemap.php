@@ -11,7 +11,7 @@ $articles = [];
 $categories = [];
 try {
     $db = Database::getConnection();
-    $stmt = $db->query("SELECT slug, id, published_at FROM articles WHERE status = 'published' ORDER BY published_at DESC LIMIT 1000");
+    $stmt = $db->query("SELECT slug, id, published_at FROM articles WHERE status = 'published' AND image_url IS NOT NULL AND TRIM(image_url) != '' ORDER BY published_at DESC LIMIT 1000");
     $articles = $stmt->fetchAll();
 
     $catStmt = $db->query("SELECT slug FROM categories ORDER BY sort_order ASC");
