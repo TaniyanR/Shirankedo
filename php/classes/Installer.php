@@ -23,9 +23,12 @@ class Installer {
             if ($stmt->rowCount() === 0) {
                 return false;
             }
-            $stmt2 = $pdo->query("SHOW TABLES LIKE 'settings'");
+            $stmt2 = $pdo->query("SHOW TABLES LIKE 'site_settings'");
             if ($stmt2->rowCount() === 0) {
-                return false;
+                $stmt3 = $pdo->query("SHOW TABLES LIKE 'settings'");
+                if ($stmt3->rowCount() === 0) {
+                    return false;
+                }
             }
             return true;
         } catch (Throwable $e) {
@@ -68,12 +71,24 @@ class Installer {
      * データベーススキーマと初期データをセットアップ
      */
     public static function setupTables(PDO $pdo): void {
-        // 1. database.sql の実行
+        // 1. database.sql の実行 (マルチクエリ未対応環境向けフォールバック付き)
         $sqlPath = dirname(__DIR__) . '/database.sql';
         if (file_exists($sqlPath)) {
             $sql = file_get_contents($sqlPath);
-            // DROP TABLEや一括クエリを実行
-            $pdo->exec($sql);
+            try {
+                $pdo->exec($sql);
+            } catch (Throwable $e) {
+                // PDOマルチステートメントが無効な環境向けにセミコロン区切りで個別実行
+                $queries = preg_split('/;\s*[\r\n]+/', $sql);
+                foreach ($queries as $q) {
+                    $trimmed = trim($q);
+                    if (!empty($trimmed)) {
+                        try {
+                            $pdo->exec($trimmed);
+                        } catch (Throwable $ignored) {}
+                    }
+                }
+            }
         }
 
         // 2. votes テーブルの作成
@@ -88,41 +103,78 @@ class Installer {
           KEY `idx_article` (`article_id`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 3. デフォルトサイトの登録
-        $siteCount = (int)$pdo->query("SELECT COUNT(*) FROM sites")->fetchColumn();
-        if ($siteCount === 0) {
-            $stmt = $pdo->prepare("INSERT INTO sites (id, subdomain, name, description, genre) VALUES 
-                (1, '', 'しらんけど', 'いま日本で話題のトレンドを客観分析し、一次情報とともにお届けするサイト。しらんけど。', 'general'),
-                (2, 'game', 'しらんけど ゲーム速報', 'Steam・新作ゲーム・大型アプデのトレンドまとめ。しらんけど。', 'game'),
-                (3, 'entame', 'しらんけど エンタメ', 'お笑い・バラエティ・芸能カルチャーの話題。しらんけど。', 'entertainment')");
-            $stmt->execute();
-        }
+        // 3. site_settings テーブルの存在を直接保証
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `site_settings` (
+          `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+          `site_id` INT UNSIGNED NOT NULL DEFAULT 1,
+          `setting_key` VARCHAR(64) NOT NULL,
+          `setting_value` LONGTEXT NOT NULL,
+          `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (`id`),
+          UNIQUE KEY `idx_site_key` (`site_id`, `setting_key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 4. デフォルトカテゴリの登録
-        $catCount = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
-        if ($catCount === 0) {
-            $catStmt = $pdo->prepare("INSERT INTO categories (site_id, slug, name, sort_order) VALUES
-                (1, 'all', '総合', 1),
-                (1, 'entertainment', 'エンタメ', 2),
-                (1, 'sports', 'スポーツ', 3),
-                (1, 'tech', 'テクノロジー', 4),
-                (1, 'anime', 'アニメ・マンガ', 5),
-                (1, 'game', 'ゲーム', 6),
-                (1, 'social', '時事・社会', 7),
-                (1, 'gourmet', 'グルメ', 8)");
-            $catStmt->execute();
-        }
+        // 4. 互換性のための settings テーブルも保証
+        $pdo->exec("CREATE TABLE IF NOT EXISTS `settings` (
+          `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+          `key` VARCHAR(64) NOT NULL,
+          `value` LONGTEXT NOT NULL,
+          `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+          PRIMARY KEY (`id`),
+          UNIQUE KEY `idx_key` (`key`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
-        // 5. 機能拡張マイグレーション (trade_sites, trade_feed_items, announcements, analytics等)
-        require_once __DIR__ . '/MigrationAddFeatures.php';
-        MigrationAddFeatures::run();
+        // 5. デフォルトサイトの登録
+        try {
+            $siteCount = (int)$pdo->query("SELECT COUNT(*) FROM sites")->fetchColumn();
+            if ($siteCount === 0) {
+                $stmt = $pdo->prepare("INSERT INTO sites (id, subdomain, name, description, genre) VALUES 
+                    (1, '', 'しらんけど', 'いま日本で話題のトレンドを客観分析し、一次情報とともにお届けするサイト。しらんけど。', 'general'),
+                    (2, 'game', 'しらんけど ゲーム速報', 'Steam・新作ゲーム・大型アプデのトレンドまとめ。しらんけど。', 'game'),
+                    (3, 'entame', 'しらんけど エンタメ', 'お笑い・バラエティ・芸能カルチャーの話題。しらんけど。', 'entertainment')");
+                $stmt->execute();
+            }
+        } catch (Throwable $e) {}
 
-        // 6. 管理者アカウントの初期保存 (admin / password)
-        $settingsStmt = $pdo->prepare("INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
-        $settingsStmt->execute(['admin_id', 'admin']);
-        $settingsStmt->execute(['admin_password', 'password']);
-        $settingsStmt->execute(['admin_email', 'sogomultilink@gmail.com']);
-        $settingsStmt->execute(['admin_secret_path', 'manage-sk89q']);
+        // 6. デフォルトカテゴリの登録
+        try {
+            $catCount = (int)$pdo->query("SELECT COUNT(*) FROM categories")->fetchColumn();
+            if ($catCount === 0) {
+                $catStmt = $pdo->prepare("INSERT INTO categories (site_id, slug, name, sort_order) VALUES
+                    (1, 'all', '総合', 1),
+                    (1, 'entertainment', 'エンタメ', 2),
+                    (1, 'sports', 'スポーツ', 3),
+                    (1, 'tech', 'テクノロジー', 4),
+                    (1, 'anime', 'アニメ・マンガ', 5),
+                    (1, 'game', 'ゲーム', 6),
+                    (1, 'social', '時事・社会', 7),
+                    (1, 'gourmet', 'グルメ', 8)");
+                $catStmt->execute();
+            }
+        } catch (Throwable $e) {}
+
+        // 7. 機能拡張マイグレーション (trade_sites, trade_feed_items, announcements, analytics等)
+        try {
+            require_once __DIR__ . '/MigrationAddFeatures.php';
+            MigrationAddFeatures::run();
+        } catch (Throwable $e) {}
+
+        // 8. 管理者アカウント・設定の初期保存 (site_settings および settings 両方に保存)
+        try {
+            $settingsStmt = $pdo->prepare("INSERT INTO site_settings (site_id, setting_key, setting_value) VALUES (1, ?, ?) ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+            $settingsStmt->execute(['admin_id', 'admin']);
+            $settingsStmt->execute(['admin_password', 'password']);
+            $settingsStmt->execute(['admin_email', 'sogomultilink@gmail.com']);
+            $settingsStmt->execute(['admin_secret_path', 'manage-sk89q']);
+        } catch (Throwable $e) {}
+
+        try {
+            $compatStmt = $pdo->prepare("INSERT INTO settings (`key`, `value`) VALUES (?, ?) ON DUPLICATE KEY UPDATE `value` = VALUES(`value`)");
+            $compatStmt->execute(['admin_id', 'admin']);
+            $compatStmt->execute(['admin_password', 'password']);
+            $compatStmt->execute(['admin_email', 'sogomultilink@gmail.com']);
+            $compatStmt->execute(['admin_secret_path', 'manage-sk89q']);
+        } catch (Throwable $e) {}
     }
 
     /**
