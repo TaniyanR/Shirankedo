@@ -140,6 +140,20 @@ if ($dbConnected) {
             $params[] = $selectedCategory;
         }
 
+        $page = max(1, (int)($_GET['p'] ?? 1));
+        $perPage = 18;
+
+        // 総件数カウント
+        $countSql = "SELECT COUNT(*) FROM articles a LEFT JOIN categories c ON a.category_id = c.id {$whereSql}";
+        $countStmt = $db->prepare($countSql);
+        $countStmt->execute($params);
+        $totalArticles = (int)$countStmt->fetchColumn();
+        $totalPages = max(1, (int)ceil($totalArticles / $perPage));
+        if ($page > $totalPages && $totalArticles > 0) {
+            $page = $totalPages;
+        }
+        $offset = ($page - 1) * $perPage;
+
         $artSql = "SELECT a.*, c.name as category_name, c.slug as category_slug,
                           (SELECT url FROM images WHERE id = a.thumbnail_image_id LIMIT 1) as custom_image_url,
                           (SELECT COUNT(*) FROM votes WHERE article_id = a.id AND vote_type = 'believed') as vote_believed,
@@ -148,7 +162,7 @@ if ($dbConnected) {
                    FROM articles a
                    LEFT JOIN categories c ON a.category_id = c.id
                    {$whereSql}
-                   ORDER BY a.published_at DESC LIMIT 30";
+                   ORDER BY a.published_at DESC LIMIT {$perPage} OFFSET {$offset}";
         try {
             $artStmt = $db->prepare($artSql);
             $artStmt->execute($params);
@@ -159,7 +173,7 @@ if ($dbConnected) {
                             FROM articles a
                             LEFT JOIN categories c ON a.category_id = c.id
                             {$whereSql}
-                            ORDER BY a.published_at DESC LIMIT 30";
+                            ORDER BY a.published_at DESC LIMIT {$perPage} OFFSET {$offset}";
             $fbStmt = $db->prepare($fallbackSql);
             $fbStmt->execute($params);
             $articles = $fbStmt->fetchAll();
@@ -420,6 +434,35 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         </article>
                     <?php endforeach; ?>
                 </div>
+
+                <!-- ページネーション (ページ送り) -->
+                <?php if ($totalPages > 1): 
+                    $catQuery = ($selectedCategory !== 'all') ? '&cat=' . urlencode($selectedCategory) : '';
+                ?>
+                    <div class="flex items-center justify-center gap-1.5 pt-4 pb-2 text-xs font-bold">
+                        <?php if ($page > 1): ?>
+                            <a href="?p=<?= $page - 1 ?><?= $catQuery ?>" class="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 transition-all flex items-center gap-1 shadow-2xs">
+                                <span>←</span> 前へ
+                            </a>
+                        <?php endif; ?>
+
+                        <?php 
+                        $startPage = max(1, $page - 2);
+                        $endPage = min($totalPages, $page + 2);
+                        for ($i = $startPage; $i <= $endPage; $i++): 
+                        ?>
+                            <a href="?p=<?= $i ?><?= $catQuery ?>" class="w-9 h-9 rounded-xl flex items-center justify-center border transition-all shadow-2xs <?= ($i === $page) ? 'bg-stone-950 text-white border-stone-950 font-black' : 'bg-white text-stone-700 border-stone-200 hover:bg-stone-50' ?>">
+                                <?= $i ?>
+                            </a>
+                        <?php endfor; ?>
+
+                        <?php if ($page < $totalPages): ?>
+                            <a href="?p=<?= $page + 1 ?><?= $catQuery ?>" class="px-3 py-2 rounded-xl bg-white border border-stone-200 text-stone-700 hover:bg-stone-50 transition-all flex items-center gap-1 shadow-2xs">
+                                次へ <span>→</span>
+                            </a>
+                        <?php endif; ?>
+                    </div>
+                <?php endif; ?>
             <?php else: ?>
                 <div class="bg-white rounded-3xl border border-stone-200 p-8 text-center space-y-3">
                     <div class="text-3xl">📭</div>
@@ -595,6 +638,27 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
             </div>
         </div>
     </footer>
+
+    <!-- バックグラウンド疑似Cron (サーバーCron未動作時の二重フォールバック) -->
+    <?php
+    $lastRun = SettingsManager::get('last_cron_executed_at');
+    $autoPostActive = SettingsManager::get('auto_post_enabled', '1') === '1';
+    $shouldTriggerAsync = $autoPostActive && (empty($lastRun) || (time() - strtotime($lastRun)) > 1800);
+    ?>
+    <?php if ($shouldTriggerAsync): ?>
+        <script>
+        (function() {
+            function triggerWorker() {
+                fetch('cron/worker.php', { method: 'GET', mode: 'no-cors' }).catch(function(){});
+            }
+            if ('requestIdleCallback' in window) {
+                requestIdleCallback(triggerWorker);
+            } else {
+                setTimeout(triggerWorker, 3000);
+            }
+        })();
+        </script>
+    <?php endif; ?>
 
 </body>
 </html>

@@ -667,15 +667,34 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = 'データベース接続構成（php/db_config.php）を正常に更新・保存しました。';
         }
 
-        // 8. トレンド自動収集ワーカー実行
+        // 8. トレンド自動収集 & AI記事生成ワーカー即時実行
         if ($op === 'run_worker') {
             if (file_exists(__DIR__ . '/cron/worker.php')) {
+                $forceExecute = true;
                 ob_start();
                 include __DIR__ . '/cron/worker.php';
                 $out = ob_get_clean();
-                $flashMessage = '自動収集ワーカーを実行しました！<br><pre class="text-xs mt-2 p-2 bg-stone-900 text-stone-200 rounded max-h-40 overflow-y-auto">' . htmlspecialchars(mb_substr($out, 0, 500)) . '...</pre>';
+                $flashMessage = '🚀 <strong>トレンド自動収集＆AI記事生成ワーカーを実行しました！</strong><br><pre class="text-xs mt-2 p-3 bg-stone-900 text-stone-200 rounded-xl max-h-60 overflow-y-auto font-mono text-left leading-relaxed">' . htmlspecialchars($out) . '</pre>';
             } else {
                 $flashMessage = 'cron/worker.php が見つかりませんでした。';
+                $flashType = 'error';
+            }
+        }
+
+        // 9. Gemini API 接続診断テスト
+        if ($op === 'test_gemini_api') {
+            require_once __DIR__ . '/classes/AiArticleGenerator.php';
+            $apiKey = trim($_POST['gemini_api_key'] ?? SettingsManager::get('gemini_api_key'));
+            $model = trim($_POST['gemini_model'] ?? SettingsManager::get('gemini_model', 'gemini-2.0-flash'));
+            if (empty($apiKey)) {
+                throw new Exception('Gemini APIキーを入力してください。');
+            }
+            $testRes = AiArticleGenerator::testApiKey($apiKey, $model);
+            if ($testRes['success']) {
+                $flashMessage = '✅ ' . htmlspecialchars($testRes['message']);
+            } else {
+                $flashMessage = '❌ ' . htmlspecialchars($testRes['message']);
+                $flashType = 'error';
             }
         }
 
@@ -1147,17 +1166,62 @@ $navTabs = [
                                     ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
                                 </p>
                             </div>
-                            <div class="flex items-center gap-2">
+                            <div class="flex flex-wrap items-center gap-2">
                                 <form method="POST">
-                                    <input type="hidden" name="op" value="evaluate_lifecycle">
-                                    <button type="submit" class="px-4 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
-                                        <span>⚡ AIによる全記事の生死判定を一括実行</span>
+                                    <input type="hidden" name="op" value="run_worker">
+                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 animate-pulse hover:animate-none">
+                                        <span>🚀 トレンド自動収集＆AI記事生成を今すぐ実行</span>
                                     </button>
                                 </form>
-                                <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
-                                    <span>＋ 新規記事を手動投稿</span>
+                                <form method="POST">
+                                    <input type="hidden" name="op" value="evaluate_lifecycle">
+                                    <button type="submit" class="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
+                                        <span>⚡ AI生死判定</span>
+                                    </button>
+                                </form>
+                                <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-3.5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
+                                    <span>＋ 手動投稿</span>
                                 </button>
                             </div>
+                        </div>
+
+                        <!-- 稼働ステータスインフォバー -->
+                        <?php 
+                        $lastCron = SettingsManager::get('last_cron_executed_at');
+                        $geminiKey = SettingsManager::get('gemini_api_key');
+                        $geminiStatus = SettingsManager::get('gemini_last_status');
+                        ?>
+                        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+                            <div class="flex flex-wrap items-center gap-4">
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-slate-500">Cron自動実行:</span>
+                                    <?php if (!empty($lastCron)): ?>
+                                        <span class="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+                                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
+                                            最終実行: <?= htmlspecialchars($lastCron) ?>
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                                            ⚠️ サーバーCron未検知（上の「🚀 今すぐ実行」ボタンで手動テスト可能）
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <span class="font-bold text-slate-500">Gemini AI:</span>
+                                    <?php if (!empty($geminiKey)): ?>
+                                        <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
+                                            ✓ APIキー設定済 (<?= htmlspecialchars(SettingsManager::get('gemini_model', 'gemini-2.0-flash')) ?>)
+                                        </span>
+                                    <?php else: ?>
+                                        <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                                            ⚠️ APIキー未設定
+                                        </span>
+                                    <?php endif; ?>
+                                </div>
+                            </div>
+                            <a href="?tab=gemini" class="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 self-start md:self-auto hover:underline text-[11px]">
+                                <span>⚙️ スケジュール・API設定を開く →</span>
+                            </a>
                         </div>
 
                         <!-- ページの生死 & アイキャッチ設定サマリーカード -->
@@ -2787,47 +2851,121 @@ $navTabs = [
 
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                         <div class="space-y-1.5">
-                                            <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
-                                            <input type="password" name="gemini_api_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-indigo-500">
-                                            <p class="text-[11px] text-slate-400">※ Google AI Studio (無料) で取得したAPIキーを入力します。</p>
+                                            <div class="flex items-center justify-between">
+                                                <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
+                                                <?php $lastStatus = SettingsManager::get('gemini_last_status'); ?>
+                                                <?php if (!empty($lastStatus)): ?>
+                                                    <span class="text-[10px] font-bold <?= strpos($lastStatus, 'SUCCESS') !== false ? 'text-emerald-600' : 'text-rose-600' ?>">
+                                                        <?= htmlspecialchars($lastStatus) ?>
+                                                    </span>
+                                                <?php endif; ?>
+                                            </div>
+                                            <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-indigo-500">
+                                            <div class="flex items-center justify-between text-[11px] text-slate-400">
+                                                <span>※ Google AI Studio (無料) で取得したAPIキーを入力します。</span>
+                                                <button type="button" onclick="testGeminiConnection()" class="text-indigo-600 hover:text-indigo-800 font-bold hover:underline">
+                                                    🔍 接続テストを実行
+                                                </button>
+                                            </div>
                                         </div>
 
                                         <div class="space-y-1.5">
                                             <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
-                                            <select name="gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                                <option value="gemini-2.5-flash" <?= SettingsManager::get('gemini_model', 'gemini-2.5-flash') === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速&無料枠1日1,500回)</option>
-                                                <option value="gemini-2.5-pro" <?= SettingsManager::get('gemini_model') === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・長文推論)</option>
-                                                <option value="gemini-1.5-flash" <?= SettingsManager::get('gemini_model') === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (安定版)</option>
+                                            <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.0-flash'); ?>
+                                            <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500 font-medium">
+                                                <option value="gemini-2.0-flash" <?= in_array($curModel, ['gemini-2.0-flash', 'gemini-2.5-flash']) ? 'selected' : '' ?>>Gemini 2.0 Flash (推奨・最高速・最新世代)</option>
+                                                <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (超安定版・長文対応)</option>
+                                                <option value="gemini-1.5-pro" <?= in_array($curModel, ['gemini-1.5-pro', 'gemini-2.5-pro']) ? 'selected' : '' ?>>Gemini 1.5 Pro (超高知能・高精度推論)</option>
                                             </select>
-                                            <p class="text-[11px] text-slate-400">通常は無料枠が最も大きく高速な「Gemini 2.5 Flash」が最適です。</p>
+                                            <p class="text-[11px] text-slate-400">通常は無料枠が大きく最速レスポンスの「Gemini 2.0 Flash」が最適です。</p>
                                         </div>
                                     </div>
+
+                                    <?php 
+                                    $lastError = SettingsManager::get('gemini_last_error');
+                                    if (!empty($lastError)): 
+                                    ?>
+                                        <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
+                                            <strong>⚠️ 直近のGemini APIエラー:</strong> <?= htmlspecialchars($lastError) ?>
+                                        </div>
+                                    <?php endif; ?>
                                 </div>
 
-                                <div class="pt-4 flex justify-end">
+                                <div class="pt-4 flex items-center justify-between">
+                                    <div class="text-xs text-slate-400">
+                                        設定保存後、次回の定期実行から新しいスケジュールが自動適用されます。
+                                    </div>
                                     <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
                                         投稿スケジュール & API設定を保存する
                                     </button>
                                 </div>
                             </form>
+
+                            <!-- 接続テスト専用非同期/同期フォーム -->
+                            <form id="gemini-test-form" method="POST" style="display:none;">
+                                <input type="hidden" name="op" value="test_gemini_api">
+                                <input type="hidden" name="gemini_api_key" id="test_form_key" value="">
+                                <input type="hidden" name="gemini_model" id="test_form_model" value="">
+                            </form>
+                            <script>
+                            function testGeminiConnection() {
+                                const key = document.getElementById('input_gemini_key').value.trim();
+                                const model = document.getElementById('input_gemini_model').value;
+                                if (!key) {
+                                    alert('Gemini API Key を入力してからテストボタンを押してください。');
+                                    return;
+                                }
+                                document.getElementById('test_form_key').value = key;
+                                document.getElementById('test_form_model').value = model;
+                                document.getElementById('gemini-test-form').submit();
+                            }
+                            </script>
                         </div>
 
-                        <!-- 4. サーバー定期実行（cron）の案内 -->
-                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-4 shadow-sm">
-                            <div class="flex items-center gap-2">
-                                <span class="text-lg">⚙️</span>
-                                <h3 class="text-sm font-black text-white">完全放置（自動運転）のための サーバーcron 設定</h3>
+                        <!-- 4. サーバー定期実行（cron）の案内 & 稼働ログモニター -->
+                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xl">⚙️</span>
+                                    <div>
+                                        <h3 class="text-sm font-black text-white">完全放置（自動運転）のための サーバーcron 設定</h3>
+                                        <p class="text-xs text-slate-400">シン・レンタルサーバー管理パネルの「cron設定」に下記コマンドを登録してください</p>
+                                    </div>
+                                </div>
+                                <form method="POST">
+                                    <input type="hidden" name="op" value="run_worker">
+                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
+                                        <span>🚀 今すぐワーカーを手動実行</span>
+                                    </button>
+                                </form>
                             </div>
+
                             <p class="text-xs text-slate-300 leading-relaxed">
-                                シン・レンタルサーバー等の管理パネルにある「cron設定」に下記コマンドを登録してください。<br>
-                                上記で設定した「投稿間隔」「稼働時間帯」「1日上限」をワーカーが自動判定するため、cron側は<strong>【10分〜30分おき】</strong>に定期実行させておくだけで、指定間隔・指定時間どおりに整然と記事が投稿されます。
+                                上記で設定した「投稿間隔」「稼働時間帯」「1日上限」をワーカー自身が判定するため、cron側は<strong>【10分〜30分おき】</strong>に定期実行させておくだけで、指定時間どおりに整然と記事が自動投稿されます。
                             </p>
-                            <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
-                                /usr/bin/php <?= htmlspecialchars(dirname(__DIR__) . '/cron/worker.php') ?>
+                            
+                            <div class="space-y-1.5">
+                                <div class="text-[11px] font-bold text-slate-400">登録するコマンド (シン・レンタルサーバー等の場合):</div>
+                                <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
+                                    /usr/bin/php <?= htmlspecialchars(dirname(__DIR__) . '/cron/worker.php') ?>
+                                </div>
                             </div>
-                            <p class="text-[11px] text-slate-400">
-                                ※ 管理画面左下の「💊 トレンド自動収集を実行」ボタンを押すと、cronを待たずに今すぐワーカーを手動実行することも可能です。
-                            </p>
+
+                            <!-- 最終実行ログ表示 -->
+                            <div class="space-y-2 pt-2 border-t border-slate-800">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="font-bold text-slate-300 flex items-center gap-1.5">
+                                        <span>📜</span> 直近のCron実行ログ
+                                    </span>
+                                    <span class="text-[11px] text-slate-400">
+                                        最終実行日時: <?= htmlspecialchars(SettingsManager::get('last_cron_executed_at', '未実行')) ?>
+                                    </span>
+                                </div>
+                                <?php $lastLog = SettingsManager::get('last_cron_log'); ?>
+                                <div class="bg-slate-950 p-3.5 rounded-2xl font-mono text-[11px] text-emerald-400 border border-slate-800 max-h-48 overflow-y-auto leading-relaxed whitespace-pre-wrap">
+                                    <?= !empty($lastLog) ? htmlspecialchars($lastLog) : 'まだcron実行ログがありません。「今すぐワーカーを手動実行」を押すと即座にテストできます。' ?>
+                                </div>
+                            </div>
                         </div>
                     </div>
 
