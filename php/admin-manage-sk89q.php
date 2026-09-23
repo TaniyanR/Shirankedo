@@ -716,7 +716,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($op === 'test_gemini_api') {
             require_once __DIR__ . '/classes/AiArticleGenerator.php';
             $apiKey = trim($_POST['gemini_api_key'] ?? SettingsManager::get('gemini_api_key'));
-            $model = trim($_POST['gemini_model'] ?? SettingsManager::get('gemini_model', 'gemini-2.0-flash'));
+            $model = trim($_POST['gemini_model'] ?? SettingsManager::get('gemini_model', 'gemini-2.5-flash'));
             if (empty($apiKey)) {
                 throw new Exception('Gemini APIキーを入力してください。');
             }
@@ -801,7 +801,11 @@ if ($db && $isLoggedIn) {
 
 // システム稼働ステータス用変数
 $geminiApiKey = SettingsManager::get('gemini_api_key', '');
-$geminiModel = SettingsManager::get('gemini_model', 'gemini-2.0-flash');
+$geminiModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash');
+if ($geminiModel === 'gemini-2.0-flash' || empty($geminiModel)) {
+    $geminiModel = 'gemini-2.5-flash';
+    SettingsManager::set('gemini_model', 'gemini-2.5-flash');
+}
 $hasGeminiKey = !empty($geminiApiKey);
 
 $autoPostEnabled = SettingsManager::get('auto_post_enabled', '1') === '1';
@@ -1604,7 +1608,7 @@ $navTabs = [
                                     <span class="font-bold text-slate-500">Gemini AI:</span>
                                     <?php if (!empty($geminiKey)): ?>
                                         <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                                            ✓ APIキー設定済 (<?= htmlspecialchars(SettingsManager::get('gemini_model', 'gemini-2.0-flash')) ?>)
+                                            ✓ APIキー設定済 (<?= htmlspecialchars(SettingsManager::get('gemini_model', 'gemini-2.5-flash')) ?>)
                                         </span>
                                     <?php else: ?>
                                         <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
@@ -3351,13 +3355,18 @@ $navTabs = [
 
                                         <div class="space-y-1.5">
                                             <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
-                                            <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.0-flash'); ?>
+                                            <?php 
+                                            $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); 
+                                            if ($curModel === 'gemini-2.0-flash' || empty($curModel)) {
+                                                $curModel = 'gemini-2.5-flash';
+                                            }
+                                            ?>
                                             <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500 font-medium">
-                                                <option value="gemini-2.0-flash" <?= in_array($curModel, ['gemini-2.0-flash', 'gemini-2.5-flash']) ? 'selected' : '' ?>>Gemini 2.0 Flash (推奨・最高速・最新世代)</option>
+                                                <option value="gemini-2.5-flash" <?= in_array($curModel, ['gemini-2.5-flash', 'gemini-2.0-flash']) ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速・最新世代)</option>
                                                 <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (超安定版・長文対応)</option>
-                                                <option value="gemini-1.5-pro" <?= in_array($curModel, ['gemini-1.5-pro', 'gemini-2.5-pro']) ? 'selected' : '' ?>>Gemini 1.5 Pro (超高知能・高精度推論)</option>
+                                                <option value="gemini-2.5-pro" <?= in_array($curModel, ['gemini-2.5-pro', 'gemini-1.5-pro']) ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・高精度推論)</option>
                                             </select>
-                                            <p class="text-[11px] text-slate-400">通常は無料枠が大きく最速レスポンスの「Gemini 2.0 Flash」が最適です。</p>
+                                            <p class="text-[11px] text-slate-400">Google推奨の最新高速モデル「Gemini 2.5 Flash」が選択されています。</p>
                                         </div>
                                     </div>
 

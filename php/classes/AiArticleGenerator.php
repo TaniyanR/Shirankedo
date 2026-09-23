@@ -82,17 +82,17 @@ EOT;
     }
 
     /**
-     * Gemini モデル名の正規化
+     * Gemini モデル名の正規化（廃止された 2.0-flash を Google 推奨の 2.5-flash へ自動昇格）
      */
     public static function normalizeModelName(string $model): string {
         $model = trim($model);
-        if ($model === 'gemini-2.5-flash') {
-            return 'gemini-2.0-flash';
+        if ($model === 'gemini-2.0-flash' || empty($model)) {
+            return 'gemini-2.5-flash';
         }
-        if ($model === 'gemini-2.5-pro') {
-            return 'gemini-1.5-pro';
+        if ($model === 'gemini-2.0-pro') {
+            return 'gemini-2.5-pro';
         }
-        return $model ?: 'gemini-2.0-flash';
+        return $model;
     }
 
     /**
@@ -141,6 +141,13 @@ EOT;
             }
         }
 
+        // 404またはモデル廃止の場合、別モデルで自動再試行
+        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
+            return self::callGeminiApi($apiKey, 'gemini-2.5-flash', $systemPrompt, $userPrompt);
+        } elseif ($httpCode === 404 && $model === 'gemini-2.5-flash') {
+            return self::callGeminiApi($apiKey, 'gemini-1.5-flash', $systemPrompt, $userPrompt);
+        }
+
         return ['success' => false, 'code' => $httpCode, 'error' => $errorMsg];
     }
 
@@ -177,6 +184,18 @@ EOT;
                 'success' => true,
                 'message' => "Gemini API 接続成功！ (モデル: {$model}, HTTP 200)"
             ];
+        }
+
+        // 404の場合、gemini-2.5-flash または gemini-1.5-flash で自動再テスト
+        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
+            $retry = self::testApiKey($apiKey, 'gemini-2.5-flash');
+            if ($retry['success']) {
+                SettingsManager::set('gemini_model', 'gemini-2.5-flash');
+                return [
+                    'success' => true,
+                    'message' => "モデルを最新の gemini-2.5-flash へ自動更新し接続成功！ (HTTP 200)"
+                ];
+            }
         }
 
         $errorDesc = "HTTPステータス: {$httpCode}";
