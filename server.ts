@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import crypto from "crypto";
+import { initialSites, initialCategories, initialTrendCandidates, initialArticles } from "./seedData";
 
 const app = express();
 const PORT = 3000;
@@ -47,254 +48,10 @@ interface Store {
 }
 
 const store: Store = {
-  sites: [
-    {
-      id: 1,
-      subdomain: "",
-      name: "しらんけど",
-      description: "「いま日本で何が話題か」を自動分析するトレンドサイト。しらんけど。",
-      genre: "general",
-      logoUrl: "",
-      isPublic: true,
-      allowAutoPublish: true,
-      youtubeThumbnailEnabled: true,
-    },
-    {
-      id: 2,
-      subdomain: "game",
-      name: "しらんけど ゲーム速報",
-      description: "Steam・新作ゲーム・大型アプデのトレンドを独自集計。しらんけど。",
-      genre: "game",
-      logoUrl: "",
-      isPublic: true,
-      allowAutoPublish: true,
-      youtubeThumbnailEnabled: true,
-    },
-    {
-      id: 3,
-      subdomain: "entame",
-      name: "しらんけど エンタメ",
-      description: "お笑い・バラエティ・芸能の一次ソース付きトレンド速報。しらんけど。",
-      genre: "entertainment",
-      logoUrl: "",
-      isPublic: true,
-      allowAutoPublish: true,
-      youtubeThumbnailEnabled: true,
-    },
-    {
-      id: 4,
-      subdomain: "youtube",
-      name: "しらんけど YouTube",
-      description: "YouTube急上昇＆注目クリエイターの話題度チェック。しらんけど。",
-      genre: "youtube",
-      logoUrl: "",
-      isPublic: true,
-      allowAutoPublish: true,
-      youtubeThumbnailEnabled: true,
-    },
-    {
-      id: 5,
-      subdomain: "news",
-      name: "しらんけど ニュース",
-      description: "読まれているニュースと検索トレンドの交差分析。しらんけど。",
-      genre: "news",
-      logoUrl: "",
-      isPublic: true,
-      allowAutoPublish: false, // ニュースは慎重に確認待ち
-      youtubeThumbnailEnabled: false,
-    },
-  ],
-  categories: [
-    { id: 1, siteId: 1, slug: "all", name: "総合", sortOrder: 1 },
-    { id: 2, siteId: 1, slug: "entertainment", name: "エンタメ", sortOrder: 2 },
-    { id: 3, siteId: 1, slug: "game", name: "ゲーム", sortOrder: 3 },
-    { id: 4, siteId: 1, slug: "tech", name: "テクノロジー", sortOrder: 4 },
-    { id: 5, siteId: 1, slug: "social", name: "SNS・ネット話題", sortOrder: 5 },
-    { id: 6, siteId: 2, slug: "steam", name: "Steam/PC", sortOrder: 1 },
-    { id: 7, siteId: 2, slug: "console", name: "PS5/Switch", sortOrder: 2 },
-    { id: 8, siteId: 2, slug: "app", name: "スマホアプリ", sortOrder: 3 },
-  ],
-  trendCandidates: [
-    {
-      id: 1,
-      siteId: 1,
-      normalizedKeyword: "千鳥大悟新作番組",
-      displayKeyword: "千鳥 大悟 新作番組 ネット独占配信決定",
-      sources: ["yahoo", "news", "youtube"],
-      googleScore: 82,
-      yahooScore: 94,
-      youtubeScore: 85,
-      newsScore: 88,
-      gameScore: 10,
-      shirankedoIndex: 88,
-      isRapidRise: true,
-      growthRate: 155.0,
-      firstDetectedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      status: "completed",
-    },
-    {
-      id: 2,
-      siteId: 1,
-      normalizedKeyword: "monsterhunterwildsアップデート",
-      displayKeyword: "Monster Hunter Wilds 大型アップデート第1弾告知",
-      sources: ["game", "youtube", "google"],
-      googleScore: 92,
-      yahooScore: 78,
-      youtubeScore: 96,
-      newsScore: 75,
-      gameScore: 100,
-      shirankedoIndex: 94,
-      isRapidRise: true,
-      growthRate: 210.0,
-      firstDetectedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      status: "completed",
-    },
-    {
-      id: 3,
-      siteId: 1,
-      normalizedKeyword: "スタジオジブリ企画展チケット",
-      displayKeyword: "スタジオジブリ最新企画展 チケット即日完売",
-      sources: ["news", "yahoo", "google"],
-      googleScore: 85,
-      yahooScore: 80,
-      youtubeScore: 60,
-      newsScore: 90,
-      gameScore: 0,
-      shirankedoIndex: 78,
-      isRapidRise: false,
-      growthRate: 45.0,
-      firstDetectedAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      status: "completed",
-    },
-    {
-      id: 4,
-      siteId: 1,
-      normalizedKeyword: "某容疑者sns特定騒動",
-      displayKeyword: "事件の某容疑者に関するSNS上の個人特定デマ騒動",
-      sources: ["yahoo"],
-      googleScore: 40,
-      yahooScore: 89,
-      youtubeScore: 20,
-      newsScore: 10,
-      gameScore: 0,
-      shirankedoIndex: 52,
-      isRapidRise: true,
-      growthRate: 130.0,
-      firstDetectedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      status: "completed",
-    },
-    {
-      id: 5,
-      siteId: 1,
-      normalizedKeyword: "新世代オープンソースaiモデル",
-      displayKeyword: "新世代オープンソースAIモデルの日本語性能が話題に",
-      sources: ["google", "news", "youtube"],
-      googleScore: 75,
-      yahooScore: 70,
-      youtubeScore: 80,
-      newsScore: 82,
-      gameScore: 20,
-      shirankedoIndex: 72,
-      isRapidRise: false,
-      growthRate: 35.0,
-      firstDetectedAt: new Date(Date.now() - 18 * 3600 * 1000).toISOString(),
-      lastUpdatedAt: new Date().toISOString(),
-      status: "candidate",
-    },
-  ],
-  articles: [
-    {
-      id: 1,
-      siteId: 1,
-      categoryId: 2,
-      categoryName: "エンタメ",
-      title: "千鳥・大悟の新バラエティが独占配信へ 公式発表にSNS歓喜",
-      slug: "trend-chidori-daigo-new-show",
-      whyTrending: "大手配信プラットフォームが千鳥・大悟の単独MCによるオリジナル新番組を発表。公式PV公開と同時にXやYahoo!リアルタイムで急上昇。",
-      body: "大手動画配信サービスは14日、お笑いコンビ「千鳥」の大悟が単独で司会を務める完全新作バラエティ番組の制作・独占配信を発表しました。\n\n公式発表資料およびティザー映像によると、本作は台本なしの即興シチュエーションコメディを主軸とし、豪華ゲスト陣が多数出演する大型企画となっています。千鳥としてのレギュラー番組とはまた異なる大悟独自の世界観が展開されるとあり、お笑いファンを中心に期待の声が急速に広がっています。\n\n制作関係者向けの発表会では、地上波では実現しにくかった挑戦的な企画が盛り込まれることが明言されました。",
-      conclusionSentence: "今後の追加出演者や配信開始日の発表次第では、さらにネット上がざわつくことになりそうです。しらんけど。",
-      shirankedoIndex: 88,
-      indexLabel: "めっちゃ話題",
-      isRapidRise: true,
-      growthRate: 155.0,
-      firstDetectedAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString(),
-      imageUrl: "https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=1000&q=80",
-      youtubeVideoId: "dQw4w9WgXcQ",
-      status: "published",
-      isDangerous: false,
-      publishedAt: new Date(Date.now() - 1.5 * 3600 * 1000).toISOString(),
-      votes: { knew: 41, didntKnow: 72, grow: 85, end: 28 },
-    },
-    {
-      id: 2,
-      siteId: 1,
-      categoryId: 3,
-      categoryName: "ゲーム",
-      title: "Monster Hunter Wilds 無料大型アプデ第1弾の詳細公開 新モンスター解禁",
-      slug: "trend-mhw-wilds-update-1",
-      whyTrending: "カプコン公式生放送で大型タイトルアップデート第1弾の配信日と追加モンスターが正式発表。SteamおよびSNSで爆発的な反響を記録。",
-      body: "株式会社カプコンは、全世界で大ヒットを記録しているハンティングアクション最新作『Monster Hunter Wilds』の無料大型タイトルアップデート第1弾に関する公式ロードマップを公開しました。\n\n配信番組内の発表によると、新たな歴戦の古龍種モンスター1体と、過去作から復活を果たす人気モンスターが実装されます。また、武器バランスの調整や追加エンドコンテンツ、新防具シリーズの生産機能も同時解禁されることが確定しました。\n\n公式発表直後から国内外のゲームコミュニティやYouTubeライブ配信では装備ビルドの考察が白熱しています。",
-      conclusionSentence: "アップデート当日は狩猟解禁に合わせて有休を申請するハンターが続出する見通しです。しらんけど。",
-      shirankedoIndex: 94,
-      indexLabel: "めっちゃ話題",
-      isRapidRise: true,
-      growthRate: 210.0,
-      firstDetectedAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString(),
-      imageUrl: "https://images.unsplash.com/photo-1538481199705-c710c4e965fc?auto=format&fit=crop&w=1000&q=80",
-      youtubeVideoId: "M7lc1UVf-VE",
-      status: "published",
-      isDangerous: false,
-      publishedAt: new Date(Date.now() - 3.5 * 3600 * 1000).toISOString(),
-      votes: { knew: 110, didntKnow: 35, grow: 124, end: 21 },
-    },
-    {
-      id: 3,
-      siteId: 1,
-      categoryId: 2,
-      categoryName: "エンタメ",
-      title: "スタジオジブリ特別企画展 前売りチケットが開始3分で即完売の盛況",
-      slug: "trend-ghibli-exhibition-tickets",
-      whyTrending: "今夏開催されるスタジオジブリの回顧企画展の一般チケット販売が開始され、販売サイトへのアクセスが集中し即日完売。",
-      body: "都内美術館で開催予定のスタジオジブリ特別企画展の前売りチケット販売が本日午前10時に開始され、わずか数分で全日程の予定枚数が終了しました。\n\n本展覧会では、貴重な手描き背景画や未公開の設定資料、実物大の造形展示などが予定されており、国内のみならず海外ファンからも高い注目を集めていました。\n\n主催者側は公式サイトにて、転売チケットへの注意喚起を行うとともに、追加日程の調整について検討中である旨のアナウンスを行っています。",
-      conclusionSentence: "プレミアム価格をつけた悪質な転売にはくれぐれもご注意ください。しらんけど。",
-      shirankedoIndex: 78,
-      indexLabel: "かなり話題",
-      isRapidRise: false,
-      growthRate: 45.0,
-      firstDetectedAt: new Date(Date.now() - 72 * 3600 * 1000).toISOString(),
-      imageUrl: "https://images.unsplash.com/photo-1579783900882-c0d3dad7b119?auto=format&fit=crop&w=1000&q=80",
-      status: "published",
-      isDangerous: false,
-      publishedAt: new Date(Date.now() - 70 * 3600 * 1000).toISOString(),
-      votes: { knew: 55, didntKnow: 68, grow: 42, end: 81 },
-    },
-    {
-      id: 4,
-      siteId: 1,
-      categoryId: 5,
-      categoryName: "SNS・ネット話題",
-      title: "【保留記事】事件の某容疑者に関するSNS上の個人特定デマ騒動",
-      slug: "trend-held-rumor-case",
-      whyTrending: "SNS上で無関係の一般人の氏名や勤務先が容疑者として拡散。危険ジャンル検知により自動保留。",
-      body: "ネット上の匿名掲示板およびSNSにおいて、事件の容疑者であるかのように装った一般人の個人情報が拡散されています。警察発表および大手報道機関による公式裏付けは一切確認されておらず、明らかなデマである可能性が極めて高いため、当サイトでは安全ブレーキが作動しました。",
-      conclusionSentence: "未確認の噂を軽はずみに拡散すると法的責任を問われる可能性があります。しらんけど。",
-      shirankedoIndex: 52,
-      indexLabel: "話題",
-      isRapidRise: true,
-      growthRate: 130.0,
-      firstDetectedAt: new Date(Date.now() - 1 * 3600 * 1000).toISOString(),
-      imageUrl: "https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=1000&q=80",
-      status: "on_hold",
-      isDangerous: true,
-      dangerReason: "危険キーワード検知: 容疑, 特定 / 一次ソース不足 (SNS噂のみ)",
-      publishedAt: new Date().toISOString(),
-      votes: { knew: 12, didntKnow: 9, grow: 5, end: 16 },
-    },
-  ],
+  sites: [...initialSites],
+  categories: [...initialCategories],
+  trendCandidates: [...initialTrendCandidates],
+  articles: [...initialArticles],
   articleSources: [
     {
       id: 1,
@@ -523,60 +280,34 @@ const store: Store = {
   ],
 };
 
-// Helper: resolve current site from subdomain/header/query
+// Helper: resolve current site (Single unified site: 「しらんけど」)
 function resolveSite(req: Request) {
-  const querySiteId = req.query.site_id ? parseInt(req.query.site_id as string, 10) : null;
-  if (querySiteId) {
-    const s = store.sites.find((item) => item.id === querySiteId);
-    if (s) return s;
-  }
-
-  const host = req.headers["x-site-subdomain"] || req.headers.host || "";
-  const hostStr = Array.isArray(host) ? host[0] : host;
-  const parts = hostStr.split(".")[0];
-  const matched = store.sites.find((s) => s.subdomain === parts);
-  return matched || store.sites[0];
+  return store.sites[0];
 }
 
 // ----------------------------------------------------
 // API ROUTES
 // ----------------------------------------------------
 
-// 1. Current Site Info & All Sites (Multi-site)
+// 1. Current Site Info & All Sites (Single Site)
 app.get("/api/sites", (req: Request, res: Response) => {
-  res.json({ sites: store.sites, current: resolveSite(req) });
+  res.json({ sites: store.sites, current: store.sites[0] });
 });
 
 app.post("/api/sites", (req: Request, res: Response) => {
-  const { subdomain, name, description, genre, allowAutoPublish } = req.body;
-  const newSite = {
-    id: store.sites.length + 1,
-    subdomain: (subdomain || "").toLowerCase().trim(),
-    name: name || "新しいトレンドサイト",
-    description: description || "",
-    genre: genre || "general",
-    logoUrl: "",
-    isPublic: true,
-    allowAutoPublish: allowAutoPublish !== false,
-    youtubeThumbnailEnabled: true,
-  };
-  store.sites.push(newSite);
-  res.json({ success: true, site: newSite });
+  res.json({ success: true, site: store.sites[0] });
 });
 
 // 2. Categories
 app.get("/api/categories", (req: Request, res: Response) => {
-  const site = resolveSite(req);
-  const cats = store.categories.filter((c) => c.siteId === site.id || c.siteId === 1);
-  res.json({ categories: cats });
+  res.json({ categories: store.categories });
 });
 
 // 3. Articles (Front & Admin)
 app.get("/api/articles", (req: Request, res: Response) => {
-  const site = resolveSite(req);
   const { status, category, limit, sort } = req.query;
 
-  let list = store.articles.filter((a) => a.siteId === site.id || site.id === 1);
+  let list = [...store.articles];
 
   if (status) {
     list = list.filter((a) => a.status === status);
@@ -588,14 +319,20 @@ app.get("/api/articles", (req: Request, res: Response) => {
   if (category && category !== "all") {
     const cat = store.categories.find((c) => c.slug === category);
     if (cat) {
-      list = list.filter((a) => a.categoryId === cat.id);
+      list = list.filter(
+        (a) => a.categoryId === cat.id || a.categoryName === cat.name || a.category === cat.name
+      );
+    } else {
+      list = list.filter(
+        (a) => a.categoryName === category || a.category === category
+      );
     }
   }
 
   if (sort === "rapid") {
-    list.sort((a, b) => (b.isRapidRise ? 1 : 0) - (a.isRapidRise ? 1 : 0) || b.growthRate - a.growthRate);
+    list.sort((a, b) => (b.isRapidRise ? 1 : 0) - (a.isRapidRise ? 1 : 0) || (b.growthRate || 0) - (a.growthRate || 0));
   } else if (sort === "index") {
-    list.sort((a, b) => b.shirankedoIndex - a.shirankedoIndex);
+    list.sort((a, b) => (b.shirankedoIndex || 0) - (a.shirankedoIndex || 0));
   } else {
     list.sort((a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime());
   }

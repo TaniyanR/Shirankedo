@@ -116,6 +116,12 @@ export const ArticleDetailModal: React.FC<ArticleDetailModalProps> = ({
   const growPct = totalGrowthVotes > 0 ? Math.round((votes.grow / totalGrowthVotes) * 100) : 50;
   const endPct = 100 - growPct;
 
+  const displayBody = article.body || (article as any).content || '詳細情報を読み込み中...しらんけど。';
+  const displayImage = article.imageUrl || (article as any).thumbnailUrl;
+  const displayCategory = article.categoryName || (article as any).category || '総合';
+  const displayWhy = article.whyTrending || (article as any).objectiveFact || displayBody;
+  const displayConclusion = article.conclusionSentence || (article as any).conclusion || '…まあ、真相は知らんけどな！';
+
   return (
     <div className="fixed inset-0 z-50 overflow-y-auto bg-stone-950/70 backdrop-blur-xs flex justify-center p-2 sm:p-4 md:py-8">
       <div className="relative bg-white w-full max-w-3xl rounded-3xl shadow-2xl border border-stone-200 overflow-hidden flex flex-col my-auto max-h-[95vh]">
@@ -123,16 +129,16 @@ export const ArticleDetailModal: React.FC<ArticleDetailModalProps> = ({
         <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-md px-6 py-4 border-b border-stone-200 flex items-center justify-between">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold px-2.5 py-1 rounded-md bg-stone-100 text-stone-700">
-              {article.categoryName || '総合'}
+              {displayCategory}
             </span>
             <span className="text-xs text-stone-500">
-              {new Date(article.publishedAt).toLocaleDateString('ja-JP', {
+              {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString('ja-JP', {
                 year: 'numeric',
                 month: 'long',
                 day: 'numeric',
                 hour: '2-digit',
                 minute: '2-digit',
-              })}
+              }) : '最新'}
             </span>
           </div>
 
@@ -154,19 +160,19 @@ export const ArticleDetailModal: React.FC<ArticleDetailModalProps> = ({
 
           {/* Shirankedo Gauge Card */}
           <ShirankedoGauge
-            score={article.shirankedoIndex}
-            label={article.indexLabel}
+            score={article.shirankedoIndex || 85}
+            label={article.indexLabel || '話題'}
             isRapidRise={article.isRapidRise}
-            growthRate={article.growthRate}
-            firstDetectedAt={article.firstDetectedAt}
+            growthRate={article.growthRate || 120}
+            firstDetectedAt={article.firstDetectedAt || new Date().toISOString()}
             size="lg"
           />
 
           {/* Hero Image */}
-          {article.imageUrl && (
+          {displayImage && (
             <div className="rounded-2xl overflow-hidden border border-stone-200 bg-stone-100 max-h-96">
               <img
-                src={article.imageUrl}
+                src={displayImage}
                 alt={article.title}
                 referrerPolicy="no-referrer"
                 className="w-full h-full object-cover"
@@ -175,18 +181,20 @@ export const ArticleDetailModal: React.FC<ArticleDetailModalProps> = ({
           )}
 
           {/* Why Trending Box */}
-          <div className="bg-amber-50/80 border-l-4 border-amber-500 p-4 rounded-r-xl space-y-1">
-            <div className="text-xs font-black text-amber-900 uppercase tracking-wide">
-              【なぜ話題？】
+          {displayWhy && (
+            <div className="bg-amber-50/80 border-l-4 border-amber-500 p-4 rounded-r-xl space-y-1">
+              <div className="text-xs font-black text-amber-900 uppercase tracking-wide">
+                【なぜ話題？】
+              </div>
+              <p className="text-sm font-medium text-stone-800 leading-relaxed">
+                {displayWhy}
+              </p>
             </div>
-            <p className="text-sm font-medium text-stone-800 leading-relaxed">
-              {article.whyTrending}
-            </p>
-          </div>
+          )}
 
           {/* Main Factual Body */}
           <div className="space-y-4 text-stone-800 text-base leading-relaxed font-sans">
-            {article.body.split('\n\n').map((para, i) => (
+            {displayBody.split('\n\n').map((para, i) => (
               <p key={i} className="text-justify">
                 {para}
               </p>
@@ -212,7 +220,7 @@ export const ArticleDetailModal: React.FC<ArticleDetailModalProps> = ({
               所感・編集部メモ
             </div>
             <div className="text-base sm:text-lg font-bold font-serif leading-relaxed text-stone-100">
-              {article.conclusionSentence}
+              {displayConclusion}
             </div>
           </div>
 

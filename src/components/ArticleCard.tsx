@@ -10,6 +10,9 @@ interface ArticleCardProps {
 
 export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) => {
   const isHeld = article.status === 'on_hold';
+  const displayImage = article.imageUrl || (article as any).thumbnailUrl;
+  const displayCategory = article.categoryName || (article as any).category || '総合';
+  const displayWhy = article.whyTrending || (article as any).objectiveFact || (article as any).content || article.body || '';
 
   return (
     <article
@@ -18,9 +21,9 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) =
     >
       {/* Thumbnail Area */}
       <div className="relative w-full md:w-56 h-48 md:h-auto shrink-0 bg-stone-100 overflow-hidden">
-        {article.imageUrl ? (
+        {displayImage ? (
           <img
-            src={article.imageUrl}
+            src={displayImage}
             alt={article.title}
             referrerPolicy="no-referrer"
             className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
@@ -35,7 +38,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) =
         {article.isRapidRise && (
           <div className="absolute top-2.5 left-2.5 bg-red-600/90 backdrop-blur-xs text-white text-[11px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
             <Flame className="w-3 h-3 fill-white" />
-            <span>急上昇 +{Math.round(article.growthRate)}%</span>
+            <span>急上昇 +{Math.round(article.growthRate || 100)}%</span>
           </div>
         )}
 
@@ -44,7 +47,7 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) =
           <div className="absolute inset-0 bg-stone-950/70 backdrop-blur-xs flex flex-col items-center justify-center p-3 text-center text-white">
             <ShieldAlert className="w-7 h-7 text-amber-400 mb-1" />
             <span className="text-xs font-bold text-amber-300">安全ブレーキ作動中 (保留)</span>
-            <span className="text-[10px] text-stone-300 mt-0.5 line-clamp-2">{article.dangerReason}</span>
+            <span className="text-[10px] text-stone-300 mt-0.5 line-clamp-2">{article.dangerReason || '安全確認中'}</span>
           </div>
         )}
       </div>
@@ -56,21 +59,21 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) =
           <div className="flex items-center justify-between gap-2 mb-2">
             <div className="flex items-center gap-2">
               <span className="text-xs font-bold px-2 py-0.5 rounded bg-stone-100 text-stone-700">
-                {article.categoryName || '総合'}
+                {displayCategory}
               </span>
               <span className="text-xs text-stone-600 font-medium">
-                {new Date(article.publishedAt).toLocaleDateString('ja-JP', {
+                {article.publishedAt ? new Date(article.publishedAt).toLocaleDateString('ja-JP', {
                   month: 'numeric',
                   day: 'numeric',
                   hour: '2-digit',
                   minute: '2-digit',
-                })}
+                }) : '本日更新'}
               </span>
             </div>
 
             <ShirankedoGauge
-              score={article.shirankedoIndex}
-              label={article.indexLabel}
+              score={article.shirankedoIndex || 80}
+              label={article.indexLabel || '話題'}
               isRapidRise={article.isRapidRise}
               size="sm"
             />
@@ -82,10 +85,12 @@ export const ArticleCard: React.FC<ArticleCardProps> = ({ article, onSelect }) =
           </h2>
 
           {/* Why Trending Summary */}
-          <p className="mt-2 text-xs md:text-sm text-stone-600 line-clamp-2 leading-relaxed">
-            <strong className="text-stone-800 font-bold mr-1">【なぜ話題？】</strong>
-            {article.whyTrending}
-          </p>
+          {displayWhy && (
+            <p className="mt-2 text-xs md:text-sm text-stone-600 line-clamp-2 leading-relaxed">
+              <strong className="text-stone-800 font-bold mr-1">【なぜ話題？】</strong>
+              {displayWhy}
+            </p>
+          )}
         </div>
 
         {/* Footer info: Trademark closing & Interaction stats */}

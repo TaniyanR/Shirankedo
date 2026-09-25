@@ -199,7 +199,7 @@ export default function App() {
               >
                 すべて
               </button>
-              {categories.map((cat) => (
+              {categories.filter((c) => c.slug !== 'all').map((cat) => (
                 <button
                   key={cat.id}
                   onClick={() => setSelectedCategory(cat.slug)}
