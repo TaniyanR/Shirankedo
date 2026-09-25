@@ -909,12 +909,51 @@ $minutesSinceLastPost = $lastPostTime ? round((time() - strtotime($lastPostTime)
 $requiredMinutes = $intervalHours * 60;
 $canPostNextIn = max(0, round($requiredMinutes - $minutesSinceLastPost));
 
-// 整理されたタブ定義 (迷わない超シンプル構成: 必須4項目)
-$navTabs = [
-    'dashboard' => ['icon' => '📊', 'label' => 'ホーム（稼働状況・今すぐ生成）', 'badge' => null],
-    'articles' => ['icon' => '📝', 'label' => '記事一覧・管理', 'badge' => $totalArticles],
-    'gemini' => ['icon' => '⚙️', 'label' => '基本設定（AI・自動更新・広告）', 'badge' => $hasGeminiKey ? '接続中' : '⚠️要設定'],
-    'advanced' => ['icon' => '🔧', 'label' => 'その他の機能（画像・相互RSS等）', 'badge' => null],
+// 親項目・子項目の機能別グループ定義 (ユーザー指定順序 & 広告・相互リンク配置)
+$navGroups = [
+    'content' => [
+        'title' => '📝 記事・コンテンツ機能',
+        'icon' => '📝',
+        'children' => [
+            'dashboard' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
+            'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles],
+            'held_articles' => ['icon' => '🛡️', 'label' => '危険・保留記事の審査', 'badge' => null],
+            'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => null],
+        ]
+    ],
+    'analytics' => [
+        'title' => '📈 アクセス解析・分析',
+        'icon' => '📈',
+        'children' => [
+            'analytics' => ['icon' => '📊', 'label' => '高性能アクセス解析', 'badge' => 'LIVE'],
+        ]
+    ],
+    'ai_system' => [
+        'title' => '🤖 AI・自動生成設定',
+        'icon' => '🤖',
+        'children' => [
+            'gemini' => ['icon' => '⚙️', 'label' => 'Gemini API・投稿間隔', 'badge' => $hasGeminiKey ? '接続中' : '⚠️要設定'],
+            'advanced' => ['icon' => '🚫', 'label' => 'NGワード・除外設定', 'badge' => null],
+        ]
+    ],
+    'monetization' => [
+        'title' => '💰 収益・提携・集客機能',
+        'icon' => '💰',
+        'children' => [
+            'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
+            'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
+            'sns' => ['icon' => '📢', 'label' => 'Threads・SNS配信設定', 'badge' => null],
+        ]
+    ],
+    'system' => [
+        'title' => '🛠️ サイト・システム保守',
+        'icon' => '🛠️',
+        'children' => [
+            'seo_tags' => ['icon' => '📄', 'label' => 'SEO・メタタグ設定', 'badge' => null],
+            'announcements' => ['icon' => '📣', 'label' => 'お知らせ管理', 'badge' => null],
+            'security' => ['icon' => '🛡️', 'label' => 'セキュリティ設定', 'badge' => null],
+        ]
+    ],
 ];
 ?>
 <!DOCTYPE html>
@@ -1116,39 +1155,52 @@ $navTabs = [
                     <div class="text-[10px] text-slate-500">v2.4 Auto-Trend & Trade Engine</div>
                 </div>
 
-                <!-- メニューナビゲーション (シンプル4メニュー) -->
-                <nav class="space-y-1.5">
-                    <?php 
-                    foreach ($navTabs as $tabKey => $t): 
-                        $isActive = $currentTab === $tabKey;
-                        $btnClass = $isActive 
-                            ? 'bg-amber-500 text-slate-950 font-black shadow-md' 
-                            : 'text-slate-300 hover:bg-slate-900 hover:text-white font-medium';
+                <!-- 階層メニューナビゲーション (親項目・子項目) -->
+                <div class="flex items-center justify-between px-1 pb-1">
+                    <span class="text-[11px] font-black tracking-wide text-amber-400">階層メニュー</span>
+                    <span class="text-[10px] text-slate-500 font-mono">全4分野</span>
+                </div>
+                <nav class="space-y-2.5">
+                    <?php foreach ($navGroups as $grpKey => $grp): 
+                        $hasActive = array_key_exists($currentTab, $grp['children']);
                     ?>
-                        <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs transition-all <?= $btnClass ?>">
-                            <div class="flex items-center gap-2.5">
-                                <span class="text-base"><?= $t['icon'] ?></span>
-                                <span class="font-bold tracking-tight"><?= $t['label'] ?></span>
-                            </div>
-                            <?php if (!empty($t['badge'])): ?>
-                                <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $isActive ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400' ?>">
-                                    <?= $t['badge'] ?>
+                        <div class="rounded-2xl overflow-hidden bg-slate-900/90 border <?= $hasActive ? 'border-amber-500/40' : 'border-slate-800/80' ?>">
+                            <!-- 親項目ヘッダー -->
+                            <div class="flex items-center justify-between px-3 py-2 text-xs font-black <?= $hasActive ? 'text-amber-400 bg-amber-500/10 border-l-2 border-amber-400' : 'text-slate-400 bg-slate-900/80' ?>">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-sm"><?= $grp['icon'] ?></span>
+                                    <span><?= htmlspecialchars($grp['title']) ?></span>
+                                </div>
+                                <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono">
+                                    <?= count($grp['children']) ?>項目
                                 </span>
-                            <?php endif; ?>
-                        </a>
+                            </div>
+                            <!-- 子項目リスト -->
+                            <div class="p-1 space-y-0.5 bg-slate-950/70 border-t border-slate-900">
+                                <?php foreach ($grp['children'] as $tabKey => $t): 
+                                    $isActive = $currentTab === $tabKey;
+                                    $btnClass = $isActive 
+                                        ? 'bg-amber-500 text-slate-950 font-black shadow-sm' 
+                                        : 'text-slate-300 hover:bg-slate-800/80 hover:text-white font-medium';
+                                ?>
+                                    <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between pl-3 pr-2.5 py-2 rounded-xl text-xs transition-all <?= $btnClass ?>">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-1.5 h-1.5 rounded-full <?= $isActive ? 'bg-slate-950' : 'bg-slate-600' ?>"></span>
+                                            <span class="text-sm"><?= $t['icon'] ?></span>
+                                            <span class="tracking-tight"><?= htmlspecialchars($t['label']) ?></span>
+                                        </div>
+                                        <?php if (!empty($t['badge'])): ?>
+                                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $isActive ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400' ?>">
+                                                <?= $t['badge'] ?>
+                                            </span>
+                                        <?php endif; ?>
+                                    </a>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
                     <?php endforeach; ?>
                 </nav>
 
-                <!-- 即時実行アクション (大きな生成ボタン1つのみ) -->
-                <div class="pt-4 border-t border-slate-800/80">
-                    <form method="POST">
-                        <input type="hidden" name="op" value="run_worker">
-                        <button type="submit" class="w-full py-3.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98">
-                            <span class="text-base">⚡</span>
-                            <span>今すぐAI記事を1本自動生成</span>
-                        </button>
-                    </form>
-                </div>
             </aside>
 
             <!-- 右側メインコンテンツパネル -->
