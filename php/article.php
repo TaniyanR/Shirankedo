@@ -179,6 +179,8 @@ $colorClass = $score >= 80 ? 'bg-rose-50 text-rose-800 border-rose-200' :
 $currentUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') . $_SERVER['REQUEST_URI'];
 $shareTitle = $article['title'] . ' | しらんけど';
 $shareTwitterUrl = 'https://twitter.com/intent/tweet?text=' . urlencode("【話題度: {$score}/100】" . $article['title'] . "\n#しらんけど\n") . '&url=' . urlencode($currentUrl);
+$shareThreadsUrl = 'https://www.threads.net/intent/post?text=' . urlencode("【話題度: {$score}/100】" . $article['title'] . "\n" . $currentUrl . "\n#しらんけど");
+$shareLineUrl = 'https://social-plugins.line.me/lineit/share?url=' . urlencode($currentUrl);
 $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode($currentUrl) . '&media=' . urlencode($article['image_url'] ?? '') . '&description=' . urlencode($article['title'] . ' - ' . $article['why_trending']);
 ?>
 <!DOCTYPE html>
@@ -189,12 +191,16 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <title><?= htmlspecialchars($article['title']) ?> - <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></title>
     <meta name="description" content="<?= htmlspecialchars(mb_substr(strip_tags($article['why_trending']), 0, 120)) ?>">
     <meta name="referrer" content="unsafe-url">
+    <meta property="og:site_name" content="しらんけど - トレンド速報">
     <meta property="og:title" content="<?= htmlspecialchars($article['title']) ?> - しらんけど">
     <meta property="og:description" content="<?= htmlspecialchars($article['why_trending']) ?>">
     <meta property="og:type" content="article">
+    <meta property="og:locale" content="ja_JP">
     <meta property="og:url" content="<?= htmlspecialchars($currentUrl) ?>">
     <?php if (!empty($article['image_url'])): ?>
     <meta property="og:image" content="<?= htmlspecialchars($article['image_url']) ?>">
+    <meta property="og:image:width" content="1200">
+    <meta property="og:image:height" content="630">
     <?php endif; ?>
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<?= htmlspecialchars($article['title']) ?>">
@@ -292,19 +298,29 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 </div>
 
                 <!-- SNSシェアボタン (上部) -->
-                <div class="flex items-center gap-2 border-y border-stone-100 py-3">
+                <div class="flex flex-wrap items-center gap-2 border-y border-stone-100 py-3">
                     <span class="text-xs font-bold text-stone-400">シェア:</span>
+                    <!-- Threads -->
+                    <a href="<?= htmlspecialchars($shareThreadsUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-slate-950 text-white hover:bg-slate-800 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                        <span>Threads</span>
+                    </a>
                     <!-- X / Twitter -->
                     <a href="<?= htmlspecialchars($shareTwitterUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-black text-white hover:bg-stone-800 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
                         <span>𝕏</span> <span>ポスト</span>
+                    </a>
+                    <!-- LINE -->
+                    <a href="<?= htmlspecialchars($shareLineUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-[#06C755] text-white hover:opacity-90 text-xs font-black flex items-center gap-1.5 transition-opacity shadow-sm">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.019 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.589-3.843 2.589-5.992z"/></svg>
+                        <span>LINE</span>
                     </a>
                     <!-- Pinterest -->
                     <a href="<?= htmlspecialchars($sharePinterestUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-500 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
                         <span>📌</span> <span>Pin</span>
                     </a>
-                    <!-- Instagram案内ボタン -->
-                    <button onclick="navigator.clipboard.writeText('<?= addslashes($currentUrl) ?>'); alert('URLをコピーしました！インスタストーリーやリンクでシェアできます。');" class="px-3 py-1.5 rounded-xl bg-gradient-to-r from-purple-600 via-pink-600 to-amber-500 text-white hover:opacity-90 text-xs font-black flex items-center gap-1.5 transition-opacity shadow-sm">
-                        <span>📸</span> <span>URLコピー</span>
+                    <!-- コピー -->
+                    <button onclick="navigator.clipboard.writeText('<?= addslashes($currentUrl) ?>'); alert('URLをコピーしました！ThreadsやSNSでシェアできます。');" class="px-3 py-1.5 rounded-xl bg-stone-200 text-stone-800 hover:bg-stone-300 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
+                        <span>📋</span> <span>URLコピー</span>
                     </button>
                 </div>
 
@@ -345,13 +361,26 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <!-- SNSシェアボタン (下部) -->
                 <div class="bg-stone-50 p-4 rounded-2xl border border-stone-200/60 flex flex-wrap items-center justify-between gap-3">
                     <div class="text-xs font-bold text-stone-700">この話題を友達やフォロワーに教える：</div>
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <!-- Threads -->
+                        <a href="<?= htmlspecialchars($shareThreadsUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-slate-950 text-white hover:bg-slate-800 text-xs font-black shadow-sm transition-all flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                            <span>Threads</span>
+                        </a>
+                        <!-- X -->
                         <a href="<?= htmlspecialchars($shareTwitterUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-black text-white hover:bg-stone-800 text-xs font-black shadow-sm transition-all">
                             𝕏 ポスト
                         </a>
+                        <!-- LINE -->
+                        <a href="<?= htmlspecialchars($shareLineUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-[#06C755] text-white hover:opacity-90 text-xs font-black shadow-sm transition-all flex items-center gap-1.5">
+                            <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.019 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.589-3.843 2.589-5.992z"/></svg>
+                            <span>LINE</span>
+                        </a>
+                        <!-- Pinterest -->
                         <a href="<?= htmlspecialchars($sharePinterestUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3.5 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-500 text-xs font-black shadow-sm transition-all">
                             📌 ピン留め
                         </a>
+                        <!-- コピー -->
                         <button onclick="navigator.clipboard.writeText('<?= addslashes($currentUrl) ?>'); alert('記事URLをクリップボードにコピーしました！');" class="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white text-xs font-black shadow-sm transition-all">
                             📋 リンクコピー
                         </button>

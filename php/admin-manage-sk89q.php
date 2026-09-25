@@ -260,57 +260,120 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 : "記事ID #{$artId} にアイキャッチ画像を設定しました（保留状態として保存）。";
         }
 
-        // 3. アイキャッチ画像プールの追加（URLまたはローカルPCファイルアップロード・800x450px・キーワード3つ）
+        // 3. アイキャッチ画像プールの追加（複数ファイル一括アップロード / 複数URL一括登録 / 個別登録）
         if ($op === 'add_pool_image') {
-            $url = trim($_POST['url'] ?? '');
-            $alt = trim($_POST['alt_text'] ?? 'トレンドアイキャッチ');
             $catId = (int)($_POST['category_id'] ?? 1);
+            $altDefault = trim($_POST['alt_text'] ?? 'トレンドアイキャッチ');
             $kw1 = trim($_POST['kw1'] ?? '');
             $kw2 = trim($_POST['kw2'] ?? '');
             $kw3 = trim($_POST['kw3'] ?? '');
+            $kws = array_filter([$kw1, $kw2, $kw3]);
 
-            // ローカルファイルアップロード対応
-            if (isset($_FILES['local_image']) && $_FILES['local_image']['error'] === UPLOAD_ERR_OK) {
-                $fileTmp = $_FILES['local_image']['tmp_name'];
-                $fileName = $_FILES['local_image']['name'];
-                $ext = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-                $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
-                if (in_array($ext, $allowed)) {
-                    $uploadDir = __DIR__ . '/uploads';
-                    if (!is_dir($uploadDir)) {
-                        mkdir($uploadDir, 0777, true);
+            $uploadDir = __DIR__ . '/uploads';
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            $allowed = ['jpg', 'jpeg', 'png', 'webp', 'gif'];
+            $addedCount = 0;
+
+            // A. 複数ファイル一括アップロード処理
+            if (isset($_FILES['local_images']) && is_array($_FILES['local_images']['name'])) {
+                $totalFiles = count($_FILES['local_images']['name']);
+                for ($i = 0; $i < $totalFiles; $i++) {
+                    if ($_FILES['local_images']['error'][$i] === UPLOAD_ERR_OK) {
+                        $tmpName = $_FILES['local_images']['tmp_name'][$i];
+                        $origName = $_FILES['local_images']['name'][$i];
+                        $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                        if (in_array($ext, $allowed)) {
+                            $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
+                            $dest = $uploadDir . '/' . $safeName;
+                            if (move_uploaded_file($tmpName, $dest)) {
+                                $fileUrl = '/uploads/' . $safeName;
+                                $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
+                                $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
+                                $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                                $newImgId = (int)$db->lastInsertId();
+                                foreach ($kws as $k) {
+                                    $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
+                                }
+                                $addedCount++;
+                            }
+                        }
                     }
+                }
+            }
+            // 単一ファイル互換
+            elseif (isset($_FILES['local_image']) && $_FILES['local_image']['error'] === UPLOAD_ERR_OK) {
+                $tmpName = $_FILES['local_image']['tmp_name'];
+                $origName = $_FILES['local_image']['name'];
+                $ext = strtolower(pathinfo($origName, PATHINFO_EXTENSION));
+                if (in_array($ext, $allowed)) {
                     $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $dest = $uploadDir . '/' . $safeName;
-                    if (move_uploaded_file($fileTmp, $dest)) {
-                        $url = '/uploads/' . $safeName;
+                    if (move_uploaded_file($tmpName, $dest)) {
+                        $fileUrl = '/uploads/' . $safeName;
+                        $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
+                        $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
+                        $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                        $newImgId = (int)$db->lastInsertId();
+                        foreach ($kws as $k) {
+                            $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
+                        }
+                        $addedCount++;
                     }
                 }
             }
 
-            if (empty($url)) {
-                throw new Exception('画像URLを入力するか、画像をアップロードしてください。');
-            }
-
-            $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active) VALUES (1, ?, 'custom_pool.webp', ?, ?, 1)");
-            $stmt->execute([$catId, $url, $alt]);
-            $newImgId = $db->lastInsertId();
-
-            $kws = array_filter([$kw1, $kw2, $kw3]);
-            if (!empty($kws)) {
-                $kwStmt = $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)");
-                foreach ($kws as $k) {
-                    $kwStmt->execute([$newImgId, $k]);
+            // B. 複数行URL（または単一URL）の登録処理
+            $rawUrls = trim($_POST['urls'] ?? ($_POST['url'] ?? ''));
+            if (!empty($rawUrls)) {
+                $urlList = preg_split('/[\r\n]+/', $rawUrls);
+                foreach ($urlList as $singleUrl) {
+                    $singleUrl = trim($singleUrl);
+                    if (!empty($singleUrl) && filter_var($singleUrl, FILTER_VALIDATE_URL)) {
+                        // 重複チェック
+                        $chk = $db->prepare("SELECT id FROM images WHERE site_id = 1 AND url = ?");
+                        $chk->execute([$singleUrl]);
+                        if (!$chk->fetch()) {
+                            $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, 'custom_pool.webp', ?, ?, 1, NOW())");
+                            $stmt->execute([$catId, $singleUrl, $altDefault]);
+                            $newImgId = (int)$db->lastInsertId();
+                            foreach ($kws as $k) {
+                                $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
+                            }
+                            $addedCount++;
+                        }
+                    }
                 }
             }
-            $flashMessage = 'アイキャッチ画像をプールに登録しました！（キーワード3件設定済み）';
+
+            if ($addedCount === 0) {
+                throw new Exception('画像ファイルをアップロードするか、有効な画像URLを入力してください。');
+            }
+            $flashMessage = "アイキャッチ画像をプールに {$addedCount} 件登録しました！";
         }
 
-        // 3-B. 商用フリー初期画像セット（12ジャンル）の一括プリセット追加
+        // 3-B. 商用フリー初期画像セット（全7大ジャンル・計64枚）の一括プリセット追加
         if ($op === 'seed_preset_images') {
             require_once __DIR__ . '/classes/ImageManager.php';
-            $seededCount = ImageManager::seedDefaultPresets(1);
-            $flashMessage = "🎁 商用フリーの厳選初期画像セット（{$seededCount}枚）をアイキャッチプールに一括登録しました！";
+            $genre = $_POST['genre'] ?? 'all';
+            $genreLabels = [
+                'all' => '全7大ジャンル（計64枚）',
+                'tech' => 'IT・ガジェット・AI',
+                'entame' => '芸能・エンタメ・音楽',
+                'sports' => 'スポーツ・アスリート',
+                'game' => 'ゲーム・アニメ・マンガ',
+                'gourmet' => 'グルメ・スイーツ・飲食',
+                'society' => '社会・ニュース・経済',
+                'lifestyle' => '自然・天気・ペット'
+            ];
+            $label = $genreLabels[$genre] ?? '厳選画像';
+            $seededCount = ImageManager::seedDefaultPresets(1, $genre);
+            if ($seededCount > 0) {
+                $flashMessage = "🎁 商用フリー厳選画像セット【{$label}】（新たに {$seededCount} 枚）をアイキャッチプールに一括登録しました！";
+            } else {
+                $flashMessage = "ℹ️ 指定のジャンル（{$label}）の画像は既にすべて登録済みです。";
+            }
         }
 
         // 3-C. プール画像の削除
@@ -514,7 +577,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = '相互RSS表示設定を保存しました。';
         }
 
-        // 5-3. Gemini API設定および自動投稿スケジュール設定の更新
+        // 5-3. 基本設定 (Gemini API / 投稿スケジュール / 広告) の更新
         if ($op === 'save_gemini') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
             SettingsManager::set('gemini_model', trim($_POST['gemini_model'] ?? 'gemini-2.5-flash'));
@@ -524,7 +587,16 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
             SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
             SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
-            $flashMessage = 'Gemini AI 設定および自動投稿スケジュール設定を保存しました。';
+            if (isset($_POST['ad_article_top'])) {
+                SettingsManager::set('ad_article_top', trim($_POST['ad_article_top']));
+            }
+            if (isset($_POST['ad_article_bottom'])) {
+                SettingsManager::set('ad_article_bottom', trim($_POST['ad_article_bottom']));
+            }
+            if (isset($_POST['threads_account_url'])) {
+                SettingsManager::set('threads_account_url', trim($_POST['threads_account_url']));
+            }
+            $flashMessage = '基本設定（AI・自動投稿・広告・Threads）を保存しました。';
         }
 
         // 5-4. 手動キーワードからの即時AI記事自動生成テスト
@@ -786,9 +858,18 @@ if ($db && $isLoggedIn) {
         }
 
         // アイキャッチ画像プール
+        $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
+
+        // プールが空（0枚）の場合は、自動的に全7大ジャンルの厳選64枚を初期投入する
+        if ($totalPoolCount === 0) {
+            require_once __DIR__ . '/classes/ImageManager.php';
+            ImageManager::seedDefaultPresets(1, 'all');
+            $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
+        }
+
         $poolImages = $db->query("SELECT i.*, 
                                   (SELECT GROUP_CONCAT(keyword SEPARATOR ', ') FROM image_keywords WHERE image_id = i.id) as keywords
-                                  FROM images i ORDER BY i.id DESC LIMIT 30")->fetchAll();
+                                  FROM images i WHERE i.site_id = 1 ORDER BY i.id DESC LIMIT 100")->fetchAll();
 
         // お知らせ一覧
         $announcements = $db->query("SELECT * FROM announcements ORDER BY id DESC LIMIT 20")->fetchAll();
@@ -828,23 +909,12 @@ $minutesSinceLastPost = $lastPostTime ? round((time() - strtotime($lastPostTime)
 $requiredMinutes = $intervalHours * 60;
 $canPostNextIn = max(0, round($requiredMinutes - $minutesSinceLastPost));
 
-// 整理されたタブ定義 (初心者にも直感的なメニュー構成)
+// 整理されたタブ定義 (迷わない超シンプル構成: 必須4項目)
 $navTabs = [
-    // 【メインメニュー】
-    'dashboard' => ['icon' => '📊', 'label' => 'ホーム（稼働状況・今すぐ生成）', 'badge' => null, 'group' => '基本操作'],
-    'articles' => ['icon' => '📝', 'label' => '記事一覧・編集', 'badge' => $totalArticles, 'group' => '基本操作'],
-    'images' => ['icon' => '🖼️', 'label' => 'アイキャッチ画像', 'badge' => count($poolImages), 'group' => '基本操作'],
-    'gemini' => ['icon' => '🤖', 'label' => 'AI自動生成・クーロン設定', 'badge' => $hasGeminiKey ? '接続済' : '未設定', 'group' => '基本操作'],
-
-    // 【収益・集客】
-    'ads' => ['icon' => '💰', 'label' => '広告・収益化', 'badge' => null, 'group' => '収益・集客'],
-    'trade' => ['icon' => '🔗', 'label' => '相互リンク・RSS', 'badge' => count($tradeSites), 'group' => '収益・集客'],
-    'analytics' => ['icon' => '📈', 'label' => 'アクセス解析', 'badge' => null, 'group' => '収益・集客'],
-
-    // 【設定・保守】
-    'seo_tags' => ['icon' => '🏷️', 'label' => 'SEO・タグ設定', 'badge' => null, 'group' => '設定・保守'],
-    'announcements' => ['icon' => '📢', 'label' => 'お知らせ管理', 'badge' => count($announcements), 'group' => '設定・保守'],
-    'security' => ['icon' => '🔒', 'label' => 'パスワード・保守', 'badge' => null, 'group' => '設定・保守'],
+    'dashboard' => ['icon' => '📊', 'label' => 'ホーム（稼働状況・今すぐ生成）', 'badge' => null],
+    'articles' => ['icon' => '📝', 'label' => '記事一覧・管理', 'badge' => $totalArticles],
+    'gemini' => ['icon' => '⚙️', 'label' => '基本設定（AI・自動更新・広告）', 'badge' => $hasGeminiKey ? '接続中' : '⚠️要設定'],
+    'advanced' => ['icon' => '🔧', 'label' => 'その他の機能（画像・相互RSS等）', 'badge' => null],
 ];
 ?>
 <!DOCTYPE html>
@@ -1046,31 +1116,21 @@ $navTabs = [
                     <div class="text-[10px] text-slate-500">v2.4 Auto-Trend & Trade Engine</div>
                 </div>
 
-                <!-- メニューナビゲーション (グループ分け) -->
-                <nav class="space-y-0.5">
+                <!-- メニューナビゲーション (シンプル4メニュー) -->
+                <nav class="space-y-1.5">
                     <?php 
-                    $currentGroup = null;
                     foreach ($navTabs as $tabKey => $t): 
-                        $group = $t['group'] ?? 'その他';
-                        if ($group !== $currentGroup):
-                            $currentGroup = $group;
-                    ?>
-                        <div class="pt-3 pb-1 px-3 text-[10px] font-black tracking-wider text-slate-500">
-                            ▼ <?= htmlspecialchars($group) ?>
-                        </div>
-                    <?php 
-                        endif;
                         $isActive = $currentTab === $tabKey;
                         $btnClass = $isActive 
                             ? 'bg-amber-500 text-slate-950 font-black shadow-md' 
                             : 'text-slate-300 hover:bg-slate-900 hover:text-white font-medium';
                     ?>
-                        <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between px-3 py-2 rounded-xl text-xs transition-all <?= $btnClass ?>">
-                            <div class="flex items-center gap-2">
-                                <span class="text-sm"><?= $t['icon'] ?></span>
-                                <span><?= $t['label'] ?></span>
+                        <a href="?tab=<?= $tabKey ?>" class="flex items-center justify-between px-3.5 py-3 rounded-2xl text-xs transition-all <?= $btnClass ?>">
+                            <div class="flex items-center gap-2.5">
+                                <span class="text-base"><?= $t['icon'] ?></span>
+                                <span class="font-bold tracking-tight"><?= $t['label'] ?></span>
                             </div>
-                            <?php if ($t['badge'] !== null): ?>
+                            <?php if (!empty($t['badge'])): ?>
                                 <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $isActive ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-slate-400' ?>">
                                     <?= $t['badge'] ?>
                                 </span>
@@ -1079,18 +1139,15 @@ $navTabs = [
                     <?php endforeach; ?>
                 </nav>
 
-                <!-- 即時実行アクション -->
-                <div class="pt-3 border-t border-slate-800/80 space-y-2">
-                    <div class="text-[11px] font-bold text-slate-400 px-2">⚡ クイック操作</div>
+                <!-- 即時実行アクション (大きな生成ボタン1つのみ) -->
+                <div class="pt-4 border-t border-slate-800/80">
                     <form method="POST">
                         <input type="hidden" name="op" value="run_worker">
-                        <button type="submit" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer">
-                            <span>⚡ 今すぐAI記事を1本自動生成</span>
+                        <button type="submit" class="w-full py-3.5 px-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-400 hover:from-amber-400 hover:to-amber-300 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+                            <span class="text-base">⚡</span>
+                            <span>今すぐAI記事を1本自動生成</span>
                         </button>
                     </form>
-                    <a href="?tab=gemini" class="block w-full py-2 px-3 rounded-xl bg-slate-900 hover:bg-slate-800 text-slate-300 text-center font-bold text-xs border border-slate-800 transition-all">
-                        ⚙️ AI・クーロン設定
-                    </a>
                 </div>
             </aside>
 
@@ -1202,25 +1259,24 @@ $navTabs = [
                                             <span>アイキャッチ画像</span>
                                         </div>
                                     </div>
-                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= count($poolImages) > 0 ? 'bg-amber-100 text-amber-900' : 'bg-rose-100 text-rose-700' ?>">
-                                        <?= count($poolImages) > 0 ? count($poolImages) . '枚 登録済' : '⚠️ 0枚' ?>
+                                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $totalPoolCount > 0 ? 'bg-amber-100 text-amber-900' : 'bg-rose-100 text-rose-700' ?>">
+                                        <?= $totalPoolCount > 0 ? $totalPoolCount . '枚 登録済' : '⚠️ 0枚' ?>
                                     </span>
                                 </div>
                                 <div class="text-xs text-slate-600 space-y-1">
-                                    <div>選定方式: <span class="font-bold text-slate-800">AIキーワード照合</span></div>
+                                    <div>選定方式: <span class="font-bold text-slate-800">AIキーワード照合 (部分一致対応)</span></div>
                                     <div class="text-[11px] text-slate-500">
-                                        <?= count($poolImages) > 0 ? '記事の話題に合った画像を選定' : '※空の場合は予備画像が使われます' ?>
+                                        <?= $totalPoolCount > 0 ? '記事の話題に合った画像を選定' : '※空の場合は予備画像が使われます' ?>
                                     </div>
                                 </div>
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-                                    <?php if (count($poolImages) === 0): ?>
-                                        <form method="POST" class="inline">
-                                            <input type="hidden" name="op" value="seed_preset_images">
-                                            <button type="submit" class="text-amber-700 hover:text-amber-900 font-bold hover:underline cursor-pointer">
-                                                🎁 12枚一括追加
-                                            </button>
-                                        </form>
-                                    <?php endif; ?>
+                                    <form method="POST" class="inline">
+                                        <input type="hidden" name="op" value="seed_preset_images">
+                                        <input type="hidden" name="genre" value="all">
+                                        <button type="submit" class="text-amber-700 hover:text-amber-900 font-bold hover:underline cursor-pointer flex items-center gap-1">
+                                            🎁 厳選64枚を一括追加
+                                        </button>
+                                    </form>
                                     <a href="?tab=images" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">画像一覧 →</a>
                                 </div>
                             </div>
@@ -1530,6 +1586,15 @@ $navTabs = [
 
                                                     <!-- 操作 -->
                                                     <td class="py-3 text-right whitespace-nowrap space-x-1">
+                                                        <?php if ($a['status'] === 'published'): 
+                                                            $dashArtUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') . dirname($_SERVER['PHP_SELF']) . '/article.php?id=' . $a['id'];
+                                                            $dashThreadsUrl = 'https://www.threads.net/intent/post?text=' . urlencode("【話題度: {$a['shirankedo_index']}/100】" . $a['title'] . "\n" . $dashArtUrl . "\n#しらんけど");
+                                                        ?>
+                                                            <a href="<?= htmlspecialchars($dashThreadsUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-2 py-1 rounded-lg text-[10px] font-black bg-slate-950 hover:bg-slate-800 text-white inline-flex items-center gap-1 shadow-xs" title="Threadsにシェア投稿する">
+                                                                <svg class="w-2.5 h-2.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                                                                <span>Threads</span>
+                                                            </a>
+                                                        <?php endif; ?>
                                                         <a href="?tab=articles" class="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 inline-block">
                                                             編集
                                                         </a>
@@ -1834,6 +1899,16 @@ $navTabs = [
                                                             </button>
                                                         </form>
                                                     <?php endif; ?>
+
+                                                    <?php if ($status === 'published'): 
+                                                        $targetArtUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') . dirname($_SERVER['PHP_SELF']) . '/article.php?id=' . $a['id'];
+                                                        $threadsIntentUrl = 'https://www.threads.net/intent/post?text=' . urlencode("【話題度: {$a['shirankedo_index']}/100】" . $a['title'] . "\n" . $targetArtUrl . "\n#しらんけど");
+                                                    ?>
+                                                        <a href="<?= htmlspecialchars($threadsIntentUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl text-xs font-black bg-slate-950 hover:bg-slate-800 text-white shadow-xs transition-all inline-flex items-center gap-1 cursor-pointer" title="Threadsにシェア投稿する">
+                                                            <svg class="w-3 h-3 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                                                            <span>Threads</span>
+                                                        </a>
+                                                    <?php endif; ?>
                                                     <form method="POST" class="inline" onsubmit="return confirm('記事「<?= htmlspecialchars(addslashes($a['title']), ENT_QUOTES) ?>」を完全に削除しますか？');">
                                                         <input type="hidden" name="op" value="delete_article">
                                                         <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
@@ -2032,19 +2107,40 @@ $navTabs = [
                 <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
                 <?php elseif ($currentTab === 'images'): ?>
                     <div class="space-y-6">
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                             <div>
                                 <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                     <span>🖼️</span> アイキャッチ画像プール管理
                                 </h1>
-                                <p class="text-xs text-slate-500">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
+                                <p class="text-xs text-slate-500 mt-1">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
                             </div>
-                            <form method="POST" class="inline">
-                                <input type="hidden" name="op" value="seed_preset_images">
-                                <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
-                                    <span>🎁 商用フリー厳選画像セット（12枚）を一括追加</span>
-                                </button>
-                            </form>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <!-- 全ジャンル一括追加 -->
+                                <form method="POST" class="inline">
+                                    <input type="hidden" name="op" value="seed_preset_images">
+                                    <input type="hidden" name="genre" value="all">
+                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer">
+                                        <span>🎁 全7ジャンル厳選パック（計64枚）を一括追加</span>
+                                    </button>
+                                </form>
+
+                                <!-- ジャンル別追加セレクター -->
+                                <form method="POST" class="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
+                                    <input type="hidden" name="op" value="seed_preset_images">
+                                    <select name="genre" class="text-xs font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 focus:outline-none">
+                                        <option value="tech">💻 IT・ガジェット・AI (10枚)</option>
+                                        <option value="entame">🎤 芸能・エンタメ・音楽 (10枚)</option>
+                                        <option value="sports">⚾ スポーツ・アスリート (10枚)</option>
+                                        <option value="game">🎮 ゲーム・アニメ・マンガ (8枚)</option>
+                                        <option value="gourmet">🍜 グルメ・スイーツ・飲食 (10枚)</option>
+                                        <option value="society">📰 社会・ニュース・経済 (8枚)</option>
+                                        <option value="lifestyle">🌸 自然・天気・ペット (8枚)</option>
+                                    </select>
+                                    <button type="submit" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all cursor-pointer">
+                                        ＋追加
+                                    </button>
+                                </form>
+                            </div>
                         </div>
 
                         <!-- 💡 なぜプールが空でも画像がついたのか？ の説明 ＆ 動作設定 -->
@@ -2053,8 +2149,8 @@ $navTabs = [
                                 <span class="text-xl">💡</span>
                                 <div class="space-y-1 text-xs text-indigo-950 leading-relaxed">
                                     <strong class="font-black text-sm text-indigo-900 block">アイキャッチ画像の取得元と仕組みについて</strong>
-                                    先ほど記事に表示されていた英字新聞の写真は、プールが空の際にデザインが崩れないようプログラムに内蔵されていた<strong>「非常用フォールバック画像（初期予備）」</strong>です。<br>
-                                    上の<strong>「🎁 商用フリー厳選画像セットを一括追加」</strong>ボタンを押すと、スマホ・エンタメ・ゲーム・ニュース等の商用フリー画像（12枚）がプールに登録され、以降はそれらの画像からAIが自動選択するようになります。
+                                    記事作成時にキーワードと画像プール内のキーワード（例:「iPhone」「大谷」「ゲーム」「ラーメン」など）が自動照合され、最も適した画像が選ばれます。<br>
+                                    上の<strong>「🎁 全7ジャンル厳選パックを一括追加」</strong>を押すと、商用フリー（Unsplash厳選高画質）の画像64枚が一気に登録され、あらゆるトレンド記事にぴったりの画像が自動設定されるようになります！
                                 </div>
                             </div>
 
@@ -2067,42 +2163,47 @@ $navTabs = [
                                     <div class="flex flex-wrap gap-4 pt-1">
                                         <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
                                             <input type="radio" name="pool_empty_behavior" value="hold" <?= $curEmptyBehavior === 'hold' ? 'checked' : '' ?> class="text-amber-500">
-                                            <span>「画像未設定（非公開・保留）」にして管理画面で待機（推奨）</span>
+                                            <span>「画像未設定（非公開・保留）」にして管理画面で待機（手動設定向け）</span>
                                         </label>
                                         <label class="flex items-center gap-1.5 text-xs font-bold text-slate-700 cursor-pointer">
                                             <input type="radio" name="pool_empty_behavior" value="default_image" <?= $curEmptyBehavior === 'default_image' ? 'checked' : '' ?> class="text-amber-500">
-                                            <span>非常用の汎用画像（新聞写真）を仮設定して即時公開する</span>
+                                            <span>非常用の汎用画像（速報ニュース写真）を仮設定して即時公開する</span>
                                         </label>
                                     </div>
                                 </div>
-                                <button type="submit" class="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-all shrink-0">
+                                <button type="submit" class="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-xs transition-all shrink-0 cursor-pointer">
                                     ルールを保存
                                 </button>
                             </form>
                         </div>
 
-                        <!-- 画像追加フォーム -->
+                        <!-- 画像追加フォーム (複数ファイル・複数URL対応) -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-                            <h2 class="text-base font-black text-slate-900">新しいアイキャッチ画像の追加登録</h2>
+                            <div class="flex items-center justify-between">
+                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                    <span>➕</span> 新しいアイキャッチ画像の一括登録
+                                </h2>
+                                <span class="text-xs font-bold text-slate-400">複数画像の一括アップロード対応</span>
+                            </div>
                             <form method="POST" enctype="multipart/form-data" class="space-y-4">
                                 <input type="hidden" name="op" value="add_pool_image">
                                 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-200">
                                     <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">💻 ローカルPCから画像をアップロード</label>
-                                        <input type="file" name="local_image" accept="image/jpeg,image/png,image/webp,image/gif" class="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-900 file:text-white hover:file:bg-slate-800">
-                                        <p class="text-[10px] text-slate-400">※ JPG, PNG, WEBP, GIF (800x450px推奨)</p>
+                                        <label class="block text-xs font-bold text-slate-700">💻 ローカルPCから一括アップロード（複数選択OK）</label>
+                                        <input type="file" name="local_images[]" multiple accept="image/jpeg,image/png,image/webp,image/gif" class="w-full text-xs text-slate-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-900 file:text-white hover:file:bg-slate-800 cursor-pointer">
+                                        <p class="text-[10px] text-slate-400">※ ShiftキーやCtrlキーで複数ファイルを選択して一気に登録できます (JPG, PNG, WEBP, GIF)</p>
                                     </div>
                                     <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">🌐 または 画像URLを直接指定</label>
-                                        <input type="url" name="url" placeholder="https://... または /uploads/image.webp" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm bg-white focus:outline-none focus:border-amber-500">
-                                        <p class="text-[10px] text-slate-400">※ ファイルを選択しない場合はURLを入力してください</p>
+                                        <label class="block text-xs font-bold text-slate-700">🌐 または 画像URLを直接指定（改行で複数行OK）</label>
+                                        <textarea name="urls" rows="2" placeholder="https://example.com/image1.jpg&#10;https://example.com/image2.jpg" class="w-full px-4 py-2 rounded-2xl border border-slate-200 text-xs bg-white focus:outline-none focus:border-amber-500 font-mono"></textarea>
+                                        <p class="text-[10px] text-slate-400">※ 複数ある場合は1行に1つの画像URLを入力してください</p>
                                     </div>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト）</label>
+                                        <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト・共通タイトル）</label>
                                         <input type="text" name="alt_text" placeholder="例: お笑いステージ・バラエティ収録イメージ" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
                                     </div>
                                     <div class="space-y-1.5">
@@ -2117,17 +2218,18 @@ $navTabs = [
 
                                 <!-- キーワード3つ設定 -->
                                 <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">自動マッチング用 キーワード（3つ設定）</label>
+                                    <label class="block text-xs font-bold text-slate-700">自動マッチング用 キーワード（3つ設定・部分一致対応）</label>
                                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
                                         <input type="text" name="kw1" placeholder="キーワード1 (例: 千鳥)" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-amber-500">
                                         <input type="text" name="kw2" placeholder="キーワード2 (例: お笑い)" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-amber-500">
                                         <input type="text" name="kw3" placeholder="キーワード3 (例: テレビ)" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-amber-500">
                                     </div>
+                                    <p class="text-[10px] text-slate-400">※ 記事のタイトルや本文にこれらの単語が含まれていると、AIが自動的にこの画像をアイキャッチに採用します</p>
                                 </div>
 
                                 <div class="pt-2 flex justify-end">
-                                    <button type="submit" class="px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all">
-                                        プールに登録する
+                                    <button type="submit" class="px-6 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer">
+                                        プールに一括登録する
                                     </button>
                                 </div>
                             </form>
@@ -2135,13 +2237,17 @@ $navTabs = [
 
                         <!-- 登録済み画像一覧 -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                            <div class="flex items-center justify-between">
-                                <h2 class="text-base font-black text-slate-900">
-                                    登録済み画像プール (<?= count($poolImages) ?>件)
-                                </h2>
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
+                                        <span>📂</span> 登録済み画像プール 
+                                        <span class="text-xs bg-slate-900 text-amber-400 px-2.5 py-0.5 rounded-full font-bold"><?= $totalPoolCount ?> 枚</span>
+                                    </h2>
+                                    <p class="text-xs text-slate-400 mt-0.5">登録された画像は使用回数の少ないものから均等に優先して自動選定されます</p>
+                                </div>
                                 <?php if (count($poolImages) === 0): ?>
                                     <span class="text-xs text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                                        ⚠️ 現在0件（右上のボタンから12枚一括追加可能）
+                                        ⚠️ 現在0件（右上のボタンから64枚一括追加可能）
                                     </span>
                                 <?php endif; ?>
                             </div>
@@ -2151,25 +2257,26 @@ $navTabs = [
                                     <div class="text-4xl">🖼️</div>
                                     <div class="font-black text-slate-700 text-sm">現在登録されているアイキャッチ画像はありません</div>
                                     <p class="text-xs text-slate-500 max-w-md mx-auto">
-                                        ご自身の画像を追加するか、下のボタンから商用フリーの初期画像セット（12ジャンル）をワンクリックで追加できます。
+                                        ご自身の画像を追加するか、下のボタンから商用フリーの初期画像セット（全7ジャンル・計64枚）をワンクリックで一括追加できます。
                                     </p>
                                     <form method="POST" class="pt-2">
                                         <input type="hidden" name="op" value="seed_preset_images">
-                                        <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all inline-flex items-center gap-2">
-                                            <span>🎁 商用フリー厳選画像セット（12枚）を一括追加</span>
+                                        <input type="hidden" name="genre" value="all">
+                                        <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer">
+                                            <span>🎁 商用フリー厳選画像パック（全7ジャンル・計64枚）を一括追加</span>
                                         </button>
                                     </form>
                                 </div>
                             <?php else: ?>
                                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
                                     <?php foreach ($poolImages as $pi): ?>
-                                        <div class="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 space-y-2 p-2 flex flex-col justify-between group relative">
+                                        <div class="border border-slate-200 rounded-2xl overflow-hidden bg-slate-50 space-y-2 p-2 flex flex-col justify-between group relative hover:border-amber-400 transition-colors">
                                             <div class="aspect-video bg-slate-200 rounded-xl overflow-hidden relative">
-                                                <img src="<?= htmlspecialchars($pi['url']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" class="w-full h-full object-cover">
+                                                <img src="<?= htmlspecialchars($pi['url']) ?>" alt="<?= htmlspecialchars($pi['alt_text']) ?>" class="w-full h-full object-cover" loading="lazy">
                                                 <form method="POST" class="absolute top-1 right-1 opacity-0 group-hover:opacity-100 transition-opacity" onsubmit="return confirm('この画像をプールから削除しますか？');">
                                                     <input type="hidden" name="op" value="delete_pool_image">
                                                     <input type="hidden" name="image_id" value="<?= $pi['id'] ?>">
-                                                    <button type="submit" class="w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[10px] flex items-center justify-center shadow-md">
+                                                    <button type="submit" class="w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-[10px] flex items-center justify-center shadow-md cursor-pointer" title="削除">
                                                         ✕
                                                     </button>
                                                 </form>
@@ -3161,12 +3268,88 @@ $navTabs = [
                         </div>
                     </div>
 
-                <!-- 10. ✨ Gemini API設定 & 自動投稿コントロール タブ -->
+                <!-- 11. 🔧 その他の機能（画像・相互RSS・アクセス解析等） -->
+                <?php elseif ($currentTab === 'advanced'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs space-y-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xl">🔧</span>
+                                <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">その他の詳細機能</h1>
+                            </div>
+                            <p class="text-xs text-slate-500">
+                                普段は触らなくてもブログは全自動で動きます。必要に応じて利用できる詳細設定です。
+                            </p>
+                        </div>
+
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+                            <!-- 1. 画像プール -->
+                            <a href="?tab=images" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-amber-100 flex items-center justify-center text-xl">🖼️</div>
+                                <div class="font-black text-slate-900 group-hover:text-amber-600 text-sm">アイキャッチ画像プール</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    自分の画像をアップロードしたり、キーワードマッチングを登録できます（未登録でも自動適用されます）。
+                                </p>
+                                <div class="text-xs font-bold text-amber-700 flex items-center gap-1">設定を開く →</div>
+                            </a>
+
+                            <!-- 2. 相互RSS・アクセス返還 -->
+                            <a href="?tab=trade" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-indigo-100 flex items-center justify-center text-xl">🔗</div>
+                                <div class="font-black text-slate-900 group-hover:text-indigo-600 text-sm">相互リンク & RSSトレード</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    アンテナサイトや他サイトとアクセスを交換し合う相互RSS機能です。
+                                </p>
+                                <div class="text-xs font-bold text-indigo-700 flex items-center gap-1">設定を開く →</div>
+                            </a>
+
+                            <!-- 3. 広告コード詳細管理 -->
+                            <a href="?tab=ads" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-emerald-100 flex items-center justify-center text-xl">💰</div>
+                                <div class="font-black text-slate-900 group-hover:text-emerald-600 text-sm">広告タグ詳細管理</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    AdSense、アフィリエイトなどの掲載枠（ヘッダー、サイドバー等）を細かく管理します。
+                                </p>
+                                <div class="text-xs font-bold text-emerald-700 flex items-center gap-1">設定を開く →</div>
+                            </a>
+
+                            <!-- 4. アクセス解析 -->
+                            <a href="?tab=analytics" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-blue-100 flex items-center justify-center text-xl">📈</div>
+                                <div class="font-black text-slate-900 group-hover:text-blue-600 text-sm">簡易アクセス解析</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    サイトの日別PV数や参照元ドメインのランキングを確認できます。
+                                </p>
+                                <div class="text-xs font-bold text-blue-700 flex items-center gap-1">レポートを見る →</div>
+                            </a>
+
+                            <!-- 5. SEOメタタグ -->
+                            <a href="?tab=seo_tags" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-purple-100 flex items-center justify-center text-xl">🏷️</div>
+                                <div class="font-black text-slate-900 group-hover:text-purple-600 text-sm">SEO & カスタムタグ</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    Googleサーチコンソール所有権タグやGA4計測タグを埋め込みます。
+                                </p>
+                                <div class="text-xs font-bold text-purple-700 flex items-center gap-1">設定を開く →</div>
+                            </a>
+
+                            <!-- 6. パスワード & 保守 -->
+                            <a href="?tab=security" class="bg-white p-6 rounded-3xl border border-slate-200 hover:border-amber-400 hover:shadow-md transition-all space-y-3 block group">
+                                <div class="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-xl">🔒</div>
+                                <div class="font-black text-slate-900 group-hover:text-slate-700 text-sm">パスワード & 保守</div>
+                                <p class="text-xs text-slate-500 leading-relaxed">
+                                    管理画面ログインパスワードの変更やシステム保守を行えます。
+                                </p>
+                                <div class="text-xs font-bold text-slate-700 flex items-center gap-1">設定を開く →</div>
+                            </a>
+                        </div>
+                    </div>
+
+                <!-- 10. ✨ 基本設定（Gemini AI & 投稿スケジュール管理） タブ -->
                 <?php elseif ($currentTab === 'gemini'): ?>
                     <div class="space-y-8">
                         <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">Gemini AI 設定 & 投稿スケジュール管理</h1>
-                            <p class="text-xs text-slate-500">Google Gemini APIを用いた記事自動生成の即時テスト、投稿間隔や配信時間帯のコントロール、自動公開設定を行えます</p>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">⚙️ 基本設定（AI・自動更新頻度・広告）</h1>
+                            <p class="text-xs text-slate-500">ブログを自動運転するための必須設定です。Gemini APIキーの登録、自動投稿の間隔、広告タグの設置をここで行えます</p>
                         </div>
 
                         <!-- 1. 話題のキーワードから即座にAI記事生成（手動テスト） -->
@@ -3380,12 +3563,52 @@ $navTabs = [
                                     <?php endif; ?>
                                 </div>
 
+                                <!-- 4. 💰 広告タグ設定（任意） -->
+                                <div class="pt-4 border-t border-slate-100 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-base">💰</span>
+                                            <h3 class="text-sm font-black text-slate-900">広告タグ設定（任意）</h3>
+                                        </div>
+                                        <span class="text-[11px] text-slate-400">Google AdSenseやASP広告コードを貼り付け</span>
+                                    </div>
+
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">記事上 広告タグ（アイキャッチ下）</label>
+                                            <textarea name="ad_article_top" rows="3" placeholder="<script ...></script> などの広告コード" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500 leading-relaxed"><?= htmlspecialchars(SettingsManager::get('ad_article_top', '')) ?></textarea>
+                                        </div>
+                                        <div class="space-y-1.5">
+                                            <label class="block text-xs font-bold text-slate-700">記事下 広告タグ（本文終了直後）</label>
+                                            <textarea name="ad_article_bottom" rows="3" placeholder="<script ...></script> などの広告コード" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500 leading-relaxed"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom', '')) ?></textarea>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- 5. 🧵 Threads (スレッズ) 連携設定 -->
+                                <div class="pt-4 border-t border-slate-100 space-y-4">
+                                    <div class="flex items-center justify-between">
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-base">🧵</span>
+                                            <h3 class="text-sm font-black text-slate-900">Threads (スレッズ) 連携</h3>
+                                        </div>
+                                        <span class="px-2.5 py-0.5 rounded-full bg-slate-950 text-white text-[10px] font-bold">新対応</span>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">公式Threadsアカウント URL（任意）</label>
+                                        <input type="url" name="threads_account_url" value="<?= htmlspecialchars(SettingsManager::get('threads_account_url', '')) ?>" placeholder="https://www.threads.net/@your_account" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs focus:outline-none focus:border-indigo-500 font-mono">
+                                        <p class="text-[11px] text-slate-400">
+                                            登録すると、サイトのヘッダーやフッターにThreads公式リンクが表示されます。また、記事一覧からワンクリックでThreadsに下書きポストできます。
+                                        </p>
+                                    </div>
+                                </div>
+
                                 <div class="pt-4 flex items-center justify-between">
                                     <div class="text-xs text-slate-400">
                                         設定保存後、次回の定期実行から新しいスケジュールが自動適用されます。
                                     </div>
-                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs shadow-md transition-all">
-                                        投稿スケジュール & API設定を保存する
+                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer">
+                                        基本設定をすべて保存する
                                     </button>
                                 </div>
                             </form>

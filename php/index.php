@@ -268,6 +268,13 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
             <?php endif; ?>
 
             <div class="flex items-center gap-2 sm:gap-3 text-xs">
+                <?php $threadsAccountUrl = SettingsManager::get('threads_account_url', ''); ?>
+                <?php if (!empty($threadsAccountUrl)): ?>
+                    <a href="<?= htmlspecialchars($threadsAccountUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-2.5 py-1.5 rounded-xl bg-slate-950 hover:bg-slate-800 text-white font-black text-xs transition-all flex items-center gap-1.5 shadow-sm" title="公式Threadsをフォロー">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                        <span class="hidden sm:inline">Threads</span>
+                    </a>
+                <?php endif; ?>
                 <a href="page.php?slug=about" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all">
                     サイトについて
                 </a>
@@ -629,7 +636,13 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                     </p>
                 <?php endif; ?>
             </div>
-            <div class="flex items-center gap-4 text-xs font-bold">
+            <div class="flex flex-wrap items-center gap-4 text-xs font-bold">
+                <?php if (!empty($threadsAccountUrl)): ?>
+                    <a href="<?= htmlspecialchars($threadsAccountUrl) ?>" target="_blank" rel="noopener noreferrer" class="text-white hover:text-amber-400 transition-colors flex items-center gap-1">
+                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
+                        <span>公式Threads</span>
+                    </a>
+                <?php endif; ?>
                 <a href="page.php?slug=about" class="hover:text-amber-400 transition-colors">サイトについて</a>
                 <a href="page.php?slug=trade" class="hover:text-amber-400 transition-colors">相互リンク依頼</a>
                 <a href="page.php?slug=news" class="hover:text-amber-400 transition-colors">お知らせ</a>
