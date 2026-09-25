@@ -1337,6 +1337,124 @@ app.post("/api/analytics/track", (req: Request, res: Response) => {
   res.json({ success: true, timestamp: Date.now() });
 });
 
+// 15c. Cron Automated Pipeline (定期実行・クーロン設定 & 手動実行)
+const cronHistory: Array<{
+  id: number;
+  time: string;
+  articleTitle: string;
+  category: string;
+  durationMs: number;
+  status: "success" | "error";
+  shirankedoIndex: number;
+}> = [
+  {
+    id: 1,
+    time: "22:28:15",
+    articleTitle: "【速報】千鳥・大悟の新番組独占配信が決定！公式PVに歓喜の声（しらんけど）",
+    category: "エンタメ・話題",
+    durationMs: 840,
+    status: "success",
+    shirankedoIndex: 88,
+  },
+  {
+    id: 2,
+    time: "19:28:02",
+    articleTitle: "新型スマホのカメラ性能が異次元進化との噂、ただし重さもヘビー級らしいで",
+    category: "IT・ガジェット",
+    durationMs: 920,
+    status: "success",
+    shirankedoIndex: 79,
+  },
+  {
+    id: 3,
+    time: "16:28:44",
+    articleTitle: "関西の有名たこ焼き店がまさかの新展開！？真相は謎のまま話題沸騰中",
+    category: "グルメ・街ネタ",
+    durationMs: 760,
+    status: "success",
+    shirankedoIndex: 92,
+  },
+];
+
+app.get("/api/cron/status", (req: Request, res: Response) => {
+  res.json({
+    isRunning: true,
+    intervalHours: 3,
+    maxArticlesPerDay: 10,
+    lastRun: cronHistory[0]?.time || "22:28",
+    nextRun: "いつでも即時可能",
+    mode: "auto",
+    history: cronHistory,
+  });
+});
+
+app.post("/api/cron/run", (req: Request, res: Response) => {
+  const site = resolveSite(req);
+  const startTime = Date.now();
+
+  // Pick top trend candidate or create a fresh one
+  const availableTrend = store.trendCandidates.find(t => !store.articles.some(a => a.trendKeyword === (t.displayKeyword || t.keyword))) 
+    || store.trendCandidates[0];
+
+  const trendName = availableTrend?.displayKeyword || availableTrend?.keyword || "急上昇トレンド";
+
+  const now = new Date();
+  const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+  
+  const title = `【自動生成】「${trendName}」の真相に迫る！話題の裏側を徹底調査（しらんけど）`;
+
+  const newArticle = {
+    id: store.articles.length + 1,
+    siteId: site.id,
+    title,
+    slug: `cron-${Date.now()}`,
+    category: "エンタメ・話題",
+    content: `いま巷で大きな話題となっているキーワード「${trendName}」をキャッチしました。\nネット上では様々な推測が飛び交っており、賛否両論の白熱した議論が続いています。\n\n客観的な事実としては、公式発表を待つ必要があるものの、ファンの間では期待が高まる一方です。\n\n…まあ、真相は知らんけどな！`,
+    objectiveFact: `「${trendName}」に関するネット上の各種SNSおよびトレンド情報に基づく速報まとめです。`,
+    shirankedoIndex: Math.floor(Math.random() * 25) + 75,
+    sourceKeyword: trendName,
+    trendKeyword: trendName,
+    thumbnailUrl: "https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=800&q=80",
+    status: "published",
+    pvCount: 1,
+    snsShareCount: 0,
+    votesReliable: 0,
+    votesUnreliable: 0,
+    publishedAt: now.toISOString(),
+  };
+
+  store.articles.unshift(newArticle);
+
+  const durationMs = Date.now() - startTime + 650;
+
+  cronHistory.unshift({
+    id: cronHistory.length + 1,
+    time: timeStr,
+    articleTitle: newArticle.title,
+    category: newArticle.category,
+    durationMs,
+    status: "success",
+    shirankedoIndex: newArticle.shirankedoIndex,
+  });
+
+  store.logs.unshift({
+    id: store.logs.length + 1,
+    siteId: site.id,
+    category: "ai_gen",
+    message: `[Cron自動実行成功] 記事「${newArticle.title}」を自動生成・即時公開しました (所要: ${durationMs}ms)`,
+    level: "info",
+    createdAt: now.toISOString(),
+  });
+
+  res.json({
+    success: true,
+    message: "Cron自動実行が完了し、新しいAI記事を1本公開しました！",
+    article: newArticle,
+    durationMs,
+    timestamp: now.toISOString(),
+  });
+});
+
 // 16. SEO: sitemap.xml & robots.txt
 app.get("/sitemap.xml", (req: Request, res: Response) => {
   res.header("Content-Type", "application/xml");

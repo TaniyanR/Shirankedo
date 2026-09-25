@@ -21,30 +21,18 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   return (
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 shadow-xs">
-      {/* Subdomain / Site Switcher Bar */}
+      {/* Top Status & Hot Trend Ticker Bar */}
       <div className="bg-stone-900 text-stone-200 px-4 py-1.5 text-xs">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <Globe className="w-3.5 h-3.5 text-amber-400" />
-            <span className="font-semibold text-stone-300">マルチサイト切替:</span>
-            <div className="flex items-center gap-1 overflow-x-auto py-0.5">
-              {sites.map((site) => (
-                <button
-                  key={site.id}
-                  onClick={() => onSelectSite(site.id)}
-                  className={`px-2.5 py-0.5 rounded text-xs transition-colors whitespace-nowrap ${
-                    currentSite.id === site.id
-                      ? 'bg-amber-500 text-stone-950 font-bold'
-                      : 'hover:bg-stone-800 text-stone-300'
-                  }`}
-                >
-                  {site.subdomain ? `${site.subdomain}.` : ''}example.com ({site.genre})
-                </button>
-              ))}
-            </div>
+          <div className="flex items-center gap-2 overflow-hidden text-stone-300">
+            <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+            <span className="text-[11px] font-bold text-amber-400 uppercase tracking-wider shrink-0">HOT TREND</span>
+            <span className="text-stone-300 truncate text-[11px] sm:text-xs">
+              {hotTrendTicker}
+            </span>
           </div>
           <div className="hidden md:flex items-center gap-3 text-stone-400">
-            <span>PHP + MySQL 独自アーキテクチャ</span>
+            <span>しらんけど v2.4</span>
             <span>|</span>
             <span className="text-emerald-400 flex items-center gap-1">
               <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>

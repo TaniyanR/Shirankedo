@@ -911,11 +911,18 @@ $canPostNextIn = max(0, round($requiredMinutes - $minutesSinceLastPost));
 
 // 親項目・子項目の機能別グループ定義 (ユーザー指定順序 & 広告・相互リンク配置)
 $navGroups = [
+    'overview' => [
+        'title' => '📊 ホーム・概要',
+        'icon' => '📊',
+        'children' => [
+            'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null],
+        ]
+    ],
     'content' => [
         'title' => '📝 記事・コンテンツ機能',
         'icon' => '📝',
         'children' => [
-            'dashboard' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
+            'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles],
             'held_articles' => ['icon' => '🛡️', 'label' => '危険・保留記事の審査', 'badge' => null],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => null],
@@ -926,14 +933,6 @@ $navGroups = [
         'icon' => '📈',
         'children' => [
             'analytics' => ['icon' => '📊', 'label' => '高性能アクセス解析', 'badge' => 'LIVE'],
-        ]
-    ],
-    'ai_system' => [
-        'title' => '🤖 AI・自動生成設定',
-        'icon' => '🤖',
-        'children' => [
-            'gemini' => ['icon' => '⚙️', 'label' => 'Gemini API・投稿間隔', 'badge' => $hasGeminiKey ? '接続中' : '⚠️要設定'],
-            'advanced' => ['icon' => '🚫', 'label' => 'NGワード・除外設定', 'badge' => null],
         ]
     ],
     'monetization' => [
@@ -949,9 +948,7 @@ $navGroups = [
         'title' => '🛠️ サイト・システム保守',
         'icon' => '🛠️',
         'children' => [
-            'seo_tags' => ['icon' => '📄', 'label' => 'SEO・メタタグ設定', 'badge' => null],
-            'announcements' => ['icon' => '📣', 'label' => 'お知らせ管理', 'badge' => null],
-            'security' => ['icon' => '🛡️', 'label' => 'セキュリティ設定', 'badge' => null],
+            'system' => ['icon' => '⚙️', 'label' => 'サーバーCron・AI初期設定・保守', 'badge' => null],
         ]
     ],
 ];
@@ -1130,12 +1127,13 @@ $navGroups = [
         <!-- トップヘッダーバー (WP Admin Bar風) -->
         <header class="bg-slate-900 text-white px-4 sm:px-6 py-2.5 flex items-center justify-between border-b border-slate-800 sticky top-0 z-50">
             <div class="flex items-center gap-3">
-                <a href="/" target="_blank" class="flex items-center gap-2 text-xs font-bold text-slate-300 hover:text-white transition-colors">
-                    <span class="w-6 h-6 rounded-lg bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs">知</span>
-                    <span class="hidden sm:inline">しらんけど サイトを表示 ↗</span>
-                </a>
+                <div>
+                    <div class="text-sm font-black text-white tracking-wide flex items-center gap-2">
+                        <span>しらんけど 管理システム</span>
+                    </div>
+                    <div class="text-[10px] text-slate-400 font-mono">v2.4 Auto-Trend & Trade Engine</div>
+                </div>
             </div>
-
             <div class="flex items-center gap-3 text-xs">
                 <span class="text-slate-400 hidden sm:inline">👤 <strong class="text-slate-200 font-bold"><?= htmlspecialchars($_SESSION['admin_username'] ?? $adminId) ?></strong> でログイン中</span>
                 <a href="?logout=1" class="px-3 py-1 rounded-xl bg-slate-800 hover:bg-rose-900/80 text-rose-300 font-bold border border-slate-700 transition-colors">
@@ -1149,10 +1147,15 @@ $navGroups = [
             
             <!-- WordPress風 左サイドバー -->
             <aside class="w-full md:w-64 bg-slate-950 text-slate-300 border-r border-slate-800 flex-shrink-0 p-4 space-y-6">
-                <!-- サイトタイトル -->
-                <div class="px-2 py-1">
-                    <div class="text-sm font-black text-white tracking-wide">しらんけど 管理システム</div>
-                    <div class="text-[10px] text-slate-500">v2.4 Auto-Trend & Trade Engine</div>
+                <!-- サイト表示リンク (サイドに配置) -->
+                <div class="px-1 py-1">
+                    <a href="/" target="_blank" class="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-850 text-xs font-bold text-slate-200 group transition-all">
+                        <div class="flex items-center gap-2.5">
+                            <span class="w-7 h-7 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-sm">知</span>
+                            <span class="truncate">しらんけど サイトを表示</span>
+                        </div>
+                        <span class="text-emerald-400 group-hover:translate-x-0.5 transition-transform">↗</span>
+                    </a>
                 </div>
 
                 <!-- 階層メニューナビゲーション (親項目・子項目) -->
