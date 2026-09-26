@@ -31,7 +31,7 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ realtimeVisitors }) 
     if (!analyticsData) return;
     const summary = analyticsData.summary || {};
     const rows = [
-      ['しらんけど 高性能アクセス解析レポート', `出力日時: ${new Date().toLocaleString()}`],
+      ['しらんけど アクセス解析レポート', `出力日時: ${new Date().toLocaleString()}`],
       ['対象期間', period === 'today' ? '1日 (24時間)' : period === '7days' ? '1週間 (7日間)' : '30日間'],
       ['総PV (ページビュー)', String(summary.totalPv || 0)],
       ['総UU (ユニークユーザー)', String(summary.totalUu || 0)],
@@ -79,13 +79,13 @@ export const AnalyticsTab: React.FC<AnalyticsTabProps> = ({ realtimeVisitors }) 
 
   return (
     <div className="space-y-6 animate-fade-in">
-      {/* ページヘッダー (サイドバー項目名「高性能アクセス解析」と完全一致) */}
+      {/* ページヘッダー (サイドバー項目名「アクセス解析」と完全一致) */}
       <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
               <span>📊</span>
-              <span>高性能アクセス解析</span>
+              <span>アクセス解析</span>
             </h2>
             <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
