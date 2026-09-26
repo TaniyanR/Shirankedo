@@ -544,6 +544,38 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "🌟 定番アンテナ・相互リンクサイト（{$inserted}件）を一括登録し、最新RSSフィードを巡回取得しました！";
         }
 
+        // 4-Z. サイト基本設定の更新
+        if ($op === 'save_site_settings') {
+            $siteName = trim($_POST['site_name'] ?? '');
+            $siteDescription = trim($_POST['site_description'] ?? '');
+            $siteGenre = trim($_POST['site_genre'] ?? 'general');
+            $logoUrl = trim($_POST['logo_url'] ?? '');
+            $faviconUrl = trim($_POST['favicon_url'] ?? '');
+            $isPublic = isset($_POST['is_public']) ? 1 : 0;
+            $allowAutoPublish = isset($_POST['allow_auto_publish']) ? 1 : 0;
+            $youtubeThumbnailEnabled = isset($_POST['youtube_thumbnail_enabled']) ? 1 : 0;
+
+            if ($siteName === '') {
+                throw new Exception('サイト名を入力してください。');
+            }
+
+            $stmt = $db->prepare("UPDATE sites
+                SET name = ?, description = ?, genre = ?, logo_url = ?, favicon_url = ?,
+                    is_public = ?, allow_auto_publish = ?, youtube_thumbnail_enabled = ?
+                WHERE id = 1");
+            $stmt->execute([
+                $siteName,
+                $siteDescription,
+                $siteGenre !== '' ? $siteGenre : 'general',
+                $logoUrl !== '' ? $logoUrl : null,
+                $faviconUrl !== '' ? $faviconUrl : null,
+                $isPublic,
+                $allowAutoPublish,
+                $youtubeThumbnailEnabled
+            ]);
+            $flashMessage = 'サイト設定を保存しました。';
+        }
+
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
             SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
@@ -963,6 +995,7 @@ $navGroups = [
         'title' => 'システム管理',
         'icon' => '🛠️',
         'children' => [
+            'site_settings' => ['icon' => '⚙️', 'label' => 'サイト設定', 'badge' => null],
             'system' => ['icon' => '💻', 'label' => 'サイト・システム保守', 'badge' => null],
         ]
     ],
@@ -1247,7 +1280,7 @@ $navGroups = [
                                     </span>
                                 </div>
                                 <p class="text-xs text-slate-500">
-                                    「しらんけど」のAI自動執筆・クーロン稼働状態の確認と、ワンクリックでの記事生成・管理が行えます
+                                    「しらんけど」のAI自動執筆・クーロン稼働状態と記事の運用状況を確認できます
                                 </p>
                             </div>
                             <div class="flex items-center gap-2 shrink-0">
@@ -1377,73 +1410,6 @@ $navGroups = [
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span class="text-slate-400 text-[10px]">客観ファクトまとめ</span>
                                     <a href="?tab=articles" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">全記事一覧 →</a>
-                                </div>
-                            </div>
-                        </div>
-
-                        <!-- ⚡ 【今すぐAIに記事を作らせる】ワンクリック操作ボックス (Hero Box) -->
-                        <div class="bg-gradient-to-br from-amber-500/10 via-amber-400/5 to-transparent rounded-3xl border-2 border-amber-300/80 p-6 sm:p-8 shadow-sm space-y-6">
-                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-4">
-                                <div class="space-y-1">
-                                    <div class="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                                        <span class="text-lg">⚡</span>
-                                        <span>【超かんたん】今すぐ記事を増やしたいときはここ！</span>
-                                    </div>
-                                    <h2 class="text-lg sm:text-xl font-black text-slate-900">ワンクリック記事生成（2つの作成方法）</h2>
-                                </div>
-                                <span class="px-3 py-1 rounded-full bg-amber-500 text-slate-950 font-black text-[11px] shadow-2xs self-start sm:self-auto">
-                                    数十秒で即座に公開完了
-                                </span>
-                            </div>
-
-                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                                <!-- 方法A: 完全おまかせ（最新トレンドから1本自動生成） -->
-                                <div class="bg-white p-6 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-4">
-                                    <div class="space-y-2">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-900 text-xs font-black flex items-center justify-center">1</span>
-                                            <h3 class="text-sm font-black text-slate-900">完全自動: 最新急上昇トレンドから生成</h3>
-                                        </div>
-                                        <p class="text-xs text-slate-600 leading-relaxed">
-                                            Googleトレンドからいま日本で一番話題のキーワードをAIが自動取得し、一次情報を調べて記事を1本執筆・公開します。
-                                        </p>
-                                    </div>
-                                    <form method="POST">
-                                        <input type="hidden" name="op" value="run_worker">
-                                        <button type="submit" class="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98">
-                                            <span class="text-base">🚀</span>
-                                            <span>最新トレンドから記事を1本今すぐ自動生成</span>
-                                        </button>
-                                    </form>
-                                </div>
-
-                                <!-- 方法B: キーワード指定（好きな有名人・商品・ニュース） -->
-                                <div class="bg-white p-6 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-4">
-                                    <div class="space-y-2">
-                                        <div class="flex items-center gap-2">
-                                            <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black flex items-center justify-center">2</span>
-                                            <h3 class="text-sm font-black text-slate-900">キーワード指定: 好きな話題で即座に執筆</h3>
-                                        </div>
-                                        <p class="text-xs text-slate-600 leading-relaxed">
-                                            気になるキーワード（例: 大谷翔平、千鳥、iPhone 16 など）を入力するだけで、AIが一次情報を整理して記事にします。
-                                        </p>
-                                    </div>
-                                    <form method="POST" class="space-y-3">
-                                        <input type="hidden" name="op" value="generate_ai_article">
-                                        <input type="hidden" name="status" value="published">
-                                        <div class="flex gap-2">
-                                            <input type="text" name="keyword" required placeholder="例: 大谷翔平、千鳥、iPhone 16..." class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 bg-white">
-                                            <select name="category_id" class="px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white text-slate-700">
-                                                <?php foreach ($categories as $cat): ?>
-                                                    <option value="<?= (int)$cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                                                <?php endforeach; ?>
-                                            </select>
-                                        </div>
-                                        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer">
-                                            <span>✨</span>
-                                            <span>このキーワードで記事を作成・公開する</span>
-                                        </button>
-                                    </form>
                                 </div>
                             </div>
                         </div>
@@ -1689,6 +1655,96 @@ $navGroups = [
                     </div>
 
                 <!-- 2. 📝 記事一覧・ページの生死判定 (AI自動ライフサイクル管理) タブ -->
+                <?php elseif ($currentTab === 'create_article'): ?>
+                    <div class="space-y-6">
+                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <div>
+                                <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                    <span>✍️</span>
+                                    <span>記事をつくる (AI・手動)</span>
+                                </h1>
+                                <p class="text-xs text-slate-500 mt-1">
+                                    最新トレンドからの自動生成、キーワード指定のAI生成、トレンド収集をここから実行できます。
+                                </p>
+                            </div>
+                            <form method="POST" class="shrink-0">
+                                <input type="hidden" name="op" value="run_worker">
+                                <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
+                                    <span>🚀 トレンド自動収集＆AI記事生成を今すぐ実行</span>
+                                </button>
+                            </form>
+                        </div>
+
+                        <!-- ⚡ 【今すぐAIに記事を作らせる】ワンクリック操作ボックス (Hero Box) -->
+                        <div class="bg-gradient-to-br from-amber-500/10 via-amber-400/5 to-transparent rounded-3xl border-2 border-amber-300/80 p-6 sm:p-8 shadow-sm space-y-6">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-amber-200/60 pb-4">
+                                <div class="space-y-1">
+                                    <div class="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                                        <span class="text-lg">⚡</span>
+                                        <span>【超かんたん】今すぐ記事を増やしたいときはここ！</span>
+                                    </div>
+                                    <h2 class="text-lg sm:text-xl font-black text-slate-900">ワンクリック記事生成（2つの作成方法）</h2>
+                                </div>
+                                <span class="px-3 py-1 rounded-full bg-amber-500 text-slate-950 font-black text-[11px] shadow-2xs self-start sm:self-auto">
+                                    数十秒で即座に公開完了
+                                </span>
+                            </div>
+
+                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                                <!-- 方法A: 完全おまかせ（最新トレンドから1本自動生成） -->
+                                <div class="bg-white p-6 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-4">
+                                    <div class="space-y-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-6 h-6 rounded-full bg-amber-100 text-amber-900 text-xs font-black flex items-center justify-center">1</span>
+                                            <h3 class="text-sm font-black text-slate-900">完全自動: 最新急上昇トレンドから生成</h3>
+                                        </div>
+                                        <p class="text-xs text-slate-600 leading-relaxed">
+                                            Googleトレンドからいま日本で一番話題のキーワードをAIが自動取得し、一次情報を調べて記事を1本執筆・公開します。
+                                        </p>
+                                    </div>
+                                    <form method="POST">
+                                        <input type="hidden" name="op" value="run_worker">
+                                        <button type="submit" class="w-full py-3.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer active:scale-98">
+                                            <span class="text-base">🚀</span>
+                                            <span>最新トレンドから記事を1本今すぐ自動生成</span>
+                                        </button>
+                                    </form>
+                                </div>
+
+                                <!-- 方法B: キーワード指定（好きな有名人・商品・ニュース） -->
+                                <div class="bg-white p-6 rounded-2xl border border-amber-200/80 shadow-xs flex flex-col justify-between space-y-4">
+                                    <div class="space-y-2">
+                                        <div class="flex items-center gap-2">
+                                            <span class="w-6 h-6 rounded-full bg-indigo-100 text-indigo-900 text-xs font-black flex items-center justify-center">2</span>
+                                            <h3 class="text-sm font-black text-slate-900">キーワード指定: 好きな話題で即座に執筆</h3>
+                                        </div>
+                                        <p class="text-xs text-slate-600 leading-relaxed">
+                                            気になるキーワード（例: 大谷翔平、千鳥、iPhone 16 など）を入力するだけで、AIが一次情報を整理して記事にします。
+                                        </p>
+                                    </div>
+                                    <form method="POST" class="space-y-3">
+                                        <input type="hidden" name="op" value="generate_ai_article">
+                                        <input type="hidden" name="status" value="published">
+                                        <div class="flex gap-2">
+                                            <input type="text" name="keyword" required placeholder="例: 大谷翔平、千鳥、iPhone 16..." class="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 text-xs font-bold focus:outline-none focus:border-amber-500 focus:ring-2 focus:ring-amber-200 bg-white">
+                                            <select name="category_id" class="px-2.5 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white text-slate-700">
+                                                <?php foreach ($categories as $cat): ?>
+                                                    <option value="<?= (int)$cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                                <?php endforeach; ?>
+                                            </select>
+                                        </div>
+                                        <button type="submit" class="w-full py-2.5 px-4 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center justify-center gap-1.5 cursor-pointer">
+                                            <span>✨</span>
+                                            <span>このキーワードで記事を作成・公開する</span>
+                                        </button>
+                                    </form>
+                                </div>
+                            </div>
+                        </div>
+
+
+                    </div>
+
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
                         <!-- ヘッダーと一括AI判定ボタン -->
@@ -1702,18 +1758,6 @@ $navGroups = [
                                 </p>
                             </div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <form method="POST">
-                                    <input type="hidden" name="op" value="run_worker">
-                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 animate-pulse hover:animate-none">
-                                        <span>🚀 トレンド自動収集＆AI記事生成を今すぐ実行</span>
-                                    </button>
-                                </form>
-                                <form method="POST">
-                                    <input type="hidden" name="op" value="evaluate_lifecycle">
-                                    <button type="submit" class="px-3.5 py-2.5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
-                                        <span>⚡ AI生死判定</span>
-                                    </button>
-                                </form>
                                 <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-3.5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
                                     <span>＋ 手動投稿</span>
                                 </button>
@@ -3208,6 +3252,91 @@ $navGroups = [
                     </div>
 
                 <!-- 9. 📈 アクセス解析 タブ -->
+                <?php elseif ($currentTab === 'site_settings'): ?>
+                    <?php
+                    $siteSettingsRow = [
+                        'name' => 'しらんけど',
+                        'description' => '',
+                        'genre' => 'general',
+                        'logo_url' => '',
+                        'favicon_url' => '',
+                        'is_public' => 1,
+                        'allow_auto_publish' => 1,
+                        'youtube_thumbnail_enabled' => 1,
+                    ];
+                    try {
+                        $siteStmt = $db->query("SELECT name, description, genre, logo_url, favicon_url, is_public, allow_auto_publish, youtube_thumbnail_enabled FROM sites WHERE id = 1 LIMIT 1");
+                        $loadedSite = $siteStmt ? $siteStmt->fetch() : false;
+                        if ($loadedSite) {
+                            $siteSettingsRow = array_merge($siteSettingsRow, $loadedSite);
+                        }
+                    } catch (Throwable $e) {}
+                    ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>⚙️</span>
+                                <span>サイト設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">
+                                サイト自体の基本情報と公開設定を管理します。
+                            </p>
+                        </div>
+
+                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <input type="hidden" name="op" value="save_site_settings">
+                            <input type="hidden" name="tab" value="site_settings">
+
+                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                                <div class="sm:col-span-2 space-y-1.5">
+                                    <label class="block text-xs font-black text-slate-700">サイト名</label>
+                                    <input type="text" name="site_name" required value="<?= htmlspecialchars($siteSettingsRow['name'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
+                                </div>
+
+                                <div class="sm:col-span-2 space-y-1.5">
+                                    <label class="block text-xs font-black text-slate-700">サイト説明</label>
+                                    <textarea name="site_description" rows="4" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm"><?= htmlspecialchars($siteSettingsRow['description'] ?? '') ?></textarea>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-black text-slate-700">ジャンル</label>
+                                    <input type="text" name="site_genre" value="<?= htmlspecialchars($siteSettingsRow['genre'] ?? 'general') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-black text-slate-700">ロゴURL</label>
+                                    <input type="text" name="logo_url" value="<?= htmlspecialchars($siteSettingsRow['logo_url'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
+                                </div>
+
+                                <div class="sm:col-span-2 space-y-1.5">
+                                    <label class="block text-xs font-black text-slate-700">favicon URL</label>
+                                    <input type="text" name="favicon_url" value="<?= htmlspecialchars($siteSettingsRow['favicon_url'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
+                                </div>
+                            </div>
+
+                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+                                    <input type="checkbox" name="is_public" value="1" <?= !empty($siteSettingsRow['is_public']) ? 'checked' : '' ?> class="w-4 h-4">
+                                    <span class="text-xs font-bold text-slate-700">サイトを公開する</span>
+                                </label>
+                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+                                    <input type="checkbox" name="allow_auto_publish" value="1" <?= !empty($siteSettingsRow['allow_auto_publish']) ? 'checked' : '' ?> class="w-4 h-4">
+                                    <span class="text-xs font-bold text-slate-700">安全記事の自動公開</span>
+                                </label>
+                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+                                    <input type="checkbox" name="youtube_thumbnail_enabled" value="1" <?= !empty($siteSettingsRow['youtube_thumbnail_enabled']) ? 'checked' : '' ?> class="w-4 h-4">
+                                    <span class="text-xs font-bold text-slate-700">YouTubeサムネイルを使用</span>
+                                </label>
+                            </div>
+
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all">
+                                    サイト設定を保存
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+
                 <?php elseif ($currentTab === 'analytics'): ?>
                     <div class="space-y-6">
                         <div>
