@@ -1403,9 +1403,6 @@ $navGroups = [
                                 <div class="flex items-baseline gap-2">
                                     <div class="text-3xl font-black text-slate-900"><?= $publishedCount ?></div>
                                     <div class="text-xs font-bold text-emerald-600">本 公開中</div>
-                                    <?php if ($countOnHold > 0): ?>
-                                        <div class="text-xs text-slate-400 font-medium ml-auto">(下書き: <?= $countOnHold ?>本)</div>
-                                    <?php endif; ?>
                                 </div>
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span class="text-slate-400 text-[10px]">客観ファクトまとめ</span>
