@@ -84,6 +84,17 @@ class AnalyticsTracker {
         try {
             $db = Database::getConnection();
 
+            // 旧方式の不正確な集計を新画面へ持ち込まないため、v2導入時点を集計開始点として保存。
+            $startStmt = $db->prepare("SELECT setting_value FROM site_settings WHERE site_id = 1 AND setting_key = 'analytics_v2_started_at' LIMIT 1");
+            $startStmt->execute();
+            $trackingSince = $startStmt->fetchColumn();
+            if (!$trackingSince) {
+                $trackingSince = date('Y-m-d H:i:s');
+                $ins = $db->prepare("INSERT INTO site_settings (site_id, setting_key, setting_value) VALUES (1, 'analytics_v2_started_at', ?)
+                                     ON DUPLICATE KEY UPDATE setting_value = VALUES(setting_value)");
+                $ins->execute([$trackingSince]);
+            }
+
             // 旧ログはvisitor_hashに日付を含むため、期間UUはIP+UAをその場で安定化して集計。
             foreach ([1, 7, 30] as $period) {
                 $sql = "SELECT
@@ -91,15 +102,21 @@ class AnalyticsTracker {
                             COUNT(DISTINCT SHA2(CONCAT(COALESCE(ip_address,''), '|', COALESCE(user_agent,'')), 256)) AS uu
                         FROM access_logs
                         WHERE site_id = 1
-                          AND created_at >= DATE_SUB(NOW(), INTERVAL " . (int)$period . " DAY)";
-                $row = $db->query($sql)->fetch();
+                          AND created_at >= DATE_SUB(NOW(), INTERVAL " . (int)$period . " DAY)
+                          AND created_at >= ?";
+                $stmt = $db->prepare($sql);
+                $stmt->execute([$trackingSince]);
+                $row = $stmt->fetch();
                 $stats['periods'][$period] = [
                     'pv' => (int)($row['pv'] ?? 0),
                     'uu' => (int)($row['uu'] ?? 0),
                 ];
             }
 
-            $stats['total_pv'] = (int)($db->query("SELECT COUNT(*) FROM access_logs WHERE site_id = 1")->fetchColumn() ?: 0);
+            $totalStmt = $db->prepare("SELECT COUNT(*) FROM access_logs WHERE site_id = 1 AND created_at >= ?");
+            $totalStmt->execute([$trackingSince]);
+            $stats['total_pv'] = (int)($totalStmt->fetchColumn() ?: 0);
+            $stats['tracking_since'] = $trackingSince;
 
             // 直近N日の日別PV/UU。欠損日は0で補完する。
             $chartSql = "SELECT
@@ -109,9 +126,12 @@ class AnalyticsTracker {
                          FROM access_logs
                          WHERE site_id = 1
                            AND created_at >= DATE_SUB(CURDATE(), INTERVAL " . max(0, $days - 1) . " DAY)
+                           AND created_at >= ?
                          GROUP BY DATE(created_at)
                          ORDER BY log_date ASC";
-            $rows = $db->query($chartSql)->fetchAll();
+            $chartStmt = $db->prepare($chartSql);
+            $chartStmt->execute([$trackingSince]);
+            $rows = $chartStmt->fetchAll();
             $byDate = [];
             foreach ($rows as $row) {
                 $byDate[$row['log_date']] = [
@@ -133,23 +153,30 @@ class AnalyticsTracker {
                  JOIN articles a ON l.article_id = a.id
                  WHERE l.site_id = 1
                    AND l.created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                   AND l.created_at >= " . $db->quote($trackingSince) . "
                  GROUP BY a.id, a.title, a.shirankedo_index
                  ORDER BY pv DESC
                  LIMIT 10"
             )->fetchAll();
 
             // 外部参照元だけを表示。自サイトはtrack時にdirect化済み。
-            $stats['referers'] = $db->query(
-                "SELECT LOWER(referer_host) AS referer_host, COUNT(*) AS count
-                 FROM access_logs
-                 WHERE site_id = 1
-                   AND referer_host IS NOT NULL
-                   AND referer_host NOT IN ('', 'direct')
-                   AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
-                 GROUP BY LOWER(referer_host)
-                 ORDER BY count DESC
-                 LIMIT 10"
-            )->fetchAll();
+            $currentHost = self::normalizeHost($_SERVER['HTTP_HOST'] ?? '');
+            $refSql = "SELECT LOWER(referer_host) AS referer_host, COUNT(*) AS count
+                       FROM access_logs
+                       WHERE site_id = 1
+                         AND referer_host IS NOT NULL
+                         AND referer_host NOT IN ('', 'direct')
+                         AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                         AND created_at >= ?";
+            $refParams = [$trackingSince];
+            if ($currentHost !== '') {
+                $refSql .= " AND LOWER(referer_host) <> ?";
+                $refParams[] = $currentHost;
+            }
+            $refSql .= " GROUP BY LOWER(referer_host) ORDER BY count DESC LIMIT 10";
+            $refStmt = $db->prepare($refSql);
+            $refStmt->execute($refParams);
+            $stats['referers'] = $refStmt->fetchAll();
 
             // デバイス比率も直近30日
             $devRows = $db->query(
@@ -157,6 +184,7 @@ class AnalyticsTracker {
                  FROM access_logs
                  WHERE site_id = 1
                    AND created_at >= DATE_SUB(NOW(), INTERVAL 30 DAY)
+                   AND created_at >= " . $db->quote($trackingSince) . "
                  GROUP BY device_type"
             )->fetchAll();
             foreach ($devRows as $dr) {
