@@ -1822,14 +1822,14 @@ $navGroups = [
                                     <div class="flex items-center gap-1.5 ml-3">
                                         <button type="button" onclick="setArticleFilter('all')" class="filter-tab-btn active px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white" data-filter="all">すべて</button>
                                         <button type="button" onclick="setArticleFilter('no_image')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="no_image">🖼️ 画像未設定 (<?= $countNoImage ?>)</button>
-                                        <button type="button" onclick="setArticleFilter('published')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="published">🟢 表に公開中 (<?= $countActive ?>)</button>
+                                        <button type="button" onclick="setArticleFilter('published')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="published">🟢 公開中 (<?= $publishedCount ?>)</button>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <input 
                                         type="text" 
                                         id="article-search-input" 
-                                        placeholder="タイトル・理由で絞り込み..." 
+                                        placeholder="タイトルで絞り込み..." 
                                         oninput="filterArticles()"
                                         class="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs w-64 focus:outline-none focus:border-amber-500"
                                     >
