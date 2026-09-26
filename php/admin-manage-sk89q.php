@@ -263,13 +263,15 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // 3. アイキャッチ画像プールの追加（複数ファイル一括アップロード / 複数URL一括登録 / 個別登録）
         if ($op === 'add_pool_image') {
             $catId = (int)($_POST['category_id'] ?? 1);
+            $groupId = (int)($_POST['group_id'] ?? 0);
             $altDefault = trim($_POST['alt_text'] ?? 'トレンドアイキャッチ');
             $kw1 = trim($_POST['kw1'] ?? '');
             $kw2 = trim($_POST['kw2'] ?? '');
             $kw3 = trim($_POST['kw3'] ?? '');
             $kws = array_filter([$kw1, $kw2, $kw3]);
 
-            $uploadDir = __DIR__ . '/uploads';
+            $folderSegment = $groupId > 0 ? 'folder-' . $groupId : 'unclassified';
+            $uploadDir = __DIR__ . '/uploads/' . $folderSegment;
             if (!is_dir($uploadDir)) {
                 mkdir($uploadDir, 0777, true);
             }
@@ -288,10 +290,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                             $dest = $uploadDir . '/' . $safeName;
                             if (move_uploaded_file($tmpName, $dest)) {
-                                $fileUrl = '/uploads/' . $safeName;
+                                $fileUrl = '/uploads/' . $folderSegment . '/' . $safeName;
                                 $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
-                                $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
-                                $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                                $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, ?, 1, NOW())");
+                                $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $safeName, $fileUrl, $altText]);
                                 $newImgId = (int)$db->lastInsertId();
                                 foreach ($kws as $k) {
                                     $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -311,10 +313,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $dest = $uploadDir . '/' . $safeName;
                     if (move_uploaded_file($tmpName, $dest)) {
-                        $fileUrl = '/uploads/' . $safeName;
+                        $fileUrl = '/uploads/' . $folderSegment . '/' . $safeName;
                         $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
-                        $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
-                        $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                        $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, ?, 1, NOW())");
+                        $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $safeName, $fileUrl, $altText]);
                         $newImgId = (int)$db->lastInsertId();
                         foreach ($kws as $k) {
                             $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -335,8 +337,8 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $chk = $db->prepare("SELECT id FROM images WHERE site_id = 1 AND url = ?");
                         $chk->execute([$singleUrl]);
                         if (!$chk->fetch()) {
-                            $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, 'custom_pool.webp', ?, ?, 1, NOW())");
-                            $stmt->execute([$catId, $singleUrl, $altDefault]);
+                            $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, 'custom_pool.webp', ?, ?, 1, NOW())");
+                            $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $singleUrl, $altDefault]);
                             $newImgId = (int)$db->lastInsertId();
                             foreach ($kws as $k) {
                                 $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -351,6 +353,32 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('画像ファイルをアップロードするか、有効な画像URLを入力してください。');
             }
             $flashMessage = "アイキャッチ画像をプールに {$addedCount} 件登録しました！";
+        }
+
+        // 3-A2. 画像フォルダ作成
+        if ($op === 'create_image_folder') {
+            $folderName = trim($_POST['folder_name'] ?? '');
+            if ($folderName === '') {
+                throw new Exception('フォルダ名を入力してください。');
+            }
+            $chk = $db->prepare("SELECT id FROM image_groups WHERE site_id = 1 AND name = ? LIMIT 1");
+            $chk->execute([$folderName]);
+            if ($chk->fetchColumn()) {
+                throw new Exception('同じ名前のフォルダが既にあります。');
+            }
+            $stmt = $db->prepare("INSERT INTO image_groups (site_id, name, genre) VALUES (1, ?, 'custom')");
+            $stmt->execute([$folderName]);
+            $flashMessage = "画像フォルダ「{$folderName}」を作成しました。";
+        }
+
+        // 3-A3. 画像フォルダ削除（画像は未分類へ移動）
+        if ($op === 'delete_image_folder') {
+            $folderId = (int)($_POST['folder_id'] ?? 0);
+            if ($folderId > 0) {
+                $db->prepare("UPDATE images SET group_id = NULL WHERE site_id = 1 AND group_id = ?")->execute([$folderId]);
+                $db->prepare("DELETE FROM image_groups WHERE site_id = 1 AND id = ?")->execute([$folderId]);
+                $flashMessage = '画像フォルダを削除しました。中の画像は「未分類」へ移動しました。';
+            }
         }
 
         // 3-B. 商用フリー初期画像セット（全7大ジャンル・計64枚）の一括プリセット追加
@@ -856,6 +884,8 @@ $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
 $poolImages = [];
+$imageGroups = [];
+$selectedImageGroup = isset($_GET['folder']) ? (int)$_GET['folder'] : -1;
 $announcements = [];
 $categories = [];
 $feedItemCount = 0;
@@ -908,9 +938,28 @@ if ($db && $isLoggedIn) {
             $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
         }
 
-        $poolImages = $db->query("SELECT i.*, 
-                                  (SELECT GROUP_CONCAT(keyword SEPARATOR ', ') FROM image_keywords WHERE image_id = i.id) as keywords
-                                  FROM images i WHERE i.site_id = 1 ORDER BY i.id DESC LIMIT 100")->fetchAll();
+        $imageGroups = $db->query("SELECT g.id, g.name, g.genre,
+                                  (SELECT COUNT(*) FROM images i2 WHERE i2.site_id = 1 AND i2.group_id = g.id) AS image_count
+                                  FROM image_groups g
+                                  WHERE g.site_id = 1
+                                  ORDER BY g.id ASC")->fetchAll();
+
+        $poolSql = "SELECT i.*, g.name AS group_name,
+                           (SELECT GROUP_CONCAT(keyword SEPARATOR ', ') FROM image_keywords WHERE image_id = i.id) as keywords
+                    FROM images i
+                    LEFT JOIN image_groups g ON i.group_id = g.id
+                    WHERE i.site_id = 1";
+        $poolParams = [];
+        if ($selectedImageGroup === 0) {
+            $poolSql .= " AND i.group_id IS NULL";
+        } elseif ($selectedImageGroup > 0) {
+            $poolSql .= " AND i.group_id = ?";
+            $poolParams[] = $selectedImageGroup;
+        }
+        $poolSql .= " ORDER BY i.id DESC LIMIT 200";
+        $poolStmt = $db->prepare($poolSql);
+        $poolStmt->execute($poolParams);
+        $poolImages = $poolStmt->fetchAll();
 
         // お知らせ一覧
         $announcements = $db->query("SELECT * FROM announcements ORDER BY id DESC LIMIT 20")->fetchAll();
@@ -1750,10 +1799,19 @@ $navGroups = [
                             <form method="POST" class="space-y-4">
                                 <input type="hidden" name="op" value="create_article">
                                 
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
                                         <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">保存フォルダ</label>
+                                        <select name="group_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                            <option value="0">未分類</option>
+                                            <?php foreach ($imageGroups as $grp): ?>
+                                                <option value="<?= (int)$grp['id'] ?>"><?= htmlspecialchars($grp['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
@@ -2224,6 +2282,37 @@ $navGroups = [
                             </form>
                         </div>
 
+                        <!-- 画像フォルダ管理 -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">📁 画像フォルダ</h2>
+                                    <p class="text-xs text-slate-400 mt-0.5">用途ごとに分けておくと、画像が増えても探しやすくなります。迷う画像は未分類で構いません。</p>
+                                </div>
+                                <form method="POST" class="flex items-center gap-2">
+                                    <input type="hidden" name="op" value="create_image_folder">
+                                    <input type="text" name="folder_name" required placeholder="新しいフォルダ名" class="px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-amber-500">
+                                    <button type="submit" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">＋ フォルダ作成</button>
+                                </form>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <a href="?tab=images" class="px-3 py-2 rounded-xl text-xs font-bold <?= $selectedImageGroup === -1 ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-700' ?>">すべて (<?= (int)$totalPoolCount ?>)</a>
+                                <a href="?tab=images&folder=0" class="px-3 py-2 rounded-xl text-xs font-bold <?= $selectedImageGroup === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-700' ?>">未分類</a>
+                                <?php foreach ($imageGroups as $grp): ?>
+                                    <div class="inline-flex items-center rounded-xl overflow-hidden border border-slate-200">
+                                        <a href="?tab=images&folder=<?= (int)$grp['id'] ?>" class="px-3 py-2 text-xs font-bold <?= $selectedImageGroup === (int)$grp['id'] ? 'bg-amber-500 text-slate-950' : 'bg-slate-50 text-slate-700' ?>">
+                                            📁 <?= htmlspecialchars($grp['name']) ?> (<?= (int)$grp['image_count'] ?>)
+                                        </a>
+                                        <form method="POST" onsubmit="return confirm('このフォルダを削除しますか？ 中の画像は未分類へ移動します。');">
+                                            <input type="hidden" name="op" value="delete_image_folder">
+                                            <input type="hidden" name="folder_id" value="<?= (int)$grp['id'] ?>">
+                                            <button type="submit" class="px-2 py-2 text-[10px] text-slate-400 hover:text-rose-600 bg-white">✕</button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+
                         <!-- 画像追加フォーム (複数ファイル・複数URL対応) -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
                             <div class="flex items-center justify-between">
@@ -2292,27 +2381,14 @@ $navGroups = [
                                     </h2>
                                     <p class="text-xs text-slate-400 mt-0.5">登録された画像は使用回数の少ないものから均等に優先して自動選定されます</p>
                                 </div>
-                                <?php if (count($poolImages) === 0): ?>
-                                    <span class="text-xs text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                                        ⚠️ 現在0件（右上のボタンから64枚一括追加可能）
-                                    </span>
-                                <?php endif; ?>
+                                
                             </div>
 
                             <?php if (count($poolImages) === 0): ?>
                                 <div class="p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl space-y-3 bg-slate-50/50">
                                     <div class="text-4xl">🖼️</div>
                                     <div class="font-black text-slate-700 text-sm">現在登録されているアイキャッチ画像はありません</div>
-                                    <p class="text-xs text-slate-500 max-w-md mx-auto">
-                                        ご自身の画像を追加するか、下のボタンから商用フリーの初期画像セット（全7ジャンル・計64枚）をワンクリックで一括追加できます。
-                                    </p>
-                                    <form method="POST" class="pt-2">
-                                        <input type="hidden" name="op" value="seed_preset_images">
-                                        <input type="hidden" name="genre" value="all">
-                                        <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer">
-                                            <span>🎁 商用フリー厳選画像パック（全7ジャンル・計64枚）を一括追加</span>
-                                        </button>
-                                    </form>
+                                    <p class="text-xs text-slate-500 max-w-md mx-auto">上の登録フォームから画像を追加してください。フォルダを選んで登録すると、増えても整理しやすくなります。</p>
                                 </div>
                             <?php else: ?>
                                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -2331,6 +2407,9 @@ $navGroups = [
                                             <div class="space-y-1">
                                                 <div class="text-[11px] font-bold text-slate-800 truncate" title="<?= htmlspecialchars($pi['alt_text']) ?>">
                                                     <?= htmlspecialchars($pi['alt_text']) ?>
+                                                </div>
+                                                <div class="text-[10px] text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 truncate" title="<?= htmlspecialchars($pi['group_name'] ?: '未分類') ?>">
+                                                    📁 <?= htmlspecialchars($pi['group_name'] ?: '未分類') ?>
                                                 </div>
                                                 <div class="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 truncate" title="<?= htmlspecialchars($pi['keywords'] ?: '未設定') ?>">
                                                     🏷️ <?= htmlspecialchars($pi['keywords'] ?: '未設定') ?>
