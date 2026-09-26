@@ -609,26 +609,22 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = '相互RSS表示設定を保存しました。';
         }
 
-        // 5-3. 基本設定 (Gemini API / 投稿スケジュール / 広告) の更新
-        if ($op === 'save_gemini') {
+        // 5-3. API設定の更新
+        if ($op === 'save_api_settings') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
             SettingsManager::set('gemini_model', trim($_POST['gemini_model'] ?? 'gemini-2.5-flash'));
+            $flashMessage = 'API設定を保存しました。';
+        }
+
+        // 5-3B. システム設定（自動投稿・クーロン）の更新
+        if ($op === 'save_system_settings') {
             SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
             SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
             SettingsManager::set('auto_post_max_per_day', (int)($_POST['auto_post_max_per_day'] ?? 10));
             SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
             SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
             SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
-            if (isset($_POST['ad_article_top'])) {
-                SettingsManager::set('ad_article_top', trim($_POST['ad_article_top']));
-            }
-            if (isset($_POST['ad_article_bottom'])) {
-                SettingsManager::set('ad_article_bottom', trim($_POST['ad_article_bottom']));
-            }
-            if (isset($_POST['threads_account_url'])) {
-                SettingsManager::set('threads_account_url', trim($_POST['threads_account_url']));
-            }
-            $flashMessage = '基本設定（AI・自動投稿・広告・Threads）を保存しました。';
+            $flashMessage = 'システム設定を保存しました。';
         }
 
         // 5-4. 手動キーワードからの即時AI記事自動生成テスト
@@ -844,10 +840,13 @@ $currentTab = $_GET['tab'] ?? 'dashboard';
 if ($currentTab === 'create') {
     $currentTab = 'create_article';
 }
-if ($currentTab === 'sns') {
-    $currentTab = 'cron';
+if ($currentTab === 'sns' || $currentTab === 'cron') {
+    $currentTab = 'system';
 }
-if ($currentTab === 'gemini' || $currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 'seo_tags') {
+if ($currentTab === 'gemini') {
+    $currentTab = 'api_settings';
+}
+if ($currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 'seo_tags') {
     $currentTab = 'system';
 }
 
@@ -987,7 +986,6 @@ $navGroups = [
         'children' => [
             'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
             'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
-            'cron' => ['icon' => '⏰', 'label' => '定期実行・クーロン設定', 'badge' => '自動運転'],
             'trends' => ['icon' => '🔥', 'label' => '急上昇トレンド候補一覧', 'badge' => !empty($trendCandidates) ? count($trendCandidates) . '件' : null],
         ]
     ],
@@ -996,7 +994,8 @@ $navGroups = [
         'icon' => '🛠️',
         'children' => [
             'site_settings' => ['icon' => '⚙️', 'label' => 'サイト設定', 'badge' => null],
-            'system' => ['icon' => '💻', 'label' => 'サイト・システム保守', 'badge' => null],
+            'api_settings' => ['icon' => '🔑', 'label' => 'API設定', 'badge' => $hasGeminiKey ? '接続済' : null],
+            'system' => ['icon' => '💻', 'label' => 'システム設定', 'badge' => $autoPostEnabled ? '自動運転' : null],
         ]
     ],
 ];
@@ -1320,7 +1319,7 @@ $navGroups = [
                                             </button>
                                         </form>
                                     <?php endif; ?>
-                                    <a href="?tab=gemini" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">設定変更 →</a>
+                                    <a href="?tab=api_settings" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">設定変更 →</a>
                                 </div>
                             </div>
 
@@ -1350,7 +1349,7 @@ $navGroups = [
                                 </div>
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span class="text-slate-400 text-[10px] truncate">最終: <?= $lastCronTime ? date('H:i', strtotime($lastCronTime)) : '未記録' ?></span>
-                                    <a href="?tab=gemini" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">間隔調整 →</a>
+                                    <a href="?tab=system" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">間隔調整 →</a>
                                 </div>
                             </div>
 
@@ -1447,7 +1446,7 @@ $navGroups = [
                                     <span class="text-xl">⚠️</span>
                                     <div class="text-xs text-rose-950 space-y-1">
                                         <strong class="font-black text-rose-900 block">Gemini APIキーが設定されていません</strong>
-                                        記事を自動生成するにはGemini APIキーが必要です。<a href="?tab=gemini" class="underline font-bold text-rose-800">「AI自動生成・クーロン設定」タブ</a>でキーを入力してください。
+                                        記事を自動生成するにはGemini APIキーが必要です。<a href="?tab=api_settings" class="underline font-bold text-rose-800">「API設定」</a>でキーを入力してください。
                                     </div>
                                 </div>
                             <?php else: ?>
@@ -1504,7 +1503,7 @@ $navGroups = [
                                     </div>
                                     <div class="font-black text-slate-900">Gemini APIキー設定</div>
                                     <p class="text-[11px] text-slate-500">
-                                        <?= $hasGeminiKey ? 'キー登録済み（接続OK）' : '<a href="?tab=gemini" class="underline text-amber-700 font-bold">キーを登録してください</a>' ?>
+                                        <?= $hasGeminiKey ? 'キー登録済み（接続OK）' : '<a href="?tab=api_settings" class="underline text-amber-700 font-bold">キーを登録してください</a>' ?>
                                     </p>
                                 </div>
 
@@ -1745,6 +1744,59 @@ $navGroups = [
 
                     </div>
 
+                        <!-- 手動記事作成 -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <h2 class="text-base font-black text-slate-900">記事の新規作成（手動投稿）</h2>
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="create_article">
+                                
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="sm:col-span-2 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
+                                        <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
+                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                            <?php foreach ($categories as $cat): ?>
+                                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">💡 なぜ話題？（要約ボックス）</label>
+                                    <textarea name="why_trending" rows="2" placeholder="新企画の予測不能な展開がSNSで急上昇し..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500"></textarea>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">記事本文（客観的事実に基づいたファクト）</label>
+                                    <textarea name="body" rows="6" placeholder="客観的事実に基づいた本文を入力..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500 leading-relaxed"></textarea>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">締めの言葉（しらんけど構文）</label>
+                                        <input type="text" name="conclusion_sentence" value="今後の展開に注目が集まります。しらんけど。" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm font-mincho focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">アイキャッチ画像URL (800x450px推奨)</label>
+                                        <input type="text" name="image_url" placeholder="https://images.unsplash.com/photo-..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                </div>
+
+                                <div class="pt-2 flex justify-end">
+                                    <button type="submit" class="px-6 py-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all">
+                                        記事を公開する →
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
+
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
                         <!-- ヘッダーと一括AI判定ボタン -->
@@ -1756,11 +1808,6 @@ $navGroups = [
                                 <p class="text-xs text-slate-500 mt-1">
                                     ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
                                 </p>
-                            </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-3.5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
-                                    <span>＋ 手動投稿</span>
-                                </button>
                             </div>
                         </div>
 
@@ -1798,7 +1845,7 @@ $navGroups = [
                                     <?php endif; ?>
                                 </div>
                             </div>
-                            <a href="?tab=gemini" class="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 self-start md:self-auto hover:underline text-[11px]">
+                            <a href="?tab=api_settings" class="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 self-start md:self-auto hover:underline text-[11px]">
                                 <span>⚙️ スケジュール・API設定を開く →</span>
                             </a>
                         </div>
@@ -2169,58 +2216,6 @@ $navGroups = [
                         }
                         </script>
 
-                        <!-- 手動新規記事作成カード (折りたたみ可能) -->
-                        <div id="manual-create-card" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                            <h2 class="text-base font-black text-slate-900">記事の新規作成（手動投稿）</h2>
-                            <form method="POST" class="space-y-4">
-                                <input type="hidden" name="op" value="create_article">
-                                
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    <div class="sm:col-span-2 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
-                                        <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
-                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                            <?php foreach ($categories as $cat): ?>
-                                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">💡 なぜ話題？（要約ボックス）</label>
-                                    <textarea name="why_trending" rows="2" placeholder="新企画の予測不能な展開がSNSで急上昇し..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500"></textarea>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">記事本文（客観的事実に基づいたファクト）</label>
-                                    <textarea name="body" rows="6" placeholder="客観的事実に基づいた本文を入力..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500 leading-relaxed"></textarea>
-                                </div>
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">締めの言葉（しらんけど構文）</label>
-                                        <input type="text" name="conclusion_sentence" value="今後の展開に注目が集まります。しらんけど。" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm font-mincho focus:outline-none focus:border-amber-500">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">アイキャッチ画像URL (800x450px推奨)</label>
-                                        <input type="text" name="image_url" placeholder="https://images.unsplash.com/photo-..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 flex justify-end">
-                                    <button type="submit" class="px-6 py-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all">
-                                        記事を公開する →
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
                 <?php elseif ($currentTab === 'images'): ?>
                     <div class="space-y-6">
                         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -2230,32 +2225,8 @@ $navGroups = [
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-1">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <!-- 全ジャンル一括追加 -->
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="op" value="seed_preset_images">
-                                    <input type="hidden" name="genre" value="all">
-                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer">
-                                        <span>🎁 全7ジャンル厳選パック（計64枚）を一括追加</span>
-                                    </button>
-                                </form>
-
-                                <!-- ジャンル別追加セレクター -->
-                                <form method="POST" class="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                                    <input type="hidden" name="op" value="seed_preset_images">
-                                    <select name="genre" class="text-xs font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 focus:outline-none">
-                                        <option value="tech">💻 IT・ガジェット・AI (10枚)</option>
-                                        <option value="entame">🎤 芸能・エンタメ・音楽 (10枚)</option>
-                                        <option value="sports">⚾ スポーツ・アスリート (10枚)</option>
-                                        <option value="game">🎮 ゲーム・アニメ・マンガ (8枚)</option>
-                                        <option value="gourmet">🍜 グルメ・スイーツ・飲食 (10枚)</option>
-                                        <option value="society">📰 社会・ニュース・経済 (8枚)</option>
-                                        <option value="lifestyle">🌸 自然・天気・ペット (8枚)</option>
-                                    </select>
-                                    <button type="submit" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all cursor-pointer">
-                                        ＋追加
-                                    </button>
-                                </form>
+                            <div class="text-xs text-slate-400 font-bold">
+                                登録済み素材: <?= (int)$totalPoolCount ?> 枚
                             </div>
                         </div>
 
@@ -2265,8 +2236,7 @@ $navGroups = [
                                 <span class="text-xl">💡</span>
                                 <div class="space-y-1 text-xs text-indigo-950 leading-relaxed">
                                     <strong class="font-black text-sm text-indigo-900 block">アイキャッチ画像の取得元と仕組みについて</strong>
-                                    記事作成時にキーワードと画像プール内のキーワード（例:「iPhone」「大谷」「ゲーム」「ラーメン」など）が自動照合され、最も適した画像が選ばれます。<br>
-                                    上の<strong>「🎁 全7ジャンル厳選パックを一括追加」</strong>を押すと、商用フリー（Unsplash厳選高画質）の画像64枚が一気に登録され、あらゆるトレンド記事にぴったりの画像が自動設定されるようになります！
+                                    記事作成時にキーワードと画像プール内のキーワード（例:「iPhone」「大谷」「ゲーム」「ラーメン」など）が自動照合され、登録済み素材から最も適した画像が選ばれます。
                                 </div>
                             </div>
 
@@ -3546,187 +3516,178 @@ $navGroups = [
                     </div>
 
                 <!-- 10. ✨ 基本設定（Gemini AI & 投稿スケジュール管理） タブ -->
-                <?php elseif ($currentTab === 'gemini'): ?>
-                    <div class="space-y-8">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">⚙️ 基本設定（AI・自動更新頻度・広告）</h1>
-                            <p class="text-xs text-slate-500">ブログを自動運転するための必須設定です。Gemini APIキーの登録、自動投稿の間隔、広告タグの設置をここで行えます</p>
+                <?php elseif ($currentTab === 'api_settings'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>🔑</span><span>API設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">記事生成に使用する外部APIの接続情報を管理します。</p>
                         </div>
 
-                        <!-- 1. 話題のキーワードから即座にAI記事生成（手動テスト） -->
-                        <div class="bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/50 rounded-3xl border-2 border-indigo-200/80 p-6 sm:p-8 shadow-sm space-y-5">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="text-2xl">✨</span>
-                                    <div>
-                                        <h2 class="text-base font-black text-slate-900">キーワードから今すぐAI記事を生成する（手動テスト）</h2>
-                                        <p class="text-xs text-slate-500">話題のキーワードを入力すると、Gemini AIがタイトル・要約・本文・しらんけど節を数秒で執筆し登録します</p>
-                                    </div>
-                                </div>
-                                <span class="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">即時生成</span>
-                            </div>
+                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <input type="hidden" name="op" value="save_api_settings">
+                            <input type="hidden" name="tab" value="api_settings">
 
-                            <form method="POST" class="space-y-4">
-                                <input type="hidden" name="op" value="generate_ai_article">
-
-                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                                    <div class="md:col-span-6 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">話題キーワード <span class="text-rose-500">*</span></label>
-                                        <input type="text" name="keyword" placeholder="例: 大谷翔平、iPhone 16、新作ゲーム発表、推しの子" required class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-medium">
-                                    </div>
-
-                                    <div class="md:col-span-3 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
-                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
-                                            <?php foreach ($categories as $cat): ?>
-                                                <option value="<?= (int)$cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-
-                                    <div class="md:col-span-3 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">生成後の状態</label>
-                                        <select name="status" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="published">即時公開する</option>
-                                            <option value="on_hold">安全確認のため下書き（保留）</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center justify-between pt-2">
-                                    <div class="text-[11px] text-slate-500">
-                                        ※ APIキーが設定されている必要があります。画像プールに登録された適切なアイキャッチ画像が自動で割り当てられます。
-                                    </div>
-                                    <button type="submit" class="px-7 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-2">
-                                        <span>✨</span> AIで記事を生成する
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-
-                        <!-- 2. 投稿の間隔・時間帯・本数コントロール設定 -->
-                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                             <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="text-xl">⏰</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">🤖</span>
                                     <div>
-                                        <h2 class="text-base font-black text-slate-900">自動投稿スケジュール・時間帯コントロール</h2>
-                                        <p class="text-xs text-slate-500">全自動運転時の投稿間隔、稼働する時間帯（深夜帯の除外）、1日の最大投稿本数を細かく調整できます</p>
+                                        <h2 class="text-base font-black text-slate-900">Gemini API</h2>
+                                        <p class="text-xs text-slate-500">APIキーと使用モデルを設定します。</p>
                                     </div>
                                 </div>
-                                <span class="px-3 py-1 rounded-full <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
-                                    <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold <?= $hasGeminiKey ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' ?>">
+                                    <?= $hasGeminiKey ? '接続情報あり' : '未設定' ?>
                                 </span>
                             </div>
 
-                            <form method="POST" class="space-y-6">
-                                <input type="hidden" name="op" value="save_gemini">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
+                                    <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500 font-mono text-sm">
+                                    <button type="button" onclick="testGeminiConnection()" class="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">🔍 接続テストを実行</button>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
+                                    <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); ?>
+                                    <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
+                                        <option value="gemini-2.5-flash" <?= $curModel === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash</option>
+                                        <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash</option>
+                                        <option value="gemini-2.5-pro" <?= $curModel === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro</option>
+                                    </select>
+                                </div>
+                            </div>
 
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <!-- 自動投稿スイッチ -->
-                                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 md:col-span-2">
-                                        <label class="flex items-center gap-3 cursor-pointer">
-                                            <input type="checkbox" name="auto_post_enabled" value="1" <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                            <div>
-                                                <div class="text-sm font-black text-slate-900">全自動記事投稿を有効にする</div>
-                                                <p class="text-xs text-slate-500">チェックを外すと、定期実行時も記事の自動生成・投稿はストップし、トレンドデータの収集のみ行われます。</p>
-                                            </div>
-                                        </label>
-                                    </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">API設定を保存</button>
+                            </div>
+                        </form>
 
-                                    <!-- 投稿間隔 -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>⏱️</span> 投稿間隔（インターバル）
-                                        </label>
-                                        <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
-                                        <select name="auto_post_interval_hours" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="0.5" <?= $currentInterval === '0.5' ? 'selected' : '' ?>>30分に1本（高頻度速報）</option>
-                                            <option value="1" <?= $currentInterval === '1' ? 'selected' : '' ?>>1時間に1本（おすすめ・標準）</option>
-                                            <option value="2" <?= $currentInterval === '2' ? 'selected' : '' ?>>2時間に1本</option>
-                                            <option value="3" <?= $currentInterval === '3' ? 'selected' : '' ?>>3時間に1本</option>
-                                            <option value="4" <?= $currentInterval === '4' ? 'selected' : '' ?>>4時間に1本</option>
-                                            <option value="6" <?= $currentInterval === '6' ? 'selected' : '' ?>>6時間に1本（1日約4本）</option>
-                                            <option value="12" <?= $currentInterval === '12' ? 'selected' : '' ?>>12時間に1本（朝夕2本）</option>
-                                            <option value="24" <?= $currentInterval === '24' ? 'selected' : '' ?>>24時間に1本（1日1本厳選）</option>
+                        <form id="gemini-test-form" method="POST" style="display:none;">
+                            <input type="hidden" name="op" value="test_gemini_api">
+                            <input type="hidden" name="gemini_api_key" id="test_form_key" value="">
+                            <input type="hidden" name="gemini_model" id="test_form_model" value="">
+                        </form>
+                        <script>
+                        function testGeminiConnection() {
+                            const key = document.getElementById('input_gemini_key').value.trim();
+                            const model = document.getElementById('input_gemini_model').value;
+                            if (!key) {
+                                alert('Gemini API Key を入力してからテストボタンを押してください。');
+                                return;
+                            }
+                            document.getElementById('test_form_key').value = key;
+                            document.getElementById('test_form_model').value = model;
+                            document.getElementById('gemini-test-form').submit();
+                        }
+                        </script>
+                    </div>
+
+                <?php elseif ($currentTab === 'system'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>💻</span><span>システム設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">自動投稿の動作、実行時間、Cronなどシステム運用に関する設定をまとめています。</p>
+                        </div>
+
+                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <input type="hidden" name="op" value="save_system_settings">
+                            <input type="hidden" name="tab" value="system">
+
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">⏰ 自動投稿・実行設定</h2>
+                                    <p class="text-xs text-slate-500">投稿間隔、稼働時間帯、1日の上限を設定します。</p>
+                                </div>
+                                <span class="px-3 py-1 rounded-full <?= $autoPostEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
+                                    <?= $autoPostEnabled ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
+                                </span>
+                            </div>
+
+                            <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+                                <input type="checkbox" name="auto_post_enabled" value="1" <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5">
+                                <div>
+                                    <div class="text-sm font-black text-slate-900">全自動記事投稿を有効にする</div>
+                                    <p class="text-xs text-slate-500">OFFの場合は自動生成・投稿を停止します。</p>
+                                </div>
+                            </label>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">投稿間隔</label>
+                                    <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
+                                    <select name="auto_post_interval_hours" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <?php foreach (['0.5'=>'30分','1'=>'1時間','2'=>'2時間','3'=>'3時間','4'=>'4時間','6'=>'6時間','12'=>'12時間','24'=>'24時間'] as $value => $label): ?>
+                                            <option value="<?= $value ?>" <?= $currentInterval === $value ? 'selected' : '' ?>><?= $label ?>に1本</option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">1日の最大自動投稿本数</label>
+                                    <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
+                                    <select name="auto_post_max_per_day" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <?php foreach ([3,5,10,15,20,30,0] as $max): ?>
+                                            <option value="<?= $max ?>" <?= $currentMax === $max ? 'selected' : '' ?>><?= $max === 0 ? '無制限' : '1日 '.$max.'本まで' ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">自動投稿を許可する時間帯</label>
+                                    <?php $startHour=(int)SettingsManager::get('auto_post_start_hour','8'); $endHour=(int)SettingsManager::get('auto_post_end_hour','23'); ?>
+                                    <div class="flex items-center gap-2">
+                                        <select name="auto_post_start_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $startHour===$h?'selected':'' ?>><?= sprintf('%02d:00',$h) ?></option><?php endfor; ?>
                                         </select>
-                                        <p class="text-[11px] text-slate-400">前回自動投稿した時刻からこの時間が経過するまで、次の記事は投稿されません。</p>
-                                    </div>
-
-                                    <!-- 1日の最大投稿上限 -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>📊</span> 1日の最大自動投稿本数
-                                        </label>
-                                        <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
-                                        <select name="auto_post_max_per_day" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="3" <?= $currentMax === 3 ? 'selected' : '' ?>>1日 3本まで</option>
-                                            <option value="5" <?= $currentMax === 5 ? 'selected' : '' ?>>1日 5本まで</option>
-                                            <option value="10" <?= $currentMax === 10 ? 'selected' : '' ?>>1日 10本まで（おすすめ）</option>
-                                            <option value="15" <?= $currentMax === 15 ? 'selected' : '' ?>>1日 15本まで</option>
-                                            <option value="20" <?= $currentMax === 20 ? 'selected' : '' ?>>1日 20本まで</option>
-                                            <option value="30" <?= $currentMax === 30 ? 'selected' : '' ?>>1日 30本まで</option>
-                                            <option value="0" <?= $currentMax === 0 ? 'selected' : '' ?>>無制限（上限なし）</option>
+                                        <span class="text-slate-400">〜</span>
+                                        <select name="auto_post_end_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $endHour===$h?'selected':'' ?>><?= sprintf('%02d:59',$h) ?></option><?php endfor; ?>
                                         </select>
-                                        <p class="text-[11px] text-slate-400">その日の投稿数がこの上限に達した場合、日付が変わるまで自動生成を休止します。</p>
-                                    </div>
-
-                                    <!-- 投稿許可時間帯（開始〜終了） -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>🌙</span> 自動投稿を許可する時間帯（配信時間）
-                                        </label>
-                                        <div class="flex items-center gap-2">
-                                            <?php 
-                                            $startHour = (int)SettingsManager::get('auto_post_start_hour', '8');
-                                            $endHour = (int)SettingsManager::get('auto_post_end_hour', '23');
-                                            ?>
-                                            <select name="auto_post_start_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                                <?php for ($h = 0; $h <= 23; $h++): ?>
-                                                    <option value="<?= $h ?>" <?= $startHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:00', $h) ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <span class="text-xs font-bold text-slate-400">〜</span>
-                                            <select name="auto_post_end_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                                <?php for ($h = 0; $h <= 23; $h++): ?>
-                                                    <option value="<?= $h ?>" <?= $endHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:59', $h) ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                        </div>
-                                        <p class="text-[11px] text-slate-400">例: 08:00 〜 23:59 に設定すると、深夜帯（0時〜7時台）の自動投稿が安全に停止されます。</p>
-                                    </div>
-
-                                    <!-- 自動投稿時の公開ステータス -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>🛡️</span> 自動生成された記事の公開設定
-                                        </label>
-                                        <?php $defaultStatus = SettingsManager::get('auto_post_default_status', 'published'); ?>
-                                        <select name="auto_post_default_status" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="published" <?= $defaultStatus === 'published' ? 'selected' : '' ?>>即時公開（完全自動・推奨）</option>
-                                            <option value="on_hold" <?= $defaultStatus === 'on_hold' ? 'selected' : '' ?>>安全確認のため下書き・保留にする（手動確認後に公開）</option>
-                                        </select>
-                                        <p class="text-[11px] text-slate-400">「即時公開」を選んでも、事件・事故などの危険キーワードはAI安全ブレーキにより自動で保留されます。</p>
                                     </div>
                                 </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">自動生成記事の公開設定</label>
+                                    <?php $defaultStatus=SettingsManager::get('auto_post_default_status','published'); ?>
+                                    <select name="auto_post_default_status" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <option value="published" <?= $defaultStatus==='published'?'selected':'' ?>>即時公開</option>
+                                        <option value="on_hold" <?= $defaultStatus==='on_hold'?'selected':'' ?>>保留して確認</option>
+                                    </select>
+                                </div>
+                            </div>
 
-                                <!-- 3. Gemini API 接続情報 -->
-                                <div class="pt-4 border-t border-slate-100 space-y-4">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-base">🔑</span>
-                                        <h3 class="text-sm font-black text-slate-900">Gemini API 接続情報</h3>
-                                    </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">システム設定を保存</button>
+                            </div>
+                        </form>
 
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="space-y-1.5">
-                                            <div class="flex items-center justify-between">
-                                                <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
-                                                <?php $lastStatus = SettingsManager::get('gemini_last_status'); ?>
-                                                <?php if (!empty($lastStatus)): ?>
-                                                    <span class="text-[10px] font-bold <?= strpos($lastStatus, 'SUCCESS') !== false ? 'text-emerald-600' : 'text-rose-600' ?>">
-                                                        <?= htmlspecialchars($lastStatus) ?>
-                                                    </span>
-                                                <?php endif; ?>
+                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+                                <div>
+                                    <h2 class="text-base font-black text-white">⚙️ サーバーCron設定</h2>
+                                    <p class="text-xs text-slate-400 mt-1">サーバー側のCronに以下のコマンドを登録します。</p>
+                                </div>
+                                <form method="POST">
+                                    <input type="hidden" name="op" value="run_worker">
+                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs">🚀 今すぐワーカーを手動実行</button>
+                                </form>
+                            </div>
+                            <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
+                                /usr/bin/php <?= htmlspecialchars(__DIR__ . '/cron/worker.php') ?>
+                            </div>
+                            <div class="space-y-2">
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="font-bold text-slate-300">📜 直近のCron実行ログ</span>
+                                    <span class="text-[11px] text-slate-400">最終実行日時: <?= htmlspecialchars(SettingsManager::get('last_cron_executed_at', '未実行')) ?></span>
+                                </div>
+                                <?php $lastLog=SettingsManager::get('last_cron_log'); ?>
+                                <div class="bg-slate-950 p-3.5 rounded-2xl font-mono text-[11px] text-emerald-400 border border-slate-800 max-h-48 overflow-y-auto whitespace-pre-wrap"><?= !empty($lastLog) ? htmlspecialchars($lastLog) : 'まだCron実行ログがありません。' ?></div>
+                            </div>
+                        </div>
+                    </div>
+
+                <?php endif; ?>
                                             </div>
                                             <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-indigo-500">
                                             <div class="flex items-center justify-between text-[11px] text-slate-400">
