@@ -578,7 +578,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
-            SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
+            SettingsManager::set('show_ads', '1'); // 全体マスターは廃止。個別広告枠のみで制御
             // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
             SettingsManager::set('affiliate_pr_notice_enabled', isset($_POST['affiliate_pr_notice_enabled']) ? '1' : '0');
             SettingsManager::set('affiliate_pr_notice_text', trim($_POST['affiliate_pr_notice_text'] ?? '当サイトはアフィリエイト広告を利用しています。'));
@@ -977,7 +977,7 @@ $navGroups = [
         'title' => 'アクセス解析・分析',
         'icon' => '📈',
         'children' => [
-            'analytics' => ['icon' => '📊', 'label' => '高性能アクセス解析', 'badge' => 'LIVE'],
+            'analytics' => ['icon' => '📊', 'label' => 'アクセス解析', 'badge' => 'LIVE'],
         ]
     ],
     'monetization' => [
@@ -1809,45 +1809,6 @@ $navGroups = [
                                     ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
                                 </p>
                             </div>
-                        </div>
-
-                        <!-- 稼働ステータスインフォバー -->
-                        <?php 
-                        $lastCron = SettingsManager::get('last_cron_executed_at');
-                        $geminiKey = SettingsManager::get('gemini_api_key');
-                        $geminiStatus = SettingsManager::get('gemini_last_status');
-                        ?>
-                        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                            <div class="flex flex-wrap items-center gap-4">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-bold text-slate-500">Cron自動実行:</span>
-                                    <?php if (!empty($lastCron)): ?>
-                                        <span class="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                                            最終実行: <?= htmlspecialchars($lastCron) ?>
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                                            ⚠️ サーバーCron未検知（上の「🚀 今すぐ実行」ボタンで手動テスト可能）
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="font-bold text-slate-500">Gemini AI:</span>
-                                    <?php if (!empty($geminiKey)): ?>
-                                        <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                                            ✓ APIキー設定済 (<?= htmlspecialchars(SettingsManager::get('gemini_model', 'gemini-2.5-flash')) ?>)
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                                            ⚠️ APIキー未設定
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            <a href="?tab=api_settings" class="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 self-start md:self-auto hover:underline text-[11px]">
-                                <span>⚙️ スケジュール・API設定を開く →</span>
-                            </a>
                         </div>
 
                         <!-- ページの生死 & アイキャッチ設定サマリーカード -->
@@ -2798,22 +2759,7 @@ $navGroups = [
                             <input type="hidden" name="op" value="save_ads">
 
                             <!-- マスター表示切替 -->
-                            <div class="bg-amber-50 border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div class="space-y-1">
-                                    <div class="text-sm font-black text-amber-950 flex items-center gap-2">
-                                        <span>📢</span> アフィリエイト広告 全体マスター表示切替
-                                    </div>
-                                    <p class="text-xs text-amber-800">
-                                        チェックを外すと、個別設定にかかわらずサイト全体の広告枠が一括で非表示になります（審査時などに便利です）。
-                                    </p>
-                                </div>
-                                <label class="relative flex items-center gap-2.5 cursor-pointer bg-white px-5 py-3 rounded-2xl border border-amber-300 shadow-sm">
-                                    <input type="checkbox" name="show_ads" value="1" <?= SettingsManager::get('show_ads', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded text-amber-500 focus:ring-amber-400">
-                                    <span class="text-xs font-black text-slate-800">サイト全体で広告を表示する</span>
-                                </label>
-                            </div>
-
-                            <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
+                                                        <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
                                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                                     <div class="flex items-center gap-2">
@@ -3308,136 +3254,129 @@ $navGroups = [
                     </div>
 
                 <?php elseif ($currentTab === 'analytics'): ?>
+                    <?php
+                    $stats = AnalyticsTracker::getStats(30);
+                    $p1 = $stats['periods'][1] ?? ['pv'=>0,'uu'=>0];
+                    $p7 = $stats['periods'][7] ?? ['pv'=>0,'uu'=>0];
+                    $p30 = $stats['periods'][30] ?? ['pv'=>0,'uu'=>0];
+                    $chartJson = json_encode($stats['daily_chart'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    ?>
                     <div class="space-y-6">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">高性能アクセス解析</h1>
-                            <p class="text-xs text-slate-500">しらんけど サイトのPV数、流入元（X、Instagram、検索、相互RSS）、端末別比率を詳しく可視化します</p>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">アクセス解析</h1>
+                            <p class="text-xs text-slate-500 mt-1">実際に記録された表サイトのアクセスログからPV・UU・参照元・端末・人気記事を集計します。検索エンジンの順位やSearch Consoleの数値ではありません。</p>
+                            <?php if (!empty($stats['tracking_since'])): ?>
+                                <p class="text-[11px] text-amber-700 mt-2 font-bold">※ 集計方式を修正したため <?= htmlspecialchars($stats['tracking_since']) ?> 以降を新しい基準で集計しています。</p>
+                            <?php endif; ?>
                         </div>
 
-                        <?php 
-                        $stats = AnalyticsTracker::getStats(14);
-                        $totalPv = $stats['total_pv'] ?? 0;
-                        $todayPv = $stats['today_pv'] ?? 0;
-                        $yesterdayPv = $stats['yesterday_pv'] ?? 0;
-                        ?>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <?php foreach ([1=>$p1,7=>$p7,30=>$p30] as $days=>$period): ?>
+                                <div class="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm">
+                                    <div class="text-xs font-black text-slate-500 mb-3"><?= $days ?>日</div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <div class="text-[11px] font-bold text-slate-400">PV</div>
+                                            <div class="text-3xl font-black text-slate-900"><?= number_format($period['pv']) ?></div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-slate-400">UU</div>
+                                            <div class="text-3xl font-black text-amber-600"><?= number_format($period['uu']) ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
 
-                        <!-- サマリーカード -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-400">総ページビュー数 (全期間)</div>
-                                <div class="text-3xl font-black text-slate-900"><?= number_format($totalPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">📈 直近30日のPV・UU推移</h2>
+                                    <p class="text-xs text-slate-400">日別の実測値。アクセスが無い日は0として表示します。</p>
+                                </div>
+                                <div class="flex gap-3 text-xs font-bold">
+                                    <span class="text-slate-700">● PV</span>
+                                    <span class="text-amber-600">● UU</span>
+                                </div>
                             </div>
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-emerald-600">本日のアクセス数 (Today)</div>
-                                <div class="text-3xl font-black text-emerald-600"><?= number_format($todayPv) ?> <span class="text-xs font-normal text-emerald-500">PV</span></div>
-                            </div>
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-400">昨日のアクセス数 (Yesterday)</div>
-                                <div class="text-3xl font-black text-slate-700"><?= number_format($yesterdayPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                            <div class="w-full overflow-x-auto">
+                                <svg id="analytics-pvuu-chart" viewBox="0 0 1000 320" class="w-full min-w-[760px] h-auto bg-slate-50 rounded-2xl border border-slate-100"></svg>
                             </div>
                         </div>
 
-                        <!-- 流入元 & 端末比率 -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <!-- 流入元 (リファラー) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                    <span>🌐</span> 主な参照元 (Referrer)
-                                </h2>
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">🌐 外部参照元（直近30日）</h2>
+                                    <p class="text-[11px] text-slate-400 mt-1">自サイト内の移動・Botは除外。HTTP_REFERERが送られた外部アクセスだけを表示します。</p>
+                                </div>
                                 <div class="overflow-x-auto">
-                                    <table class="w-full text-left text-xs border-collapse">
-                                        <thead>
-                                            <tr class="border-b border-slate-100 text-slate-400">
-                                                <th class="py-2 font-bold">ドメイン / 参照元</th>
-                                                <th class="py-2 font-bold text-right">アクセス数</th>
-                                            </tr>
-                                        </thead>
+                                    <table class="w-full text-left text-xs">
+                                        <thead><tr class="border-b border-slate-100 text-slate-400"><th class="py-2">参照元</th><th class="py-2 text-right">PV</th></tr></thead>
                                         <tbody class="divide-y divide-slate-100">
                                             <?php if (empty($stats['referers'])): ?>
-                                                <tr><td colspan="2" class="py-4 text-center text-slate-400">まだ参照元データがありません</td></tr>
-                                            <?php else: ?>
-                                                <?php foreach ($stats['referers'] as $ref): ?>
-                                                    <tr>
-                                                        <td class="py-2.5 font-bold text-slate-800"><?= htmlspecialchars($ref['referer_host']) ?></td>
-                                                        <td class="py-2.5 font-mono font-bold text-amber-600 text-right"><?= number_format($ref['count']) ?></td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            <?php endif; ?>
+                                                <tr><td colspan="2" class="py-5 text-center text-slate-400">外部参照元はまだありません</td></tr>
+                                            <?php else: foreach ($stats['referers'] as $ref): ?>
+                                                <tr><td class="py-2.5 font-bold"><?= htmlspecialchars($ref['referer_host']) ?></td><td class="py-2.5 text-right font-mono"><?= number_format($ref['count']) ?></td></tr>
+                                            <?php endforeach; endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
 
-                            <!-- 端末比率 (デバイス) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                    <span>📱</span> 端末比率 (Device Ratio)
-                                </h2>
-                                <div class="space-y-3 pt-2">
-                                    <?php 
-                                    $devSum = array_sum($stats['devices'] ?? []) ?: 1;
-                                    $devLabels = ['mobile' => 'スマートフォン (Mobile)', 'pc' => 'パソコン (Desktop)', 'tablet' => 'タブレット (Tablet)'];
-                                    foreach (['mobile', 'pc', 'tablet'] as $d): 
-                                        $cnt = $stats['devices'][$d] ?? 0;
-                                        $pct = round(($cnt / $devSum) * 100, 1);
-                                    ?>
-                                        <div class="space-y-1">
-                                            <div class="flex justify-between text-xs font-bold text-slate-700">
-                                                <span><?= $devLabels[$d] ?></span>
-                                                <span class="font-mono"><?= $cnt ?> PV (<?= $pct ?>%)</span>
-                                            </div>
-                                            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                                                <div class="bg-amber-500 h-full rounded-full" style="width: <?= $pct ?>%"></div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
+                                <h2 class="text-base font-black text-slate-900">📱 端末比率（直近30日）</h2>
+                                <?php
+                                $devSum = max(1, array_sum($stats['devices'] ?? []));
+                                $devLabels = ['mobile'=>'スマートフォン','desktop'=>'パソコン','tablet'=>'タブレット'];
+                                foreach ($devLabels as $key=>$label):
+                                    $cnt=(int)($stats['devices'][$key] ?? 0);
+                                    $pct=round($cnt/$devSum*100,1);
+                                ?>
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-xs font-bold"><span><?= $label ?></span><span><?= number_format($cnt) ?> PV / <?= $pct ?>%</span></div>
+                                        <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-amber-500 rounded-full" style="width:<?= $pct ?>%"></div></div>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
                         </div>
 
-                        <!-- 人気記事ランキング -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                            <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                <span>🔥</span> 人気記事ランキング (直近14日間)
-                            </h2>
+                            <h2 class="text-base font-black text-slate-900">🔥 人気記事（直近30日）</h2>
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                        <tr class="border-b border-slate-100 text-slate-400">
-                                            <th class="py-2.5 font-bold">順位</th>
-                                            <th class="py-2.5 font-bold">記事タイトル</th>
-                                            <th class="py-2.5 font-bold">しらんけど指数</th>
-                                            <th class="py-2.5 font-bold text-right">閲覧数 (PV)</th>
-                                        </tr>
-                                    </thead>
+                                <table class="w-full text-left text-xs">
+                                    <thead><tr class="border-b border-slate-100 text-slate-400"><th class="py-2">順位</th><th>記事</th><th class="text-right">PV</th></tr></thead>
                                     <tbody class="divide-y divide-slate-100">
                                         <?php if (empty($stats['top_articles'])): ?>
-                                            <tr><td colspan="4" class="py-4 text-center text-slate-400">閲覧ログがまだ記録されていません</td></tr>
-                                        <?php else: ?>
-                                            <?php foreach ($stats['top_articles'] as $idx => $ta): ?>
-                                                <tr class="hover:bg-slate-50">
-                                                    <td class="py-3 font-black text-amber-600">#<?= $idx + 1 ?></td>
-                                                    <td class="py-3 font-bold text-slate-900">
-                                                        <a href="article.php?id=<?= $ta['id'] ?>" target="_blank" class="hover:text-amber-600">
-                                                            <?= htmlspecialchars($ta['title']) ?> ↗
-                                                        </a>
-                                                    </td>
-                                                    <td class="py-3">
-                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                                            <?= $ta['shirankedo_index'] ?>点
-                                                        </span>
-                                                    </td>
-                                                    <td class="py-3 font-mono font-bold text-slate-800 text-right">
-                                                        <?= number_format($ta['pv']) ?> PV
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
+                                            <tr><td colspan="3" class="py-5 text-center text-slate-400">まだ記事閲覧データがありません</td></tr>
+                                        <?php else: foreach ($stats['top_articles'] as $idx=>$ta): ?>
+                                            <tr><td class="py-2.5 font-black text-amber-600">#<?= $idx+1 ?></td><td class="font-bold"><a href="article.php?id=<?= (int)$ta['id'] ?>" target="_blank" class="hover:text-amber-600"><?= htmlspecialchars($ta['title']) ?> ↗</a></td><td class="text-right font-mono font-bold"><?= number_format($ta['pv']) ?></td></tr>
+                                        <?php endforeach; endif; ?>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
+
+                    <script>
+                    (() => {
+                        const data = <?= $chartJson ?: '[]' ?>;
+                        const svg = document.getElementById('analytics-pvuu-chart');
+                        if (!svg) return;
+                        const NS = 'http://www.w3.org/2000/svg';
+                        const W=1000,H=320,pad={l:55,r:20,t:24,b:55};
+                        const max=Math.max(1,...data.flatMap(d=>[Number(d.pv)||0,Number(d.uu)||0]));
+                        const x=i=>pad.l+(data.length<=1?0:i*(W-pad.l-pad.r)/(data.length-1));
+                        const y=v=>H-pad.b-(Number(v)||0)*(H-pad.t-pad.b)/max;
+                        const el=(name,attrs={})=>{const n=document.createElementNS(NS,name);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));svg.appendChild(n);return n;};
+                        for(let i=0;i<=4;i++){const yy=pad.t+i*(H-pad.t-pad.b)/4;el('line',{x1:pad.l,y1:yy,x2:W-pad.r,y2:yy,stroke:'#e2e8f0','stroke-width':'1'});const t=el('text',{x:8,y:yy+4,fill:'#94a3b8','font-size':'11'});t.textContent=Math.round(max*(4-i)/4);}
+                        if(!data.length){const t=el('text',{x:W/2,y:H/2,fill:'#94a3b8','font-size':'16','text-anchor':'middle'});t.textContent='まだアクセスデータがありません';return;}
+                        const points=key=>data.map((d,i)=>x(i)+','+y(d[key])).join(' ');
+                        el('polyline',{points:points('pv'),fill:'none',stroke:'#334155','stroke-width':'3','stroke-linejoin':'round','stroke-linecap':'round'});
+                        el('polyline',{points:points('uu'),fill:'none',stroke:'#d97706','stroke-width':'3','stroke-linejoin':'round','stroke-linecap':'round'});
+                        data.forEach((d,i)=>{if(i%5===0||i===data.length-1){const t=el('text',{x:x(i),y:H-25,fill:'#94a3b8','font-size':'10','text-anchor':'middle'});t.textContent=(d.date||'').slice(5).replace('-','/');}});
+                    })();
+                    </script>
 
                 <!-- 11. 🔧 その他の機能（画像・相互RSS・アクセス解析等） -->
                 <?php elseif ($currentTab === 'advanced'): ?>
@@ -3525,7 +3464,19 @@ $navGroups = [
                             <p class="text-xs text-slate-500 mt-1">記事生成に使用する外部APIの接続情報を管理します。</p>
                         </div>
 
-                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                                                <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-500">Gemini AI:</span>
+                                <?php if ($hasGeminiKey): ?>
+                                    <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200">✓ APIキー設定済 (<?= htmlspecialchars($geminiModel) ?>)</span>
+                                <?php else: ?>
+                                    <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">⚠️ APIキー未設定</span>
+                                <?php endif; ?>
+                            </div>
+                            <span class="text-[11px] text-slate-400">AI接続状態はこのページで確認・変更します。</span>
+                        </div>
+
+<form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                             <input type="hidden" name="op" value="save_api_settings">
                             <input type="hidden" name="tab" value="api_settings">
 
@@ -3593,7 +3544,19 @@ $navGroups = [
                             <p class="text-xs text-slate-500 mt-1">自動投稿の動作、実行時間、Cronなどシステム運用に関する設定をまとめています。</p>
                         </div>
 
-                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                                                <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-500">Cron自動実行:</span>
+                                <?php if (!empty($lastCronTime)): ?>
+                                    <span class="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">● 最終実行: <?= htmlspecialchars($lastCronTime) ?></span>
+                                <?php else: ?>
+                                    <span class="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">⚠️ サーバーCron未検知</span>
+                                <?php endif; ?>
+                            </div>
+                            <span class="text-[11px] text-slate-400">Cron・自動投稿の状態はこのページで管理します。</span>
+                        </div>
+
+<form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                             <input type="hidden" name="op" value="save_system_settings">
                             <input type="hidden" name="tab" value="system">
 
