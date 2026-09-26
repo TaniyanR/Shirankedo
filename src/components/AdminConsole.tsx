@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import {
   LayoutDashboard, Flame, FileText, Sliders, Cpu, Image as ImageIcon,
-  Users, Ban, Share2, ShieldAlert, RefreshCw, ArrowUpRight,
+  Users, Ban, Share2, RefreshCw, ArrowUpRight,
   Terminal, DollarSign, Link2, BarChart3, Clock, PenTool, Sparkles, Layers, User
 } from 'lucide-react';
 import { Site, Article, TrendCandidate, ImageItem, ImageGroup, SystemLog } from '../types';
