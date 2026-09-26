@@ -931,13 +931,6 @@ if ($db && $isLoggedIn) {
         // アイキャッチ画像プール
         $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
 
-        // プールが空（0枚）の場合は、自動的に全7大ジャンルの厳選64枚を初期投入する
-        if ($totalPoolCount === 0) {
-            require_once __DIR__ . '/classes/ImageManager.php';
-            ImageManager::seedDefaultPresets(1, 'all');
-            $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
-        }
-
         $imageGroups = $db->query("SELECT g.id, g.name, g.genre,
                                   (SELECT COUNT(*) FROM images i2 WHERE i2.site_id = 1 AND i2.group_id = g.id) AS image_count
                                   FROM image_groups g
@@ -1799,19 +1792,10 @@ $navGroups = [
                             <form method="POST" class="space-y-4">
                                 <input type="hidden" name="op" value="create_article">
                                 
-                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
                                         <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">保存フォルダ</label>
-                                        <select name="group_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                            <option value="0">未分類</option>
-                                            <?php foreach ($imageGroups as $grp): ?>
-                                                <option value="<?= (int)$grp['id'] ?>"><?= htmlspecialchars($grp['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
@@ -2337,10 +2321,19 @@ $navGroups = [
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト・共通タイトル）</label>
                                         <input type="text" name="alt_text" placeholder="例: お笑いステージ・バラエティ収録イメージ" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">保存フォルダ</label>
+                                        <select name="group_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                            <option value="0">未分類</option>
+                                            <?php foreach ($imageGroups as $grp): ?>
+                                                <option value="<?= (int)$grp['id'] ?>"><?= htmlspecialchars($grp['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
