@@ -1695,7 +1695,7 @@ $navGroups = [
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
                                 <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-                                    <span>📝</span> 記事一覧・ページの生死判定
+                                    <span>📝</span> 記事一覧・管理
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-1">
                                     ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
@@ -2182,7 +2182,7 @@ $navGroups = [
                         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
                             <div>
                                 <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>🖼️</span> アイキャッチ画像プール管理
+                                    <span>🖼️</span> 画像・素材管理
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-1">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
                             </div>
@@ -2379,7 +2379,7 @@ $navGroups = [
                         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
                             <div>
                                 <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>🔗</span> 相互リンク・相互RSS & アクセス返還管理
+                                    <span>🔗</span> 相互リンク・相互RSS提携
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-1">
                                     1サイトにつき<strong>複数のRSSフィード</strong>（通常フィード・カテゴリ別・速報用など）を登録可能。流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します。
@@ -2772,7 +2772,7 @@ $navGroups = [
                         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                             <div>
                                 <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>💰</span> アフィリエイト広告・個別枠設定
+                                    <span>💰</span> アフィリエイト・広告設定
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-0.5">
                                     広告枠ごとに個別に「表示 / 非表示」を設定できます。A8.net、もしもアフィリエイト、バリューコマース等の広告タグを配置できます。
@@ -3211,7 +3211,7 @@ $navGroups = [
                 <?php elseif ($currentTab === 'analytics'): ?>
                     <div class="space-y-6">
                         <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">リアルタイム・アクセス解析</h1>
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">高性能アクセス解析</h1>
                             <p class="text-xs text-slate-500">しらんけど サイトのPV数、流入元（X、Instagram、検索、相互RSS）、端末別比率を詳しく可視化します</p>
                         </div>
 
