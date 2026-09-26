@@ -116,6 +116,7 @@ export default function App() {
           sites={sites}
           onSelectSite={handleSelectSite}
           onRefreshSites={fetchSites}
+          onViewSite={() => setActiveView('feed')}
         />
       ) : (
         /* MAIN FEED VIEW */
