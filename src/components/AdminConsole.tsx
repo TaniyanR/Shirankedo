@@ -286,7 +286,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
       title: 'アクセス解析・分析',
       badge: '1項目',
       items: [
-        { tab: 'analytics' as AdminTab, label: '高性能アクセス解析', icon: BarChart3, badge: 'LIVE', badgeColor: 'amber' },
+        { tab: 'analytics' as AdminTab, label: 'アクセス解析', icon: BarChart3, badge: 'LIVE', badgeColor: 'amber' },
       ],
     },
     {

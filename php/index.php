@@ -184,7 +184,7 @@ if ($dbConnected) {
 }
 
 // 表示切り替えフラグ
-$showAds = SettingsManager::get('show_ads', '1') === '1';
+$showAds = true; // 全体マスターは廃止。各広告枠の個別設定だけで表示/非表示を制御
 $showRss = SettingsManager::get('show_rss', '1') === '1';
 
 // ステマ規制法対応 アフィリエイト広告表記 (PR表記)

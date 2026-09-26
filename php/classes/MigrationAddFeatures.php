@@ -83,6 +83,25 @@ class MigrationAddFeatures {
           KEY `idx_device` (`device_type`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;");
 
+        // 4-B. 画像管理の初期フォルダ
+        $defaultImageFolders = [
+            ['人物・タレント', 'people'],
+            ['作品・番組', 'works'],
+            ['ゲーム・アニメ', 'game'],
+            ['商品・サービス', 'product'],
+            ['場所・風景', 'place'],
+            ['季節・天気', 'season'],
+            ['汎用・背景', 'general'],
+        ];
+        foreach ($defaultImageFolders as [$folderName, $folderGenre]) {
+            $chk = $db->prepare("SELECT id FROM image_groups WHERE site_id = 1 AND name = ? LIMIT 1");
+            $chk->execute([$folderName]);
+            if (!$chk->fetchColumn()) {
+                $ins = $db->prepare("INSERT INTO image_groups (site_id, name, genre) VALUES (1, ?, ?)");
+                $ins->execute([$folderName, $folderGenre]);
+            }
+        }
+
         // 5. アフィリエイト広告枠・RSS表示切替・Gemini設定・管理者アカウントの初期化
         $defaultSettings = [
             'admin_id' => 'admin',

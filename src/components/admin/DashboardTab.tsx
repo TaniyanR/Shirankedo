@@ -360,7 +360,7 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
             },
             {
               id: 'step5',
-              title: '「高性能アクセス解析」で読者の流入と滞在時間を確認',
+              title: '「アクセス解析」で読者の流入と滞在時間を確認',
               desc: 'どこから来てどこへ行くのか、読者がどれだけ記事を読んだかをリアルタイム分析します。',
               tab: 'analytics',
               actionLabel: 'アクセス解析 →',

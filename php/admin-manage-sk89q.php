@@ -263,13 +263,15 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         // 3. アイキャッチ画像プールの追加（複数ファイル一括アップロード / 複数URL一括登録 / 個別登録）
         if ($op === 'add_pool_image') {
             $catId = (int)($_POST['category_id'] ?? 1);
+            $groupId = (int)($_POST['group_id'] ?? 0);
             $altDefault = trim($_POST['alt_text'] ?? 'トレンドアイキャッチ');
             $kw1 = trim($_POST['kw1'] ?? '');
             $kw2 = trim($_POST['kw2'] ?? '');
             $kw3 = trim($_POST['kw3'] ?? '');
             $kws = array_filter([$kw1, $kw2, $kw3]);
 
-            $uploadDir = __DIR__ . '/uploads';
+            $folderSegment = $groupId > 0 ? 'folder-' . $groupId : 'unclassified';
+            $uploadDir = __DIR__ . '/uploads/' . $folderSegment;
             if (!is_dir($uploadDir)) {
                 mkdir($uploadDir, 0777, true);
             }
@@ -288,10 +290,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                             $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                             $dest = $uploadDir . '/' . $safeName;
                             if (move_uploaded_file($tmpName, $dest)) {
-                                $fileUrl = '/uploads/' . $safeName;
+                                $fileUrl = '/uploads/' . $folderSegment . '/' . $safeName;
                                 $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
-                                $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
-                                $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                                $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, ?, 1, NOW())");
+                                $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $safeName, $fileUrl, $altText]);
                                 $newImgId = (int)$db->lastInsertId();
                                 foreach ($kws as $k) {
                                     $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -311,10 +313,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                     $safeName = 'eyecatch_' . time() . '_' . bin2hex(random_bytes(4)) . '.' . $ext;
                     $dest = $uploadDir . '/' . $safeName;
                     if (move_uploaded_file($tmpName, $dest)) {
-                        $fileUrl = '/uploads/' . $safeName;
+                        $fileUrl = '/uploads/' . $folderSegment . '/' . $safeName;
                         $altText = $altDefault ?: pathinfo($origName, PATHINFO_FILENAME);
-                        $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, 1, NOW())");
-                        $stmt->execute([$catId, $safeName, $fileUrl, $altText]);
+                        $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, ?, ?, ?, 1, NOW())");
+                        $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $safeName, $fileUrl, $altText]);
                         $newImgId = (int)$db->lastInsertId();
                         foreach ($kws as $k) {
                             $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -335,8 +337,8 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                         $chk = $db->prepare("SELECT id FROM images WHERE site_id = 1 AND url = ?");
                         $chk->execute([$singleUrl]);
                         if (!$chk->fetch()) {
-                            $stmt = $db->prepare("INSERT INTO images (site_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, 'custom_pool.webp', ?, ?, 1, NOW())");
-                            $stmt->execute([$catId, $singleUrl, $altDefault]);
+                            $stmt = $db->prepare("INSERT INTO images (site_id, group_id, category_id, filename, url, alt_text, is_active, created_at) VALUES (1, ?, ?, 'custom_pool.webp', ?, ?, 1, NOW())");
+                            $stmt->execute([$groupId > 0 ? $groupId : null, $catId, $singleUrl, $altDefault]);
                             $newImgId = (int)$db->lastInsertId();
                             foreach ($kws as $k) {
                                 $db->prepare("INSERT INTO image_keywords (image_id, keyword) VALUES (?, ?)")->execute([$newImgId, $k]);
@@ -351,6 +353,32 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 throw new Exception('画像ファイルをアップロードするか、有効な画像URLを入力してください。');
             }
             $flashMessage = "アイキャッチ画像をプールに {$addedCount} 件登録しました！";
+        }
+
+        // 3-A2. 画像フォルダ作成
+        if ($op === 'create_image_folder') {
+            $folderName = trim($_POST['folder_name'] ?? '');
+            if ($folderName === '') {
+                throw new Exception('フォルダ名を入力してください。');
+            }
+            $chk = $db->prepare("SELECT id FROM image_groups WHERE site_id = 1 AND name = ? LIMIT 1");
+            $chk->execute([$folderName]);
+            if ($chk->fetchColumn()) {
+                throw new Exception('同じ名前のフォルダが既にあります。');
+            }
+            $stmt = $db->prepare("INSERT INTO image_groups (site_id, name, genre) VALUES (1, ?, 'custom')");
+            $stmt->execute([$folderName]);
+            $flashMessage = "画像フォルダ「{$folderName}」を作成しました。";
+        }
+
+        // 3-A3. 画像フォルダ削除（画像は未分類へ移動）
+        if ($op === 'delete_image_folder') {
+            $folderId = (int)($_POST['folder_id'] ?? 0);
+            if ($folderId > 0) {
+                $db->prepare("UPDATE images SET group_id = NULL WHERE site_id = 1 AND group_id = ?")->execute([$folderId]);
+                $db->prepare("DELETE FROM image_groups WHERE site_id = 1 AND id = ?")->execute([$folderId]);
+                $flashMessage = '画像フォルダを削除しました。中の画像は「未分類」へ移動しました。';
+            }
         }
 
         // 3-B. 商用フリー初期画像セット（全7大ジャンル・計64枚）の一括プリセット追加
@@ -578,7 +606,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
-            SettingsManager::set('show_ads', isset($_POST['show_ads']) ? '1' : '0');
+            SettingsManager::set('show_ads', '1'); // 全体マスターは廃止。個別広告枠のみで制御
             // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
             SettingsManager::set('affiliate_pr_notice_enabled', isset($_POST['affiliate_pr_notice_enabled']) ? '1' : '0');
             SettingsManager::set('affiliate_pr_notice_text', trim($_POST['affiliate_pr_notice_text'] ?? '当サイトはアフィリエイト広告を利用しています。'));
@@ -609,26 +637,22 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = '相互RSS表示設定を保存しました。';
         }
 
-        // 5-3. 基本設定 (Gemini API / 投稿スケジュール / 広告) の更新
-        if ($op === 'save_gemini') {
+        // 5-3. API設定の更新
+        if ($op === 'save_api_settings') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
             SettingsManager::set('gemini_model', trim($_POST['gemini_model'] ?? 'gemini-2.5-flash'));
+            $flashMessage = 'API設定を保存しました。';
+        }
+
+        // 5-3B. システム設定（自動投稿・クーロン）の更新
+        if ($op === 'save_system_settings') {
             SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
             SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
             SettingsManager::set('auto_post_max_per_day', (int)($_POST['auto_post_max_per_day'] ?? 10));
             SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
             SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
             SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
-            if (isset($_POST['ad_article_top'])) {
-                SettingsManager::set('ad_article_top', trim($_POST['ad_article_top']));
-            }
-            if (isset($_POST['ad_article_bottom'])) {
-                SettingsManager::set('ad_article_bottom', trim($_POST['ad_article_bottom']));
-            }
-            if (isset($_POST['threads_account_url'])) {
-                SettingsManager::set('threads_account_url', trim($_POST['threads_account_url']));
-            }
-            $flashMessage = '基本設定（AI・自動投稿・広告・Threads）を保存しました。';
+            $flashMessage = 'システム設定を保存しました。';
         }
 
         // 5-4. 手動キーワードからの即時AI記事自動生成テスト
@@ -844,10 +868,13 @@ $currentTab = $_GET['tab'] ?? 'dashboard';
 if ($currentTab === 'create') {
     $currentTab = 'create_article';
 }
-if ($currentTab === 'sns') {
-    $currentTab = 'cron';
+if ($currentTab === 'sns' || $currentTab === 'cron') {
+    $currentTab = 'system';
 }
-if ($currentTab === 'gemini' || $currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 'seo_tags') {
+if ($currentTab === 'gemini') {
+    $currentTab = 'api_settings';
+}
+if ($currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 'seo_tags') {
     $currentTab = 'system';
 }
 
@@ -857,6 +884,8 @@ $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
 $poolImages = [];
+$imageGroups = [];
+$selectedImageGroup = isset($_GET['folder']) ? (int)$_GET['folder'] : -1;
 $announcements = [];
 $categories = [];
 $feedItemCount = 0;
@@ -902,16 +931,28 @@ if ($db && $isLoggedIn) {
         // アイキャッチ画像プール
         $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
 
-        // プールが空（0枚）の場合は、自動的に全7大ジャンルの厳選64枚を初期投入する
-        if ($totalPoolCount === 0) {
-            require_once __DIR__ . '/classes/ImageManager.php';
-            ImageManager::seedDefaultPresets(1, 'all');
-            $totalPoolCount = (int)($db->query("SELECT COUNT(*) FROM images WHERE site_id = 1")->fetchColumn() ?: 0);
-        }
+        $imageGroups = $db->query("SELECT g.id, g.name, g.genre,
+                                  (SELECT COUNT(*) FROM images i2 WHERE i2.site_id = 1 AND i2.group_id = g.id) AS image_count
+                                  FROM image_groups g
+                                  WHERE g.site_id = 1
+                                  ORDER BY g.id ASC")->fetchAll();
 
-        $poolImages = $db->query("SELECT i.*, 
-                                  (SELECT GROUP_CONCAT(keyword SEPARATOR ', ') FROM image_keywords WHERE image_id = i.id) as keywords
-                                  FROM images i WHERE i.site_id = 1 ORDER BY i.id DESC LIMIT 100")->fetchAll();
+        $poolSql = "SELECT i.*, g.name AS group_name,
+                           (SELECT GROUP_CONCAT(keyword SEPARATOR ', ') FROM image_keywords WHERE image_id = i.id) as keywords
+                    FROM images i
+                    LEFT JOIN image_groups g ON i.group_id = g.id
+                    WHERE i.site_id = 1";
+        $poolParams = [];
+        if ($selectedImageGroup === 0) {
+            $poolSql .= " AND i.group_id IS NULL";
+        } elseif ($selectedImageGroup > 0) {
+            $poolSql .= " AND i.group_id = ?";
+            $poolParams[] = $selectedImageGroup;
+        }
+        $poolSql .= " ORDER BY i.id DESC LIMIT 200";
+        $poolStmt = $db->prepare($poolSql);
+        $poolStmt->execute($poolParams);
+        $poolImages = $poolStmt->fetchAll();
 
         // お知らせ一覧
         $announcements = $db->query("SELECT * FROM announcements ORDER BY id DESC LIMIT 20")->fetchAll();
@@ -978,7 +1019,7 @@ $navGroups = [
         'title' => 'アクセス解析・分析',
         'icon' => '📈',
         'children' => [
-            'analytics' => ['icon' => '📊', 'label' => '高性能アクセス解析', 'badge' => 'LIVE'],
+            'analytics' => ['icon' => '📊', 'label' => 'アクセス解析', 'badge' => 'LIVE'],
         ]
     ],
     'monetization' => [
@@ -987,7 +1028,6 @@ $navGroups = [
         'children' => [
             'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
             'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
-            'cron' => ['icon' => '⏰', 'label' => '定期実行・クーロン設定', 'badge' => '自動運転'],
             'trends' => ['icon' => '🔥', 'label' => '急上昇トレンド候補一覧', 'badge' => !empty($trendCandidates) ? count($trendCandidates) . '件' : null],
         ]
     ],
@@ -996,7 +1036,8 @@ $navGroups = [
         'icon' => '🛠️',
         'children' => [
             'site_settings' => ['icon' => '⚙️', 'label' => 'サイト設定', 'badge' => null],
-            'system' => ['icon' => '💻', 'label' => 'サイト・システム保守', 'badge' => null],
+            'api_settings' => ['icon' => '🔑', 'label' => 'API設定', 'badge' => $hasGeminiKey ? '接続済' : null],
+            'system' => ['icon' => '💻', 'label' => 'システム設定', 'badge' => $autoPostEnabled ? '自動運転' : null],
         ]
     ],
 ];
@@ -1320,7 +1361,7 @@ $navGroups = [
                                             </button>
                                         </form>
                                     <?php endif; ?>
-                                    <a href="?tab=gemini" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">設定変更 →</a>
+                                    <a href="?tab=api_settings" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">設定変更 →</a>
                                 </div>
                             </div>
 
@@ -1350,7 +1391,7 @@ $navGroups = [
                                 </div>
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span class="text-slate-400 text-[10px] truncate">最終: <?= $lastCronTime ? date('H:i', strtotime($lastCronTime)) : '未記録' ?></span>
-                                    <a href="?tab=gemini" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">間隔調整 →</a>
+                                    <a href="?tab=system" class="text-slate-500 hover:text-slate-800 font-bold ml-auto">間隔調整 →</a>
                                 </div>
                             </div>
 
@@ -1447,7 +1488,7 @@ $navGroups = [
                                     <span class="text-xl">⚠️</span>
                                     <div class="text-xs text-rose-950 space-y-1">
                                         <strong class="font-black text-rose-900 block">Gemini APIキーが設定されていません</strong>
-                                        記事を自動生成するにはGemini APIキーが必要です。<a href="?tab=gemini" class="underline font-bold text-rose-800">「AI自動生成・クーロン設定」タブ</a>でキーを入力してください。
+                                        記事を自動生成するにはGemini APIキーが必要です。<a href="?tab=api_settings" class="underline font-bold text-rose-800">「API設定」</a>でキーを入力してください。
                                     </div>
                                 </div>
                             <?php else: ?>
@@ -1504,7 +1545,7 @@ $navGroups = [
                                     </div>
                                     <div class="font-black text-slate-900">Gemini APIキー設定</div>
                                     <p class="text-[11px] text-slate-500">
-                                        <?= $hasGeminiKey ? 'キー登録済み（接続OK）' : '<a href="?tab=gemini" class="underline text-amber-700 font-bold">キーを登録してください</a>' ?>
+                                        <?= $hasGeminiKey ? 'キー登録済み（接続OK）' : '<a href="?tab=api_settings" class="underline text-amber-700 font-bold">キーを登録してください</a>' ?>
                                     </p>
                                 </div>
 
@@ -1745,6 +1786,59 @@ $navGroups = [
 
                     </div>
 
+                        <!-- 手動記事作成 -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <h2 class="text-base font-black text-slate-900">記事の新規作成（手動投稿）</h2>
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="create_article">
+                                
+                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                    <div class="sm:col-span-2 space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
+                                        <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
+                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                            <?php foreach ($categories as $cat): ?>
+                                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">💡 なぜ話題？（要約ボックス）</label>
+                                    <textarea name="why_trending" rows="2" placeholder="新企画の予測不能な展開がSNSで急上昇し..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500"></textarea>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">記事本文（客観的事実に基づいたファクト）</label>
+                                    <textarea name="body" rows="6" placeholder="客観的事実に基づいた本文を入力..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500 leading-relaxed"></textarea>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">締めの言葉（しらんけど構文）</label>
+                                        <input type="text" name="conclusion_sentence" value="今後の展開に注目が集まります。しらんけど。" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm font-mincho focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">アイキャッチ画像URL (800x450px推奨)</label>
+                                        <input type="text" name="image_url" placeholder="https://images.unsplash.com/photo-..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                </div>
+
+                                <div class="pt-2 flex justify-end">
+                                    <button type="submit" class="px-6 py-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all">
+                                        記事を公開する →
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    </div>
+
+                <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
+
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
                         <!-- ヘッダーと一括AI判定ボタン -->
@@ -1757,50 +1851,6 @@ $navGroups = [
                                     ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
                                 </p>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <button onclick="document.getElementById('manual-create-card').classList.toggle('hidden')" class="px-3.5 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all flex items-center gap-1.5">
-                                    <span>＋ 手動投稿</span>
-                                </button>
-                            </div>
-                        </div>
-
-                        <!-- 稼働ステータスインフォバー -->
-                        <?php 
-                        $lastCron = SettingsManager::get('last_cron_executed_at');
-                        $geminiKey = SettingsManager::get('gemini_api_key');
-                        $geminiStatus = SettingsManager::get('gemini_last_status');
-                        ?>
-                        <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
-                            <div class="flex flex-wrap items-center gap-4">
-                                <div class="flex items-center gap-2">
-                                    <span class="font-bold text-slate-500">Cron自動実行:</span>
-                                    <?php if (!empty($lastCron)): ?>
-                                        <span class="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-                                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-ping"></span>
-                                            最終実行: <?= htmlspecialchars($lastCron) ?>
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
-                                            ⚠️ サーバーCron未検知（上の「🚀 今すぐ実行」ボタンで手動テスト可能）
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                                <div class="flex items-center gap-2">
-                                    <span class="font-bold text-slate-500">Gemini AI:</span>
-                                    <?php if (!empty($geminiKey)): ?>
-                                        <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-0.5 rounded-full border border-indigo-200">
-                                            ✓ APIキー設定済 (<?= htmlspecialchars(SettingsManager::get('gemini_model', 'gemini-2.5-flash')) ?>)
-                                        </span>
-                                    <?php else: ?>
-                                        <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-                                            ⚠️ APIキー未設定
-                                        </span>
-                                    <?php endif; ?>
-                                </div>
-                            </div>
-                            <a href="?tab=gemini" class="text-amber-700 hover:text-amber-800 font-bold flex items-center gap-1 self-start md:self-auto hover:underline text-[11px]">
-                                <span>⚙️ スケジュール・API設定を開く →</span>
-                            </a>
                         </div>
 
                         <!-- ページの生死 & アイキャッチ設定サマリーカード -->
@@ -2169,58 +2219,6 @@ $navGroups = [
                         }
                         </script>
 
-                        <!-- 手動新規記事作成カード (折りたたみ可能) -->
-                        <div id="manual-create-card" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
-                            <h2 class="text-base font-black text-slate-900">記事の新規作成（手動投稿）</h2>
-                            <form method="POST" class="space-y-4">
-                                <input type="hidden" name="op" value="create_article">
-                                
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                                    <div class="sm:col-span-2 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">記事タイトル <span class="text-rose-600">*</span></label>
-                                        <input type="text" name="title" required placeholder="例: 千鳥の新番組が異例のTVer1位を獲得した件" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
-                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                            <?php foreach ($categories as $cat): ?>
-                                                <option value="<?= $cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">💡 なぜ話題？（要約ボックス）</label>
-                                    <textarea name="why_trending" rows="2" placeholder="新企画の予測不能な展開がSNSで急上昇し..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500"></textarea>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">記事本文（客観的事実に基づいたファクト）</label>
-                                    <textarea name="body" rows="6" placeholder="客観的事実に基づいた本文を入力..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500 leading-relaxed"></textarea>
-                                </div>
-
-                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">締めの言葉（しらんけど構文）</label>
-                                        <input type="text" name="conclusion_sentence" value="今後の展開に注目が集まります。しらんけど。" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm font-mincho focus:outline-none focus:border-amber-500">
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">アイキャッチ画像URL (800x450px推奨)</label>
-                                        <input type="text" name="image_url" placeholder="https://images.unsplash.com/photo-..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
-                                    </div>
-                                </div>
-
-                                <div class="pt-2 flex justify-end">
-                                    <button type="submit" class="px-6 py-3 rounded-2xl bg-slate-950 hover:bg-slate-800 text-white font-bold text-xs shadow-md transition-all">
-                                        記事を公開する →
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
-                    </div>
-
-                <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
                 <?php elseif ($currentTab === 'images'): ?>
                     <div class="space-y-6">
                         <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
@@ -2230,32 +2228,8 @@ $navGroups = [
                                 </h1>
                                 <p class="text-xs text-slate-500 mt-1">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
                             </div>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <!-- 全ジャンル一括追加 -->
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="op" value="seed_preset_images">
-                                    <input type="hidden" name="genre" value="all">
-                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5 cursor-pointer">
-                                        <span>🎁 全7ジャンル厳選パック（計64枚）を一括追加</span>
-                                    </button>
-                                </form>
-
-                                <!-- ジャンル別追加セレクター -->
-                                <form method="POST" class="inline-flex items-center gap-1.5 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-                                    <input type="hidden" name="op" value="seed_preset_images">
-                                    <select name="genre" class="text-xs font-bold bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 focus:outline-none">
-                                        <option value="tech">💻 IT・ガジェット・AI (10枚)</option>
-                                        <option value="entame">🎤 芸能・エンタメ・音楽 (10枚)</option>
-                                        <option value="sports">⚾ スポーツ・アスリート (10枚)</option>
-                                        <option value="game">🎮 ゲーム・アニメ・マンガ (8枚)</option>
-                                        <option value="gourmet">🍜 グルメ・スイーツ・飲食 (10枚)</option>
-                                        <option value="society">📰 社会・ニュース・経済 (8枚)</option>
-                                        <option value="lifestyle">🌸 自然・天気・ペット (8枚)</option>
-                                    </select>
-                                    <button type="submit" class="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition-all cursor-pointer">
-                                        ＋追加
-                                    </button>
-                                </form>
+                            <div class="text-xs text-slate-400 font-bold">
+                                登録済み素材: <?= (int)$totalPoolCount ?> 枚
                             </div>
                         </div>
 
@@ -2265,8 +2239,7 @@ $navGroups = [
                                 <span class="text-xl">💡</span>
                                 <div class="space-y-1 text-xs text-indigo-950 leading-relaxed">
                                     <strong class="font-black text-sm text-indigo-900 block">アイキャッチ画像の取得元と仕組みについて</strong>
-                                    記事作成時にキーワードと画像プール内のキーワード（例:「iPhone」「大谷」「ゲーム」「ラーメン」など）が自動照合され、最も適した画像が選ばれます。<br>
-                                    上の<strong>「🎁 全7ジャンル厳選パックを一括追加」</strong>を押すと、商用フリー（Unsplash厳選高画質）の画像64枚が一気に登録され、あらゆるトレンド記事にぴったりの画像が自動設定されるようになります！
+                                    記事作成時にキーワードと画像プール内のキーワード（例:「iPhone」「大谷」「ゲーム」「ラーメン」など）が自動照合され、登録済み素材から最も適した画像が選ばれます。
                                 </div>
                             </div>
 
@@ -2293,6 +2266,37 @@ $navGroups = [
                             </form>
                         </div>
 
+                        <!-- 画像フォルダ管理 -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">📁 画像フォルダ</h2>
+                                    <p class="text-xs text-slate-400 mt-0.5">用途ごとに分けておくと、画像が増えても探しやすくなります。迷う画像は未分類で構いません。</p>
+                                </div>
+                                <form method="POST" class="flex items-center gap-2">
+                                    <input type="hidden" name="op" value="create_image_folder">
+                                    <input type="text" name="folder_name" required placeholder="新しいフォルダ名" class="px-3 py-2 rounded-xl border border-slate-200 text-xs focus:outline-none focus:border-amber-500">
+                                    <button type="submit" class="px-4 py-2 rounded-xl bg-slate-900 text-white text-xs font-bold hover:bg-slate-800">＋ フォルダ作成</button>
+                                </form>
+                            </div>
+                            <div class="flex flex-wrap gap-2">
+                                <a href="?tab=images" class="px-3 py-2 rounded-xl text-xs font-bold <?= $selectedImageGroup === -1 ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-700' ?>">すべて (<?= (int)$totalPoolCount ?>)</a>
+                                <a href="?tab=images&folder=0" class="px-3 py-2 rounded-xl text-xs font-bold <?= $selectedImageGroup === 0 ? 'bg-amber-500 text-slate-950' : 'bg-slate-100 text-slate-700' ?>">未分類</a>
+                                <?php foreach ($imageGroups as $grp): ?>
+                                    <div class="inline-flex items-center rounded-xl overflow-hidden border border-slate-200">
+                                        <a href="?tab=images&folder=<?= (int)$grp['id'] ?>" class="px-3 py-2 text-xs font-bold <?= $selectedImageGroup === (int)$grp['id'] ? 'bg-amber-500 text-slate-950' : 'bg-slate-50 text-slate-700' ?>">
+                                            📁 <?= htmlspecialchars($grp['name']) ?> (<?= (int)$grp['image_count'] ?>)
+                                        </a>
+                                        <form method="POST" onsubmit="return confirm('このフォルダを削除しますか？ 中の画像は未分類へ移動します。');">
+                                            <input type="hidden" name="op" value="delete_image_folder">
+                                            <input type="hidden" name="folder_id" value="<?= (int)$grp['id'] ?>">
+                                            <button type="submit" class="px-2 py-2 text-[10px] text-slate-400 hover:text-rose-600 bg-white">✕</button>
+                                        </form>
+                                    </div>
+                                <?php endforeach; ?>
+                            </div>
+                        </div>
+
                         <!-- 画像追加フォーム (複数ファイル・複数URL対応) -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
                             <div class="flex items-center justify-between">
@@ -2317,10 +2321,19 @@ $navGroups = [
                                     </div>
                                 </div>
 
-                                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                                <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                                     <div class="sm:col-span-2 space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">画像説明（altテキスト・共通タイトル）</label>
                                         <input type="text" name="alt_text" placeholder="例: お笑いステージ・バラエティ収録イメージ" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">保存フォルダ</label>
+                                        <select name="group_id" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500">
+                                            <option value="0">未分類</option>
+                                            <?php foreach ($imageGroups as $grp): ?>
+                                                <option value="<?= (int)$grp['id'] ?>"><?= htmlspecialchars($grp['name']) ?></option>
+                                            <?php endforeach; ?>
+                                        </select>
                                     </div>
                                     <div class="space-y-1.5">
                                         <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
@@ -2361,27 +2374,14 @@ $navGroups = [
                                     </h2>
                                     <p class="text-xs text-slate-400 mt-0.5">登録された画像は使用回数の少ないものから均等に優先して自動選定されます</p>
                                 </div>
-                                <?php if (count($poolImages) === 0): ?>
-                                    <span class="text-xs text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">
-                                        ⚠️ 現在0件（右上のボタンから64枚一括追加可能）
-                                    </span>
-                                <?php endif; ?>
+                                
                             </div>
 
                             <?php if (count($poolImages) === 0): ?>
                                 <div class="p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl space-y-3 bg-slate-50/50">
                                     <div class="text-4xl">🖼️</div>
                                     <div class="font-black text-slate-700 text-sm">現在登録されているアイキャッチ画像はありません</div>
-                                    <p class="text-xs text-slate-500 max-w-md mx-auto">
-                                        ご自身の画像を追加するか、下のボタンから商用フリーの初期画像セット（全7ジャンル・計64枚）をワンクリックで一括追加できます。
-                                    </p>
-                                    <form method="POST" class="pt-2">
-                                        <input type="hidden" name="op" value="seed_preset_images">
-                                        <input type="hidden" name="genre" value="all">
-                                        <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all inline-flex items-center gap-2 cursor-pointer">
-                                            <span>🎁 商用フリー厳選画像パック（全7ジャンル・計64枚）を一括追加</span>
-                                        </button>
-                                    </form>
+                                    <p class="text-xs text-slate-500 max-w-md mx-auto">上の登録フォームから画像を追加してください。フォルダを選んで登録すると、増えても整理しやすくなります。</p>
                                 </div>
                             <?php else: ?>
                                 <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
@@ -2400,6 +2400,9 @@ $navGroups = [
                                             <div class="space-y-1">
                                                 <div class="text-[11px] font-bold text-slate-800 truncate" title="<?= htmlspecialchars($pi['alt_text']) ?>">
                                                     <?= htmlspecialchars($pi['alt_text']) ?>
+                                                </div>
+                                                <div class="text-[10px] text-slate-500 bg-white px-2 py-0.5 rounded border border-slate-200 truncate" title="<?= htmlspecialchars($pi['group_name'] ?: '未分類') ?>">
+                                                    📁 <?= htmlspecialchars($pi['group_name'] ?: '未分類') ?>
                                                 </div>
                                                 <div class="text-[10px] text-amber-700 bg-amber-50 px-2 py-0.5 rounded border border-amber-100 truncate" title="<?= htmlspecialchars($pi['keywords'] ?: '未設定') ?>">
                                                     🏷️ <?= htmlspecialchars($pi['keywords'] ?: '未設定') ?>
@@ -2828,22 +2831,7 @@ $navGroups = [
                             <input type="hidden" name="op" value="save_ads">
 
                             <!-- マスター表示切替 -->
-                            <div class="bg-amber-50 border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                                <div class="space-y-1">
-                                    <div class="text-sm font-black text-amber-950 flex items-center gap-2">
-                                        <span>📢</span> アフィリエイト広告 全体マスター表示切替
-                                    </div>
-                                    <p class="text-xs text-amber-800">
-                                        チェックを外すと、個別設定にかかわらずサイト全体の広告枠が一括で非表示になります（審査時などに便利です）。
-                                    </p>
-                                </div>
-                                <label class="relative flex items-center gap-2.5 cursor-pointer bg-white px-5 py-3 rounded-2xl border border-amber-300 shadow-sm">
-                                    <input type="checkbox" name="show_ads" value="1" <?= SettingsManager::get('show_ads', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded text-amber-500 focus:ring-amber-400">
-                                    <span class="text-xs font-black text-slate-800">サイト全体で広告を表示する</span>
-                                </label>
-                            </div>
-
-                            <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
+                                                        <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
                                 <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
                                     <div class="flex items-center gap-2">
@@ -3338,136 +3326,129 @@ $navGroups = [
                     </div>
 
                 <?php elseif ($currentTab === 'analytics'): ?>
+                    <?php
+                    $stats = AnalyticsTracker::getStats(30);
+                    $p1 = $stats['periods'][1] ?? ['pv'=>0,'uu'=>0];
+                    $p7 = $stats['periods'][7] ?? ['pv'=>0,'uu'=>0];
+                    $p30 = $stats['periods'][30] ?? ['pv'=>0,'uu'=>0];
+                    $chartJson = json_encode($stats['daily_chart'] ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+                    ?>
                     <div class="space-y-6">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">高性能アクセス解析</h1>
-                            <p class="text-xs text-slate-500">しらんけど サイトのPV数、流入元（X、Instagram、検索、相互RSS）、端末別比率を詳しく可視化します</p>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">アクセス解析</h1>
+                            <p class="text-xs text-slate-500 mt-1">実際に記録された表サイトのアクセスログからPV・UU・参照元・端末・人気記事を集計します。検索エンジンの順位やSearch Consoleの数値ではありません。</p>
+                            <?php if (!empty($stats['tracking_since'])): ?>
+                                <p class="text-[11px] text-amber-700 mt-2 font-bold">※ 集計方式を修正したため <?= htmlspecialchars($stats['tracking_since']) ?> 以降を新しい基準で集計しています。</p>
+                            <?php endif; ?>
                         </div>
 
-                        <?php 
-                        $stats = AnalyticsTracker::getStats(14);
-                        $totalPv = $stats['total_pv'] ?? 0;
-                        $todayPv = $stats['today_pv'] ?? 0;
-                        $yesterdayPv = $stats['yesterday_pv'] ?? 0;
-                        ?>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <?php foreach ([1=>$p1,7=>$p7,30=>$p30] as $days=>$period): ?>
+                                <div class="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm">
+                                    <div class="text-xs font-black text-slate-500 mb-3"><?= $days ?>日</div>
+                                    <div class="grid grid-cols-2 gap-3">
+                                        <div>
+                                            <div class="text-[11px] font-bold text-slate-400">PV</div>
+                                            <div class="text-3xl font-black text-slate-900"><?= number_format($period['pv']) ?></div>
+                                        </div>
+                                        <div>
+                                            <div class="text-[11px] font-bold text-slate-400">UU</div>
+                                            <div class="text-3xl font-black text-amber-600"><?= number_format($period['uu']) ?></div>
+                                        </div>
+                                    </div>
+                                </div>
+                            <?php endforeach; ?>
+                        </div>
 
-                        <!-- サマリーカード -->
-                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-400">総ページビュー数 (全期間)</div>
-                                <div class="text-3xl font-black text-slate-900"><?= number_format($totalPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm space-y-4">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">📈 直近30日のPV・UU推移</h2>
+                                    <p class="text-xs text-slate-400">日別の実測値。アクセスが無い日は0として表示します。</p>
+                                </div>
+                                <div class="flex gap-3 text-xs font-bold">
+                                    <span class="text-slate-700">● PV</span>
+                                    <span class="text-amber-600">● UU</span>
+                                </div>
                             </div>
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-emerald-600">本日のアクセス数 (Today)</div>
-                                <div class="text-3xl font-black text-emerald-600"><?= number_format($todayPv) ?> <span class="text-xs font-normal text-emerald-500">PV</span></div>
-                            </div>
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-400">昨日のアクセス数 (Yesterday)</div>
-                                <div class="text-3xl font-black text-slate-700"><?= number_format($yesterdayPv) ?> <span class="text-xs font-normal text-slate-500">PV</span></div>
+                            <div class="w-full overflow-x-auto">
+                                <svg id="analytics-pvuu-chart" viewBox="0 0 1000 320" class="w-full min-w-[760px] h-auto bg-slate-50 rounded-2xl border border-slate-100"></svg>
                             </div>
                         </div>
 
-                        <!-- 流入元 & 端末比率 -->
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            <!-- 流入元 (リファラー) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                    <span>🌐</span> 主な参照元 (Referrer)
-                                </h2>
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">🌐 外部参照元（直近30日）</h2>
+                                    <p class="text-[11px] text-slate-400 mt-1">自サイト内の移動・Botは除外。HTTP_REFERERが送られた外部アクセスだけを表示します。</p>
+                                </div>
                                 <div class="overflow-x-auto">
-                                    <table class="w-full text-left text-xs border-collapse">
-                                        <thead>
-                                            <tr class="border-b border-slate-100 text-slate-400">
-                                                <th class="py-2 font-bold">ドメイン / 参照元</th>
-                                                <th class="py-2 font-bold text-right">アクセス数</th>
-                                            </tr>
-                                        </thead>
+                                    <table class="w-full text-left text-xs">
+                                        <thead><tr class="border-b border-slate-100 text-slate-400"><th class="py-2">参照元</th><th class="py-2 text-right">PV</th></tr></thead>
                                         <tbody class="divide-y divide-slate-100">
                                             <?php if (empty($stats['referers'])): ?>
-                                                <tr><td colspan="2" class="py-4 text-center text-slate-400">まだ参照元データがありません</td></tr>
-                                            <?php else: ?>
-                                                <?php foreach ($stats['referers'] as $ref): ?>
-                                                    <tr>
-                                                        <td class="py-2.5 font-bold text-slate-800"><?= htmlspecialchars($ref['referer_host']) ?></td>
-                                                        <td class="py-2.5 font-mono font-bold text-amber-600 text-right"><?= number_format($ref['count']) ?></td>
-                                                    </tr>
-                                                <?php endforeach; ?>
-                                            <?php endif; ?>
+                                                <tr><td colspan="2" class="py-5 text-center text-slate-400">外部参照元はまだありません</td></tr>
+                                            <?php else: foreach ($stats['referers'] as $ref): ?>
+                                                <tr><td class="py-2.5 font-bold"><?= htmlspecialchars($ref['referer_host']) ?></td><td class="py-2.5 text-right font-mono"><?= number_format($ref['count']) ?></td></tr>
+                                            <?php endforeach; endif; ?>
                                         </tbody>
                                     </table>
                                 </div>
                             </div>
 
-                            <!-- 端末比率 (デバイス) -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                                <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                    <span>📱</span> 端末比率 (Device Ratio)
-                                </h2>
-                                <div class="space-y-3 pt-2">
-                                    <?php 
-                                    $devSum = array_sum($stats['devices'] ?? []) ?: 1;
-                                    $devLabels = ['mobile' => 'スマートフォン (Mobile)', 'pc' => 'パソコン (Desktop)', 'tablet' => 'タブレット (Tablet)'];
-                                    foreach (['mobile', 'pc', 'tablet'] as $d): 
-                                        $cnt = $stats['devices'][$d] ?? 0;
-                                        $pct = round(($cnt / $devSum) * 100, 1);
-                                    ?>
-                                        <div class="space-y-1">
-                                            <div class="flex justify-between text-xs font-bold text-slate-700">
-                                                <span><?= $devLabels[$d] ?></span>
-                                                <span class="font-mono"><?= $cnt ?> PV (<?= $pct ?>%)</span>
-                                            </div>
-                                            <div class="w-full bg-slate-100 h-2.5 rounded-full overflow-hidden">
-                                                <div class="bg-amber-500 h-full rounded-full" style="width: <?= $pct ?>%"></div>
-                                            </div>
-                                        </div>
-                                    <?php endforeach; ?>
-                                </div>
+                                <h2 class="text-base font-black text-slate-900">📱 端末比率（直近30日）</h2>
+                                <?php
+                                $devSum = max(1, array_sum($stats['devices'] ?? []));
+                                $devLabels = ['mobile'=>'スマートフォン','desktop'=>'パソコン','tablet'=>'タブレット'];
+                                foreach ($devLabels as $key=>$label):
+                                    $cnt=(int)($stats['devices'][$key] ?? 0);
+                                    $pct=round($cnt/$devSum*100,1);
+                                ?>
+                                    <div class="space-y-1.5">
+                                        <div class="flex justify-between text-xs font-bold"><span><?= $label ?></span><span><?= number_format($cnt) ?> PV / <?= $pct ?>%</span></div>
+                                        <div class="h-2.5 bg-slate-100 rounded-full overflow-hidden"><div class="h-full bg-amber-500 rounded-full" style="width:<?= $pct ?>%"></div></div>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
                         </div>
 
-                        <!-- 人気記事ランキング -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
-                            <h2 class="text-base font-black text-slate-900 flex items-center gap-2">
-                                <span>🔥</span> 人気記事ランキング (直近14日間)
-                            </h2>
+                            <h2 class="text-base font-black text-slate-900">🔥 人気記事（直近30日）</h2>
                             <div class="overflow-x-auto">
-                                <table class="w-full text-left text-xs border-collapse">
-                                    <thead>
-                                        <tr class="border-b border-slate-100 text-slate-400">
-                                            <th class="py-2.5 font-bold">順位</th>
-                                            <th class="py-2.5 font-bold">記事タイトル</th>
-                                            <th class="py-2.5 font-bold">しらんけど指数</th>
-                                            <th class="py-2.5 font-bold text-right">閲覧数 (PV)</th>
-                                        </tr>
-                                    </thead>
+                                <table class="w-full text-left text-xs">
+                                    <thead><tr class="border-b border-slate-100 text-slate-400"><th class="py-2">順位</th><th>記事</th><th class="text-right">PV</th></tr></thead>
                                     <tbody class="divide-y divide-slate-100">
                                         <?php if (empty($stats['top_articles'])): ?>
-                                            <tr><td colspan="4" class="py-4 text-center text-slate-400">閲覧ログがまだ記録されていません</td></tr>
-                                        <?php else: ?>
-                                            <?php foreach ($stats['top_articles'] as $idx => $ta): ?>
-                                                <tr class="hover:bg-slate-50">
-                                                    <td class="py-3 font-black text-amber-600">#<?= $idx + 1 ?></td>
-                                                    <td class="py-3 font-bold text-slate-900">
-                                                        <a href="article.php?id=<?= $ta['id'] ?>" target="_blank" class="hover:text-amber-600">
-                                                            <?= htmlspecialchars($ta['title']) ?> ↗
-                                                        </a>
-                                                    </td>
-                                                    <td class="py-3">
-                                                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-800 border border-amber-200">
-                                                            <?= $ta['shirankedo_index'] ?>点
-                                                        </span>
-                                                    </td>
-                                                    <td class="py-3 font-mono font-bold text-slate-800 text-right">
-                                                        <?= number_format($ta['pv']) ?> PV
-                                                    </td>
-                                                </tr>
-                                            <?php endforeach; ?>
-                                        <?php endif; ?>
+                                            <tr><td colspan="3" class="py-5 text-center text-slate-400">まだ記事閲覧データがありません</td></tr>
+                                        <?php else: foreach ($stats['top_articles'] as $idx=>$ta): ?>
+                                            <tr><td class="py-2.5 font-black text-amber-600">#<?= $idx+1 ?></td><td class="font-bold"><a href="article.php?id=<?= (int)$ta['id'] ?>" target="_blank" class="hover:text-amber-600"><?= htmlspecialchars($ta['title']) ?> ↗</a></td><td class="text-right font-mono font-bold"><?= number_format($ta['pv']) ?></td></tr>
+                                        <?php endforeach; endif; ?>
                                     </tbody>
                                 </table>
                             </div>
                         </div>
                     </div>
+
+                    <script>
+                    (() => {
+                        const data = <?= $chartJson ?: '[]' ?>;
+                        const svg = document.getElementById('analytics-pvuu-chart');
+                        if (!svg) return;
+                        const NS = 'http://www.w3.org/2000/svg';
+                        const W=1000,H=320,pad={l:55,r:20,t:24,b:55};
+                        const max=Math.max(1,...data.flatMap(d=>[Number(d.pv)||0,Number(d.uu)||0]));
+                        const x=i=>pad.l+(data.length<=1?0:i*(W-pad.l-pad.r)/(data.length-1));
+                        const y=v=>H-pad.b-(Number(v)||0)*(H-pad.t-pad.b)/max;
+                        const el=(name,attrs={})=>{const n=document.createElementNS(NS,name);Object.entries(attrs).forEach(([k,v])=>n.setAttribute(k,v));svg.appendChild(n);return n;};
+                        for(let i=0;i<=4;i++){const yy=pad.t+i*(H-pad.t-pad.b)/4;el('line',{x1:pad.l,y1:yy,x2:W-pad.r,y2:yy,stroke:'#e2e8f0','stroke-width':'1'});const t=el('text',{x:8,y:yy+4,fill:'#94a3b8','font-size':'11'});t.textContent=Math.round(max*(4-i)/4);}
+                        if(!data.length){const t=el('text',{x:W/2,y:H/2,fill:'#94a3b8','font-size':'16','text-anchor':'middle'});t.textContent='まだアクセスデータがありません';return;}
+                        const points=key=>data.map((d,i)=>x(i)+','+y(d[key])).join(' ');
+                        el('polyline',{points:points('pv'),fill:'none',stroke:'#334155','stroke-width':'3','stroke-linejoin':'round','stroke-linecap':'round'});
+                        el('polyline',{points:points('uu'),fill:'none',stroke:'#d97706','stroke-width':'3','stroke-linejoin':'round','stroke-linecap':'round'});
+                        data.forEach((d,i)=>{if(i%5===0||i===data.length-1){const t=el('text',{x:x(i),y:H-25,fill:'#94a3b8','font-size':'10','text-anchor':'middle'});t.textContent=(d.date||'').slice(5).replace('-','/');}});
+                    })();
+                    </script>
 
                 <!-- 11. 🔧 その他の機能（画像・相互RSS・アクセス解析等） -->
                 <?php elseif ($currentTab === 'advanced'): ?>
@@ -3546,338 +3527,197 @@ $navGroups = [
                     </div>
 
                 <!-- 10. ✨ 基本設定（Gemini AI & 投稿スケジュール管理） タブ -->
-                <?php elseif ($currentTab === 'gemini'): ?>
-                    <div class="space-y-8">
-                        <div>
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">⚙️ 基本設定（AI・自動更新頻度・広告）</h1>
-                            <p class="text-xs text-slate-500">ブログを自動運転するための必須設定です。Gemini APIキーの登録、自動投稿の間隔、広告タグの設置をここで行えます</p>
+                <?php elseif ($currentTab === 'api_settings'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>🔑</span><span>API設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">記事生成に使用する外部APIの接続情報を管理します。</p>
                         </div>
 
-                        <!-- 1. 話題のキーワードから即座にAI記事生成（手動テスト） -->
-                        <div class="bg-gradient-to-br from-indigo-50/80 via-white to-amber-50/50 rounded-3xl border-2 border-indigo-200/80 p-6 sm:p-8 shadow-sm space-y-5">
-                            <div class="flex items-center justify-between">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="text-2xl">✨</span>
-                                    <div>
-                                        <h2 class="text-base font-black text-slate-900">キーワードから今すぐAI記事を生成する（手動テスト）</h2>
-                                        <p class="text-xs text-slate-500">話題のキーワードを入力すると、Gemini AIがタイトル・要約・本文・しらんけど節を数秒で執筆し登録します</p>
-                                    </div>
-                                </div>
-                                <span class="px-3 py-1 rounded-full bg-indigo-100 text-indigo-800 text-[11px] font-bold">即時生成</span>
+                                                <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-500">Gemini AI:</span>
+                                <?php if ($hasGeminiKey): ?>
+                                    <span class="text-indigo-700 font-bold bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-200">✓ APIキー設定済 (<?= htmlspecialchars($geminiModel) ?>)</span>
+                                <?php else: ?>
+                                    <span class="text-rose-700 font-bold bg-rose-50 px-2.5 py-1 rounded-full border border-rose-200">⚠️ APIキー未設定</span>
+                                <?php endif; ?>
                             </div>
-
-                            <form method="POST" class="space-y-4">
-                                <input type="hidden" name="op" value="generate_ai_article">
-
-                                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                                    <div class="md:col-span-6 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">話題キーワード <span class="text-rose-500">*</span></label>
-                                        <input type="text" name="keyword" placeholder="例: 大谷翔平、iPhone 16、新作ゲーム発表、推しの子" required class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 font-medium">
-                                    </div>
-
-                                    <div class="md:col-span-3 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">カテゴリ</label>
-                                        <select name="category_id" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
-                                            <?php foreach ($categories as $cat): ?>
-                                                <option value="<?= (int)$cat['id'] ?>"><?= htmlspecialchars($cat['name']) ?></option>
-                                            <?php endforeach; ?>
-                                        </select>
-                                    </div>
-
-                                    <div class="md:col-span-3 space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">生成後の状態</label>
-                                        <select name="status" class="w-full px-4 py-2.5 rounded-2xl border border-indigo-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="published">即時公開する</option>
-                                            <option value="on_hold">安全確認のため下書き（保留）</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                <div class="flex items-center justify-between pt-2">
-                                    <div class="text-[11px] text-slate-500">
-                                        ※ APIキーが設定されている必要があります。画像プールに登録された適切なアイキャッチ画像が自動で割り当てられます。
-                                    </div>
-                                    <button type="submit" class="px-7 py-3 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md shadow-indigo-200 transition-all flex items-center gap-2">
-                                        <span>✨</span> AIで記事を生成する
-                                    </button>
-                                </div>
-                            </form>
+                            <span class="text-[11px] text-slate-400">AI接続状態はこのページで確認・変更します。</span>
                         </div>
 
-                        <!-- 2. 投稿の間隔・時間帯・本数コントロール設定 -->
-                        <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+<form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <input type="hidden" name="op" value="save_api_settings">
+                            <input type="hidden" name="tab" value="api_settings">
+
                             <div class="flex items-center justify-between border-b border-slate-100 pb-4">
-                                <div class="flex items-center gap-2.5">
-                                    <span class="text-xl">⏰</span>
+                                <div class="flex items-center gap-2">
+                                    <span class="text-lg">🤖</span>
                                     <div>
-                                        <h2 class="text-base font-black text-slate-900">自動投稿スケジュール・時間帯コントロール</h2>
-                                        <p class="text-xs text-slate-500">全自動運転時の投稿間隔、稼働する時間帯（深夜帯の除外）、1日の最大投稿本数を細かく調整できます</p>
+                                        <h2 class="text-base font-black text-slate-900">Gemini API</h2>
+                                        <p class="text-xs text-slate-500">APIキーと使用モデルを設定します。</p>
                                     </div>
                                 </div>
-                                <span class="px-3 py-1 rounded-full <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
-                                    <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
+                                <span class="px-2.5 py-1 rounded-full text-[10px] font-bold <?= $hasGeminiKey ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-700' ?>">
+                                    <?= $hasGeminiKey ? '接続情報あり' : '未設定' ?>
                                 </span>
                             </div>
 
-                            <form method="POST" class="space-y-6">
-                                <input type="hidden" name="op" value="save_gemini">
-
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                    <!-- 自動投稿スイッチ -->
-                                    <div class="p-4 rounded-2xl bg-slate-50 border border-slate-200/80 space-y-2 md:col-span-2">
-                                        <label class="flex items-center gap-3 cursor-pointer">
-                                            <input type="checkbox" name="auto_post_enabled" value="1" <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500">
-                                            <div>
-                                                <div class="text-sm font-black text-slate-900">全自動記事投稿を有効にする</div>
-                                                <p class="text-xs text-slate-500">チェックを外すと、定期実行時も記事の自動生成・投稿はストップし、トレンドデータの収集のみ行われます。</p>
-                                            </div>
-                                        </label>
-                                    </div>
-
-                                    <!-- 投稿間隔 -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>⏱️</span> 投稿間隔（インターバル）
-                                        </label>
-                                        <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
-                                        <select name="auto_post_interval_hours" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="0.5" <?= $currentInterval === '0.5' ? 'selected' : '' ?>>30分に1本（高頻度速報）</option>
-                                            <option value="1" <?= $currentInterval === '1' ? 'selected' : '' ?>>1時間に1本（おすすめ・標準）</option>
-                                            <option value="2" <?= $currentInterval === '2' ? 'selected' : '' ?>>2時間に1本</option>
-                                            <option value="3" <?= $currentInterval === '3' ? 'selected' : '' ?>>3時間に1本</option>
-                                            <option value="4" <?= $currentInterval === '4' ? 'selected' : '' ?>>4時間に1本</option>
-                                            <option value="6" <?= $currentInterval === '6' ? 'selected' : '' ?>>6時間に1本（1日約4本）</option>
-                                            <option value="12" <?= $currentInterval === '12' ? 'selected' : '' ?>>12時間に1本（朝夕2本）</option>
-                                            <option value="24" <?= $currentInterval === '24' ? 'selected' : '' ?>>24時間に1本（1日1本厳選）</option>
-                                        </select>
-                                        <p class="text-[11px] text-slate-400">前回自動投稿した時刻からこの時間が経過するまで、次の記事は投稿されません。</p>
-                                    </div>
-
-                                    <!-- 1日の最大投稿上限 -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>📊</span> 1日の最大自動投稿本数
-                                        </label>
-                                        <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
-                                        <select name="auto_post_max_per_day" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="3" <?= $currentMax === 3 ? 'selected' : '' ?>>1日 3本まで</option>
-                                            <option value="5" <?= $currentMax === 5 ? 'selected' : '' ?>>1日 5本まで</option>
-                                            <option value="10" <?= $currentMax === 10 ? 'selected' : '' ?>>1日 10本まで（おすすめ）</option>
-                                            <option value="15" <?= $currentMax === 15 ? 'selected' : '' ?>>1日 15本まで</option>
-                                            <option value="20" <?= $currentMax === 20 ? 'selected' : '' ?>>1日 20本まで</option>
-                                            <option value="30" <?= $currentMax === 30 ? 'selected' : '' ?>>1日 30本まで</option>
-                                            <option value="0" <?= $currentMax === 0 ? 'selected' : '' ?>>無制限（上限なし）</option>
-                                        </select>
-                                        <p class="text-[11px] text-slate-400">その日の投稿数がこの上限に達した場合、日付が変わるまで自動生成を休止します。</p>
-                                    </div>
-
-                                    <!-- 投稿許可時間帯（開始〜終了） -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>🌙</span> 自動投稿を許可する時間帯（配信時間）
-                                        </label>
-                                        <div class="flex items-center gap-2">
-                                            <?php 
-                                            $startHour = (int)SettingsManager::get('auto_post_start_hour', '8');
-                                            $endHour = (int)SettingsManager::get('auto_post_end_hour', '23');
-                                            ?>
-                                            <select name="auto_post_start_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                                <?php for ($h = 0; $h <= 23; $h++): ?>
-                                                    <option value="<?= $h ?>" <?= $startHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:00', $h) ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                            <span class="text-xs font-bold text-slate-400">〜</span>
-                                            <select name="auto_post_end_hour" class="flex-1 px-3 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                                <?php for ($h = 0; $h <= 23; $h++): ?>
-                                                    <option value="<?= $h ?>" <?= $endHour === $h ? 'selected' : '' ?>><?= sprintf('%02d:59', $h) ?></option>
-                                                <?php endfor; ?>
-                                            </select>
-                                        </div>
-                                        <p class="text-[11px] text-slate-400">例: 08:00 〜 23:59 に設定すると、深夜帯（0時〜7時台）の自動投稿が安全に停止されます。</p>
-                                    </div>
-
-                                    <!-- 自動投稿時の公開ステータス -->
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                                            <span>🛡️</span> 自動生成された記事の公開設定
-                                        </label>
-                                        <?php $defaultStatus = SettingsManager::get('auto_post_default_status', 'published'); ?>
-                                        <select name="auto_post_default_status" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500">
-                                            <option value="published" <?= $defaultStatus === 'published' ? 'selected' : '' ?>>即時公開（完全自動・推奨）</option>
-                                            <option value="on_hold" <?= $defaultStatus === 'on_hold' ? 'selected' : '' ?>>安全確認のため下書き・保留にする（手動確認後に公開）</option>
-                                        </select>
-                                        <p class="text-[11px] text-slate-400">「即時公開」を選んでも、事件・事故などの危険キーワードはAI安全ブレーキにより自動で保留されます。</p>
-                                    </div>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
+                                    <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500 font-mono text-sm">
+                                    <button type="button" onclick="testGeminiConnection()" class="text-xs text-indigo-600 hover:text-indigo-800 font-bold hover:underline">🔍 接続テストを実行</button>
                                 </div>
-
-                                <!-- 3. Gemini API 接続情報 -->
-                                <div class="pt-4 border-t border-slate-100 space-y-4">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-base">🔑</span>
-                                        <h3 class="text-sm font-black text-slate-900">Gemini API 接続情報</h3>
-                                    </div>
-
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="space-y-1.5">
-                                            <div class="flex items-center justify-between">
-                                                <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
-                                                <?php $lastStatus = SettingsManager::get('gemini_last_status'); ?>
-                                                <?php if (!empty($lastStatus)): ?>
-                                                    <span class="text-[10px] font-bold <?= strpos($lastStatus, 'SUCCESS') !== false ? 'text-emerald-600' : 'text-rose-600' ?>">
-                                                        <?= htmlspecialchars($lastStatus) ?>
-                                                    </span>
-                                                <?php endif; ?>
-                                            </div>
-                                            <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-sm focus:outline-none focus:border-indigo-500">
-                                            <div class="flex items-center justify-between text-[11px] text-slate-400">
-                                                <span>※ Google AI Studio (無料) で取得したAPIキーを入力します。</span>
-                                                <button type="button" onclick="testGeminiConnection()" class="text-indigo-600 hover:text-indigo-800 font-bold hover:underline">
-                                                    🔍 接続テストを実行
-                                                </button>
-                                            </div>
-                                        </div>
-
-                                        <div class="space-y-1.5">
-                                            <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
-                                            <?php 
-                                            $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); 
-                                            if ($curModel === 'gemini-2.0-flash' || empty($curModel)) {
-                                                $curModel = 'gemini-2.5-flash';
-                                            }
-                                            ?>
-                                            <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-sm focus:outline-none focus:border-indigo-500 font-medium">
-                                                <option value="gemini-2.5-flash" <?= in_array($curModel, ['gemini-2.5-flash', 'gemini-2.0-flash']) ? 'selected' : '' ?>>Gemini 2.5 Flash (推奨・最高速・最新世代)</option>
-                                                <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash (超安定版・長文対応)</option>
-                                                <option value="gemini-2.5-pro" <?= in_array($curModel, ['gemini-2.5-pro', 'gemini-1.5-pro']) ? 'selected' : '' ?>>Gemini 2.5 Pro (超高知能・高精度推論)</option>
-                                            </select>
-                                            <p class="text-[11px] text-slate-400">Google推奨の最新高速モデル「Gemini 2.5 Flash」が選択されています。</p>
-                                        </div>
-                                    </div>
-
-                                    <?php 
-                                    $lastError = SettingsManager::get('gemini_last_error');
-                                    if (!empty($lastError)): 
-                                    ?>
-                                        <div class="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-xs text-rose-800">
-                                            <strong>⚠️ 直近のGemini APIエラー:</strong> <?= htmlspecialchars($lastError) ?>
-                                        </div>
-                                    <?php endif; ?>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">使用AIモデル</label>
+                                    <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); ?>
+                                    <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
+                                        <option value="gemini-2.5-flash" <?= $curModel === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash</option>
+                                        <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash</option>
+                                        <option value="gemini-2.5-pro" <?= $curModel === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro</option>
+                                    </select>
                                 </div>
+                            </div>
 
-                                <!-- 4. 💰 広告タグ設定（任意） -->
-                                <div class="pt-4 border-t border-slate-100 space-y-4">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-base">💰</span>
-                                            <h3 class="text-sm font-black text-slate-900">広告タグ設定（任意）</h3>
-                                        </div>
-                                        <span class="text-[11px] text-slate-400">Google AdSenseやASP広告コードを貼り付け</span>
-                                    </div>
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">API設定を保存</button>
+                            </div>
+                        </form>
 
-                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                        <div class="space-y-1.5">
-                                            <label class="block text-xs font-bold text-slate-700">記事上 広告タグ（アイキャッチ下）</label>
-                                            <textarea name="ad_article_top" rows="3" placeholder="<script ...></script> などの広告コード" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500 leading-relaxed"><?= htmlspecialchars(SettingsManager::get('ad_article_top', '')) ?></textarea>
-                                        </div>
-                                        <div class="space-y-1.5">
-                                            <label class="block text-xs font-bold text-slate-700">記事下 広告タグ（本文終了直後）</label>
-                                            <textarea name="ad_article_bottom" rows="3" placeholder="<script ...></script> などの広告コード" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 font-mono text-xs focus:outline-none focus:border-indigo-500 leading-relaxed"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom', '')) ?></textarea>
-                                        </div>
-                                    </div>
-                                </div>
-
-                                <!-- 5. 🧵 Threads (スレッズ) 連携設定 -->
-                                <div class="pt-4 border-t border-slate-100 space-y-4">
-                                    <div class="flex items-center justify-between">
-                                        <div class="flex items-center gap-2">
-                                            <span class="text-base">🧵</span>
-                                            <h3 class="text-sm font-black text-slate-900">Threads (スレッズ) 連携</h3>
-                                        </div>
-                                        <span class="px-2.5 py-0.5 rounded-full bg-slate-950 text-white text-[10px] font-bold">新対応</span>
-                                    </div>
-                                    <div class="space-y-1.5">
-                                        <label class="block text-xs font-bold text-slate-700">公式Threadsアカウント URL（任意）</label>
-                                        <input type="url" name="threads_account_url" value="<?= htmlspecialchars(SettingsManager::get('threads_account_url', '')) ?>" placeholder="https://www.threads.net/@your_account" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs focus:outline-none focus:border-indigo-500 font-mono">
-                                        <p class="text-[11px] text-slate-400">
-                                            登録すると、サイトのヘッダーやフッターにThreads公式リンクが表示されます。また、記事一覧からワンクリックでThreadsに下書きポストできます。
-                                        </p>
-                                    </div>
-                                </div>
-
-                                <div class="pt-4 flex items-center justify-between">
-                                    <div class="text-xs text-slate-400">
-                                        設定保存後、次回の定期実行から新しいスケジュールが自動適用されます。
-                                    </div>
-                                    <button type="submit" class="px-8 py-3.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all cursor-pointer">
-                                        基本設定をすべて保存する
-                                    </button>
-                                </div>
-                            </form>
-
-                            <!-- 接続テスト専用非同期/同期フォーム -->
-                            <form id="gemini-test-form" method="POST" style="display:none;">
-                                <input type="hidden" name="op" value="test_gemini_api">
-                                <input type="hidden" name="gemini_api_key" id="test_form_key" value="">
-                                <input type="hidden" name="gemini_model" id="test_form_model" value="">
-                            </form>
-                            <script>
-                            function testGeminiConnection() {
-                                const key = document.getElementById('input_gemini_key').value.trim();
-                                const model = document.getElementById('input_gemini_model').value;
-                                if (!key) {
-                                    alert('Gemini API Key を入力してからテストボタンを押してください。');
-                                    return;
-                                }
-                                document.getElementById('test_form_key').value = key;
-                                document.getElementById('test_form_model').value = model;
-                                document.getElementById('gemini-test-form').submit();
+                        <form id="gemini-test-form" method="POST" style="display:none;">
+                            <input type="hidden" name="op" value="test_gemini_api">
+                            <input type="hidden" name="gemini_api_key" id="test_form_key" value="">
+                            <input type="hidden" name="gemini_model" id="test_form_model" value="">
+                        </form>
+                        <script>
+                        function testGeminiConnection() {
+                            const key = document.getElementById('input_gemini_key').value.trim();
+                            const model = document.getElementById('input_gemini_model').value;
+                            if (!key) {
+                                alert('Gemini API Key を入力してからテストボタンを押してください。');
+                                return;
                             }
-                            </script>
+                            document.getElementById('test_form_key').value = key;
+                            document.getElementById('test_form_model').value = model;
+                            document.getElementById('gemini-test-form').submit();
+                        }
+                        </script>
+                    </div>
+
+                <?php elseif ($currentTab === 'system'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>💻</span><span>システム設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">自動投稿の動作、実行時間、Cronなどシステム運用に関する設定をまとめています。</p>
                         </div>
 
-                        <!-- 4. サーバー定期実行（cron）の案内 & 稼働ログモニター -->
-                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
-                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xl">⚙️</span>
-                                    <div>
-                                        <h3 class="text-sm font-black text-white">完全放置（自動運転）のための サーバーcron 設定</h3>
-                                        <p class="text-xs text-slate-400">シン・レンタルサーバー管理パネルの「cron設定」に下記コマンドを登録してください</p>
+                                                <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
+                            <div class="flex items-center gap-2">
+                                <span class="font-bold text-slate-500">Cron自動実行:</span>
+                                <?php if (!empty($lastCronTime)): ?>
+                                    <span class="inline-flex items-center gap-1 text-emerald-700 font-bold bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">● 最終実行: <?= htmlspecialchars($lastCronTime) ?></span>
+                                <?php else: ?>
+                                    <span class="inline-flex items-center gap-1 text-amber-700 font-bold bg-amber-50 px-2.5 py-1 rounded-full border border-amber-200">⚠️ サーバーCron未検知</span>
+                                <?php endif; ?>
+                            </div>
+                            <span class="text-[11px] text-slate-400">Cron・自動投稿の状態はこのページで管理します。</span>
+                        </div>
+
+<form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                            <input type="hidden" name="op" value="save_system_settings">
+                            <input type="hidden" name="tab" value="system">
+
+                            <div class="flex items-center justify-between border-b border-slate-100 pb-4">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">⏰ 自動投稿・実行設定</h2>
+                                    <p class="text-xs text-slate-500">投稿間隔、稼働時間帯、1日の上限を設定します。</p>
+                                </div>
+                                <span class="px-3 py-1 rounded-full <?= $autoPostEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
+                                    <?= $autoPostEnabled ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
+                                </span>
+                            </div>
+
+                            <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
+                                <input type="checkbox" name="auto_post_enabled" value="1" <?= SettingsManager::get('auto_post_enabled', '1') === '1' ? 'checked' : '' ?> class="w-5 h-5">
+                                <div>
+                                    <div class="text-sm font-black text-slate-900">全自動記事投稿を有効にする</div>
+                                    <p class="text-xs text-slate-500">OFFの場合は自動生成・投稿を停止します。</p>
+                                </div>
+                            </label>
+
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">投稿間隔</label>
+                                    <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
+                                    <select name="auto_post_interval_hours" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <?php foreach (['0.5'=>'30分','1'=>'1時間','2'=>'2時間','3'=>'3時間','4'=>'4時間','6'=>'6時間','12'=>'12時間','24'=>'24時間'] as $value => $label): ?>
+                                            <option value="<?= $value ?>" <?= $currentInterval === $value ? 'selected' : '' ?>><?= $label ?>に1本</option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">1日の最大自動投稿本数</label>
+                                    <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
+                                    <select name="auto_post_max_per_day" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <?php foreach ([3,5,10,15,20,30,0] as $max): ?>
+                                            <option value="<?= $max ?>" <?= $currentMax === $max ? 'selected' : '' ?>><?= $max === 0 ? '無制限' : '1日 '.$max.'本まで' ?></option>
+                                        <?php endforeach; ?>
+                                    </select>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">自動投稿を許可する時間帯</label>
+                                    <?php $startHour=(int)SettingsManager::get('auto_post_start_hour','8'); $endHour=(int)SettingsManager::get('auto_post_end_hour','23'); ?>
+                                    <div class="flex items-center gap-2">
+                                        <select name="auto_post_start_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $startHour===$h?'selected':'' ?>><?= sprintf('%02d:00',$h) ?></option><?php endfor; ?>
+                                        </select>
+                                        <span class="text-slate-400">〜</span>
+                                        <select name="auto_post_end_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $endHour===$h?'selected':'' ?>><?= sprintf('%02d:59',$h) ?></option><?php endfor; ?>
+                                        </select>
                                     </div>
+                                </div>
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">自動生成記事の公開設定</label>
+                                    <?php $defaultStatus=SettingsManager::get('auto_post_default_status','published'); ?>
+                                    <select name="auto_post_default_status" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                        <option value="published" <?= $defaultStatus==='published'?'selected':'' ?>>即時公開</option>
+                                        <option value="on_hold" <?= $defaultStatus==='on_hold'?'selected':'' ?>>保留して確認</option>
+                                    </select>
+                                </div>
+                            </div>
+
+                            <div class="flex justify-end">
+                                <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">システム設定を保存</button>
+                            </div>
+                        </form>
+
+                        <div class="bg-slate-900 text-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+                                <div>
+                                    <h2 class="text-base font-black text-white">⚙️ サーバーCron設定</h2>
+                                    <p class="text-xs text-slate-400 mt-1">サーバー側のCronに以下のコマンドを登録します。</p>
                                 </div>
                                 <form method="POST">
                                     <input type="hidden" name="op" value="run_worker">
-                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
-                                        <span>🚀 今すぐワーカーを手動実行</span>
-                                    </button>
+                                    <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs">🚀 今すぐワーカーを手動実行</button>
                                 </form>
                             </div>
-
-                            <p class="text-xs text-slate-300 leading-relaxed">
-                                上記で設定した「投稿間隔」「稼働時間帯」「1日上限」をワーカー自身が判定するため、cron側は<strong>【10分〜30分おき】</strong>に定期実行させておくだけで、指定時間どおりに整然と記事が自動投稿されます。
-                            </p>
-                            
-                            <div class="space-y-1.5">
-                                <div class="text-[11px] font-bold text-slate-400">登録するコマンド (シン・レンタルサーバー等の場合):</div>
-                                <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
-                                    /usr/bin/php <?= htmlspecialchars(dirname(__DIR__) . '/cron/worker.php') ?>
-                                </div>
+                            <div class="bg-slate-950 p-4 rounded-2xl font-mono text-xs text-amber-300 select-all break-all border border-slate-800">
+                                /usr/bin/php <?= htmlspecialchars(__DIR__ . '/cron/worker.php') ?>
                             </div>
-
-                            <!-- 最終実行ログ表示 -->
-                            <div class="space-y-2 pt-2 border-t border-slate-800">
+                            <div class="space-y-2">
                                 <div class="flex items-center justify-between text-xs">
-                                    <span class="font-bold text-slate-300 flex items-center gap-1.5">
-                                        <span>📜</span> 直近のCron実行ログ
-                                    </span>
-                                    <span class="text-[11px] text-slate-400">
-                                        最終実行日時: <?= htmlspecialchars(SettingsManager::get('last_cron_executed_at', '未実行')) ?>
-                                    </span>
+                                    <span class="font-bold text-slate-300">📜 直近のCron実行ログ</span>
+                                    <span class="text-[11px] text-slate-400">最終実行日時: <?= htmlspecialchars(SettingsManager::get('last_cron_executed_at', '未実行')) ?></span>
                                 </div>
-                                <?php $lastLog = SettingsManager::get('last_cron_log'); ?>
-                                <div class="bg-slate-950 p-3.5 rounded-2xl font-mono text-[11px] text-emerald-400 border border-slate-800 max-h-48 overflow-y-auto leading-relaxed whitespace-pre-wrap">
-                                    <?= !empty($lastLog) ? htmlspecialchars($lastLog) : 'まだcron実行ログがありません。「今すぐワーカーを手動実行」を押すと即座にテストできます。' ?>
-                                </div>
+                                <?php $lastLog=SettingsManager::get('last_cron_log'); ?>
+                                <div class="bg-slate-950 p-3.5 rounded-2xl font-mono text-[11px] text-emerald-400 border border-slate-800 max-h-48 overflow-y-auto whitespace-pre-wrap"><?= !empty($lastLog) ? htmlspecialchars($lastLog) : 'まだCron実行ログがありません。' ?></div>
                             </div>
                         </div>
                     </div>
