@@ -498,14 +498,6 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
             />
           )}
 
-          {activeTab === 'held_articles' && (
-            <HeldArticlesTab
-              articles={articles}
-              onUpdateStatus={handleUpdateArticleStatus}
-              onRefresh={loadData}
-            />
-          )}
-
           {activeTab === 'images' && (
             <ImagesTab
               images={images}
