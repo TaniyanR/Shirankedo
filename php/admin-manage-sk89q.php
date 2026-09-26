@@ -809,6 +809,15 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // 各種データ取得
 $currentTab = $_GET['tab'] ?? 'dashboard';
+if ($currentTab === 'create') {
+    $currentTab = 'create_article';
+}
+if ($currentTab === 'sns') {
+    $currentTab = 'cron';
+}
+if ($currentTab === 'gemini' || $currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 'seo_tags') {
+    $currentTab = 'system';
+}
 
 $articles = [];
 $totalArticles = 0;
@@ -820,6 +829,7 @@ $announcements = [];
 $categories = [];
 $feedItemCount = 0;
 $totalFeedUrlsCount = 0;
+$trendCandidates = [];
 
 if ($db && $isLoggedIn) {
     try {
@@ -877,6 +887,16 @@ if ($db && $isLoggedIn) {
         // アクセス解析データ取得
         $analyticsStats = AnalyticsTracker::getStats(14);
 
+        // トレンド候補データ取得
+        try {
+            $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+            if (empty($trendCandidates)) {
+                require_once __DIR__ . '/classes/TrendCollector.php';
+                TrendCollector::collectAndIntegrate(1);
+                $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+            }
+        } catch (Throwable $e) {}
+
     } catch (Throwable $e) {}
 }
 
@@ -909,46 +929,41 @@ $minutesSinceLastPost = $lastPostTime ? round((time() - strtotime($lastPostTime)
 $requiredMinutes = $intervalHours * 60;
 $canPostNextIn = max(0, round($requiredMinutes - $minutesSinceLastPost));
 
-// 親項目・子項目の機能別グループ定義 (ユーザー指定順序 & 広告・相互リンク配置)
+// 親項目・子項目の機能別グループ定義 (ダッシュボードは親と同じ感覚のため単独親メニュー化し、「ホーム・概要」は完全排除)
+// サイドバーの項目名と本文ヘッダータイトルは100%完全一致
 $navGroups = [
-    'overview' => [
-        'title' => '📊 ホーム・概要',
-        'icon' => '📊',
-        'children' => [
-            'dashboard' => ['icon' => '📊', 'label' => 'ダッシュボード', 'badge' => null],
-        ]
-    ],
     'content' => [
-        'title' => '📝 記事・コンテンツ機能',
+        'title' => '記事・コンテンツ機能',
         'icon' => '📝',
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
-            'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles],
-            'held_articles' => ['icon' => '🛡️', 'label' => '危険・保留記事の審査', 'badge' => null],
-            'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => null],
+            'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
+            'held_articles' => ['icon' => '🛡️', 'label' => '危険・保留記事の審査', 'badge' => $countOnHold > 0 ? $countOnHold . '件' : null],
+            'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
     ],
     'analytics' => [
-        'title' => '📈 アクセス解析・分析',
+        'title' => 'アクセス解析・分析',
         'icon' => '📈',
         'children' => [
             'analytics' => ['icon' => '📊', 'label' => '高性能アクセス解析', 'badge' => 'LIVE'],
         ]
     ],
     'monetization' => [
-        'title' => '💰 収益・提携・集客機能',
+        'title' => '収益・提携・集客機能',
         'icon' => '💰',
         'children' => [
             'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
             'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
-            'sns' => ['icon' => '📢', 'label' => 'Threads・SNS配信設定', 'badge' => null],
+            'cron' => ['icon' => '⏰', 'label' => '定期実行・クーロン設定', 'badge' => '自動運転'],
+            'trends' => ['icon' => '🔥', 'label' => '急上昇トレンド候補一覧', 'badge' => !empty($trendCandidates) ? count($trendCandidates) . '件' : null],
         ]
     ],
     'system' => [
-        'title' => '🛠️ サイト・システム保守',
+        'title' => 'システム管理',
         'icon' => '🛠️',
         'children' => [
-            'system' => ['icon' => '⚙️', 'label' => 'サーバーCron・AI初期設定・保守', 'badge' => null],
+            'system' => ['icon' => '💻', 'label' => 'サイト・システム保守', 'badge' => null],
         ]
     ],
 ];
@@ -1134,7 +1149,13 @@ $navGroups = [
                     <div class="text-[10px] text-slate-400 font-mono">v2.4 Auto-Trend & Trade Engine</div>
                 </div>
             </div>
-            <div class="flex items-center gap-3 text-xs">
+            <div class="flex items-center gap-2.5 text-xs">
+                <!-- 知 しらんけど サイトを表示 ↗ (👤 admin でログイン中の左側に配置) -->
+                <a href="index.php" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-xs transition-all group">
+                    <span class="w-4 h-4 rounded bg-slate-950 text-amber-400 font-black flex items-center justify-center text-[10px] shrink-0">知</span>
+                    <span>しらんけど サイトを表示</span>
+                    <span class="text-[11px] group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform">↗</span>
+                </a>
                 <span class="text-slate-400 hidden sm:inline">👤 <strong class="text-slate-200 font-bold"><?= htmlspecialchars($_SESSION['admin_username'] ?? $adminId) ?></strong> でログイン中</span>
                 <a href="?logout=1" class="px-3 py-1 rounded-xl bg-slate-800 hover:bg-rose-900/80 text-rose-300 font-bold border border-slate-700 transition-colors">
                     ログアウト
@@ -1146,23 +1167,19 @@ $navGroups = [
         <div class="flex-1 flex flex-col md:flex-row">
             
             <!-- WordPress風 左サイドバー -->
-            <aside class="w-full md:w-64 bg-slate-950 text-slate-300 border-r border-slate-800 flex-shrink-0 p-4 space-y-6">
-                <!-- サイト表示リンク (サイドに配置) -->
-                <div class="px-1 py-1">
-                    <a href="/" target="_blank" class="flex items-center justify-between p-3 rounded-2xl bg-slate-900 border border-slate-800 hover:border-amber-500/50 hover:bg-slate-850 text-xs font-bold text-slate-200 group transition-all">
-                        <div class="flex items-center gap-2.5">
-                            <span class="w-7 h-7 rounded-xl bg-amber-500 text-slate-950 font-black flex items-center justify-center text-xs shrink-0 shadow-sm">知</span>
-                            <span class="truncate">しらんけど サイトを表示</span>
-                        </div>
-                        <span class="text-emerald-400 group-hover:translate-x-0.5 transition-transform">↗</span>
-                    </a>
-                </div>
+            <aside class="w-full md:w-64 bg-slate-950 text-slate-300 border-r border-slate-800 flex-shrink-0 p-4 space-y-3">
+                <!-- ダッシュボード (親と同じ感覚 - グループ見出し「ホーム・概要」や「階層メニュー」は完全排除) -->
+                <?php $isDashActive = ($currentTab === 'dashboard'); ?>
+                <a href="?tab=dashboard" class="flex items-center justify-between px-3 py-2.5 rounded-2xl text-xs font-bold transition-all <?= $isDashActive ? 'bg-amber-500 text-slate-950 font-black shadow-sm' : 'bg-slate-900 text-slate-300 hover:bg-slate-850 hover:text-white border border-slate-800' ?>">
+                    <div class="flex items-center gap-2.5">
+                        <span class="text-base">📊</span>
+                        <span class="tracking-tight">ダッシュボード</span>
+                    </div>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] font-bold <?= $isDashActive ? 'bg-slate-950 text-amber-300' : 'bg-slate-800 text-emerald-400 border border-slate-700' ?>">
+                        稼働中
+                    </span>
+                </a>
 
-                <!-- 階層メニューナビゲーション (親項目・子項目) -->
-                <div class="flex items-center justify-between px-1 pb-1">
-                    <span class="text-[11px] font-black tracking-wide text-amber-400">階層メニュー</span>
-                    <span class="text-[10px] text-slate-500 font-mono">全4分野</span>
-                </div>
                 <nav class="space-y-2.5">
                     <?php foreach ($navGroups as $grpKey => $grp): 
                         $hasActive = array_key_exists($currentTab, $grp['children']);
@@ -1224,7 +1241,7 @@ $navGroups = [
                             <div class="space-y-1">
                                 <div class="flex items-center gap-2">
                                     <span class="text-xl">📊</span>
-                                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">ホーム・稼働状況</h1>
+                                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">ダッシュボード</h1>
                                     <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
                                         ● 稼働中
                                     </span>
