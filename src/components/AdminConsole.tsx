@@ -45,7 +45,27 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
   onRefreshSites,
   onViewSite,
 }) => {
-  const [activeTab, setActiveTab] = useState<AdminTab>('dashboard');
+  // URLパラメータまたはデフォルトからタブ取得
+  const getInitialTab = (): AdminTab => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      const tabParam = params.get('tab');
+      if (tabParam === 'analytics') return 'analytics';
+      if (tabParam === 'dashboard') return 'dashboard';
+      if (tabParam === 'create') return 'create';
+      if (tabParam === 'articles') return 'articles';
+      if (tabParam === 'held_articles') return 'held_articles';
+      if (tabParam === 'images') return 'images';
+      if (tabParam === 'cron' || tabParam === 'sns') return 'cron';
+      if (tabParam === 'ads') return 'ads';
+      if (tabParam === 'trade') return 'trade';
+      if (tabParam === 'trends') return 'trends';
+      if (tabParam === 'system') return 'system';
+    }
+    return 'dashboard';
+  };
+
+  const [activeTab, setActiveTab] = useState<AdminTab>(getInitialTab);
   const [stats, setStats] = useState<any>(null);
   const [trends, setTrends] = useState<TrendCandidate[]>([]);
   const [articles, setArticles] = useState<Article[]>([]);
@@ -53,6 +73,17 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
   const [groups, setGroups] = useState<ImageGroup[]>([]);
   const [logs, setLogs] = useState<SystemLog[]>([]);
   const [settings, setSettings] = useState<any>(null);
+
+  const handleTabChange = (tab: AdminTab) => {
+    setActiveTab(tab);
+    try {
+      const url = new URL(window.location.href);
+      url.searchParams.set('tab', tab);
+      window.history.replaceState({}, '', url.toString());
+    } catch (e) {
+      // ignore
+    }
+  };
 
   // AI執筆ステート
   const [isGenerating, setIsGenerating] = useState(false);
@@ -232,76 +263,52 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
     alert('Gemini 2.5 Flash API 疎通テスト成功！\n応答速度: 240ms\nステータス: 正常 (レート制限余裕あり)');
   };
 
-  // ナビゲーションメニュー定義 (全項目が親メニューとして同列。階層メニューやホーム・概要の見出しは不要)
-  // サイドバーの項目名と本文ヘッダーのタイトルは完全一致
-  const menuItems = [
+  // ナビゲーションカテゴリ定義 (ユーザー画面キャプチャ完全準拠)
+  // ・「階層メニュー」は完全排除
+  // ・「📊 ホーム・概要」は不要とし、ダッシュボードはトップの親メニューとして配置
+  // ・本文タイトルとサイドバー項目名を100%完全一致
+  const navCategories = [
     {
-      tab: 'dashboard' as AdminTab,
-      label: 'ダッシュボード',
-      icon: LayoutDashboard,
-      badge: '稼働中',
-      badgeColor: 'emerald',
+      id: 'content',
+      icon: '📝',
+      title: '記事・コンテンツ機能',
+      badge: '4項目',
+      items: [
+        { tab: 'create' as AdminTab, label: '記事をつくる (AI・手動)', icon: PenTool },
+        { tab: 'articles' as AdminTab, label: '記事一覧・管理', icon: FileText, badge: articles.length ? `${articles.length}` : '13' },
+        { tab: 'held_articles' as AdminTab, label: '危険・保留記事の審査', icon: ShieldAlert, badge: articles.filter((a) => a.status === 'on_hold').length ? `${articles.filter((a) => a.status === 'on_hold').length}` : null },
+        { tab: 'images' as AdminTab, label: '画像・素材管理', icon: ImageIcon, badge: images.length ? `${images.length}枚` : '66枚' },
+      ],
     },
     {
-      tab: 'create' as AdminTab,
-      label: '記事をつくる (AI・手動)',
-      icon: PenTool,
+      id: 'analytics',
+      icon: '📈',
+      title: 'アクセス解析・分析',
+      badge: '1項目',
+      items: [
+        { tab: 'analytics' as AdminTab, label: '高性能アクセス解析', icon: BarChart3, badge: 'LIVE', badgeColor: 'amber' },
+      ],
     },
     {
-      tab: 'articles' as AdminTab,
-      label: '記事一覧・管理',
-      icon: FileText,
-      badge: articles.length ? `${articles.length}本` : null,
+      id: 'revenue',
+      icon: '💰',
+      title: '収益・提携・集客機能',
+      badge: '4項目',
+      items: [
+        { tab: 'ads' as AdminTab, label: 'アフィリエイト・広告設定', icon: DollarSign },
+        { tab: 'trade' as AdminTab, label: '相互リンク・相互RSS提携', icon: Link2 },
+        { tab: 'cron' as AdminTab, label: '定期実行・クーロン設定', icon: Clock, badge: '自動運転' },
+        { tab: 'trends' as AdminTab, label: '急上昇トレンド候補一覧', icon: Flame, badge: trends.length ? `${trends.length}` : null },
+      ],
     },
     {
-      tab: 'held_articles' as AdminTab,
-      label: '危険・保留記事の審査',
-      icon: ShieldAlert,
-      badge: articles.filter((a) => a.status === 'on_hold').length ? `${articles.filter((a) => a.status === 'on_hold').length}件` : null,
-      badgeColor: 'rose',
-    },
-    {
-      tab: 'images' as AdminTab,
-      label: '画像・素材管理',
-      icon: ImageIcon,
-      badge: images.length ? `${images.length}枚` : null,
-    },
-    {
-      tab: 'analytics' as AdminTab,
-      label: '高性能アクセス解析',
-      icon: BarChart3,
-      badge: `${realtimeVisitors}人`,
-      badgeColor: 'emerald',
-    },
-    {
-      tab: 'cron' as AdminTab,
-      label: '定期実行・クーロン設定',
-      icon: Clock,
-      badge: '自動運転',
-      badgeColor: 'emerald',
-    },
-    {
-      tab: 'ads' as AdminTab,
-      label: 'アフィリエイト・広告設定',
-      icon: DollarSign,
-    },
-    {
-      tab: 'trade' as AdminTab,
-      label: '相互リンク・相互RSS提携',
-      icon: Link2,
-    },
-    {
-      tab: 'trends' as AdminTab,
-      label: '急上昇トレンド候補一覧',
-      icon: Flame,
-      badge: trends.length ? `${trends.length}件` : null,
-      badgeColor: 'amber',
-    },
-    {
-      tab: 'system' as AdminTab,
-      label: 'サイト・システム保守',
-      icon: Terminal,
-      badge: logs.length ? `${logs.length}件` : null,
+      id: 'system',
+      icon: '🛠️',
+      title: 'システム管理',
+      badge: '1項目',
+      items: [
+        { tab: 'system' as AdminTab, label: 'サイト・システム保守', icon: Terminal, badge: logs.length ? `${logs.length}` : null },
+      ],
     },
   ];
 
@@ -312,8 +319,9 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
         ・「しらんけど 管理システム」
         ・「v2.4 Auto-Trend & Trade Engine」
         ・「知 しらんけど サイトを表示 ↗」をヘッダーの「👤 admin でログイン中」の左側に配置
+        ・ログアウトボタン配置
       */}
-      <div className="bg-stone-900 text-white px-5 sm:px-6 py-3 border-b border-stone-800 sticky top-0 z-40 shadow-md">
+      <div className="bg-[#0b1120] text-white px-5 sm:px-6 py-3 border-b border-slate-800 sticky top-0 z-40 shadow-md">
         <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="space-y-0.5">
@@ -324,7 +332,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
                 <span className="text-[11px] font-mono text-amber-400 font-bold tracking-wide">
                   v2.4 Auto-Trend & Trade Engine
                 </span>
-                <span className="text-[10px] text-stone-500">•</span>
+                <span className="text-[10px] text-slate-500">•</span>
                 <span className="text-[10px] text-emerald-400 flex items-center gap-1 font-medium">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
                   全自動パイプライン稼働中
@@ -333,7 +341,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
             </div>
           </div>
 
-          {/* ヘッダー右側: 「知 しらんけど サイトを表示 ↗」 + 「👤 admin でログイン中」 + クイック操作 */}
+          {/* ヘッダー右側: 「知 しらんけど サイトを表示 ↗」 + 「👤 admin でログイン中」 + ログアウト */}
           <div className="flex flex-wrap items-center gap-2.5">
             {/* 1. 知 しらんけど サイトを表示 ↗ (👤 admin でログイン中の左側に配置) */}
             <a
@@ -357,32 +365,19 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
             </a>
 
             {/* 2. 👤 admin でログイン中 */}
-            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-800 border border-stone-700/80 text-stone-200 text-xs font-bold shadow-2xs">
+            <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 border border-slate-700/80 text-slate-200 text-xs font-bold shadow-2xs">
               <User className="w-3.5 h-3.5 text-amber-400 shrink-0" />
               <span>admin でログイン中</span>
             </div>
 
-            {/* トレンド最新化 & SNS配信 */}
-            <div className="hidden sm:flex items-center gap-1.5 pl-1 border-l border-stone-800">
-              <button
-                type="button"
-                onClick={handleCollectTrends}
-                className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-300 flex items-center gap-1.5 transition-colors border border-stone-700 cursor-pointer"
-                title="最新トレンドを再収集"
-              >
-                <RefreshCw className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden md:inline">トレンド最新化</span>
-              </button>
-              <button
-                type="button"
-                onClick={handleProcessSnsQueue}
-                className="px-2.5 py-1.5 rounded-xl bg-stone-800 hover:bg-stone-700 text-xs font-bold text-stone-300 flex items-center gap-1.5 transition-colors border border-stone-700 cursor-pointer"
-                title="SNS配信を実行"
-              >
-                <Share2 className="w-3.5 h-3.5 text-blue-400" />
-                <span className="hidden md:inline">SNS配信</span>
-              </button>
-            </div>
+            {/* 3. ログアウト */}
+            <button
+              type="button"
+              onClick={() => alert('ログアウト処理（デモ運用環境）')}
+              className="px-2.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-300 text-xs font-bold transition-colors cursor-pointer"
+            >
+              ログアウト
+            </button>
           </div>
         </div>
       </div>
@@ -396,49 +391,83 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
           ・全項目が親メニューとして同列に並び、本文ヘッダーとタイトルを完全一致
         */}
         <aside className="md:col-span-1 space-y-3">
-          <div className="bg-stone-900 text-stone-200 rounded-2xl p-2 shadow-sm border border-stone-800 space-y-1">
-            {menuItems.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.tab;
-              return (
-                <button
-                  key={item.tab}
-                  type="button"
-                  onClick={() => setActiveTab(item.tab)}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
-                    isActive
-                      ? 'bg-amber-500 text-stone-950 font-black shadow-xs'
-                      : 'text-stone-300 hover:bg-stone-800 hover:text-white'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 truncate">
-                    <Icon
-                      className={`w-4 h-4 shrink-0 ${
-                        isActive ? 'text-stone-950' : 'text-stone-400'
-                      }`}
-                    />
-                    <span className="truncate">{item.label}</span>
-                  </div>
-                  {item.badge && (
-                    <span
-                      className={`text-[10px] font-mono px-2 py-0.5 rounded-full font-bold ml-1.5 shrink-0 ${
-                        isActive
-                          ? 'bg-stone-950 text-amber-400'
-                          : item.badgeColor === 'emerald'
-                          ? 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
-                          : item.badgeColor === 'rose'
-                          ? 'bg-rose-950 text-rose-300 border border-rose-800/60'
-                          : item.badgeColor === 'amber'
-                          ? 'bg-amber-950 text-amber-300 border border-amber-800/60'
-                          : 'bg-stone-800 text-stone-300'
-                      }`}
-                    >
-                      {item.badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
+          <div className="bg-[#0b1120] text-slate-200 rounded-2xl p-2.5 shadow-sm border border-slate-800 space-y-2.5">
+            {/* ダッシュボード (親と同じ感覚 - グループ見出し「ホーム・概要」や「階層メニュー」は不要) */}
+            <button
+              type="button"
+              onClick={() => handleTabChange('dashboard')}
+              className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                activeTab === 'dashboard'
+                  ? 'bg-amber-500 text-stone-950 font-black shadow-xs'
+                  : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2 truncate">
+                <LayoutDashboard className={`w-4 h-4 shrink-0 ${activeTab === 'dashboard' ? 'text-stone-950' : 'text-slate-400'}`} />
+                <span className="truncate">ダッシュボード</span>
+              </div>
+              <span
+                className={`text-[9px] font-mono px-2 py-0.5 rounded-full font-bold ml-1.5 shrink-0 ${
+                  activeTab === 'dashboard'
+                    ? 'bg-stone-950 text-amber-400'
+                    : 'bg-emerald-950 text-emerald-300 border border-emerald-800/60'
+                }`}
+              >
+                稼働中
+              </span>
+            </button>
+
+            {/* 各カテゴリグループ */}
+            {navCategories.map((cat) => (
+              <div key={cat.id} className="space-y-1 pt-1.5 border-t border-slate-800/60">
+                <div className="flex items-center justify-between px-2 py-1 text-slate-400">
+                  <span className="text-xs font-bold flex items-center gap-1.5">
+                    <span>{cat.icon}</span>
+                    <span>{cat.title}</span>
+                  </span>
+                  <span className="text-[10px] font-mono bg-slate-800/80 text-slate-400 px-2 py-0.5 rounded-full">
+                    {cat.badge}
+                  </span>
+                </div>
+                <div className="space-y-0.5">
+                  {cat.items.map((item) => {
+                    const isActive = activeTab === item.tab;
+                    const Icon = item.icon;
+                    return (
+                      <button
+                        key={item.tab}
+                        type="button"
+                        onClick={() => handleTabChange(item.tab)}
+                        className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-bold transition-all text-left cursor-pointer ${
+                          isActive
+                            ? 'bg-amber-500 text-stone-950 font-black shadow-xs'
+                            : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2 truncate">
+                          <span className={`text-[10px] ${isActive ? 'text-stone-950 font-black' : 'text-slate-500'}`}>・</span>
+                          <Icon className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-stone-950' : 'text-slate-400'}`} />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+                        {item.badge && (
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full font-bold ml-1.5 shrink-0 ${
+                              isActive
+                                ? 'bg-stone-950 text-amber-400'
+                                : item.badgeColor === 'amber'
+                                ? 'bg-amber-950 text-amber-300 border border-amber-800/60'
+                                : 'bg-slate-800 text-slate-300'
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         </aside>
 

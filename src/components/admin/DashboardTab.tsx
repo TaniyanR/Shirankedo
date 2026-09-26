@@ -37,24 +37,37 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
       <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-2xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-black text-stone-900 tracking-tight">ダッシュボード</h2>
-            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold">
-              🟢 リアルタイム稼働中
+            <h2 className="text-xl sm:text-2xl font-black text-stone-900 tracking-tight flex items-center gap-2">
+              <span>📊</span>
+              <span>ダッシュボード</span>
+            </h2>
+            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[11px] font-bold flex items-center gap-1">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+              稼働中
             </span>
           </div>
           <p className="text-xs text-stone-500 mt-1">
-            「しらんけど」のAI自動運転・定期実行スケジュール・素材・記事コンテンツの現況を一目で把握できます。
+            「しらんけど」のAI自動執筆・クーロン稼働状態の確認と、ワンクリックでの記事生成・管理が行えます
           </p>
         </div>
+        <a
+          href="/"
+          target="_blank"
+          rel="noreferrer"
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs transition-colors shadow-xs"
+        >
+          <ExternalLink className="w-3.5 h-3.5 text-amber-400" />
+          <span>表のサイトを見る ↗</span>
+        </a>
       </div>
 
       {/* 4つの稼働状況カード */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        {/* カード 1: ホーム・稼働状況、AI記事執筆エンジン */}
+        {/* カード 1: AI記事執筆エンジン */}
         <div className="bg-white rounded-2xl p-5 border border-stone-200 shadow-xs flex flex-col justify-between hover:border-amber-400 transition-all group">
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <span className="text-[11px] font-bold text-stone-400">ホーム・稼働状況</span>
+              <span className="text-[11px] font-bold text-stone-400">AI記事執筆エンジン</span>
               <span className="inline-flex items-center gap-1 text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
                 接続中
@@ -213,6 +226,70 @@ export const DashboardTab: React.FC<DashboardTabProps> = ({
               className="text-xs font-bold text-amber-700 hover:text-amber-800 flex items-center gap-0.5 cursor-pointer"
             >
               <span>全記事一覧 →</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ワンクリック記事生成（2つの作成方法） */}
+      <div className="bg-amber-50/70 border border-amber-200 rounded-3xl p-6 sm:p-7 shadow-xs space-y-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="space-y-1">
+            <div className="text-xs font-black text-amber-700 flex items-center gap-1.5">
+              <span>⚡</span>
+              <span>【超かんたん】今すぐ記事を増やしたいときはここ！</span>
+            </div>
+            <h3 className="text-lg font-black text-stone-900">
+              ワンクリック記事生成（2つの作成方法）
+            </h3>
+          </div>
+          <span className="px-3 py-1 rounded-full bg-amber-500 text-stone-950 font-black text-xs shadow-xs">
+            数十秒で即座に公開完了
+          </span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* 方法 1: 完全自動 */}
+          <div className="bg-white rounded-2xl p-5 border border-amber-200 shadow-2xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-stone-900 font-black text-sm">
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center text-xs font-black">
+                  1
+                </span>
+                <span>完全自動: 最新急上昇トレンドから生成</span>
+              </div>
+              <p className="text-xs text-stone-600 leading-relaxed">
+                Googleトレンドからいま日本で一番話題のキーワードをAIが自動取得し、一次情報を調べて記事を1本執筆・公開します。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('create')}
+              className="w-full py-2.5 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-stone-950 font-black text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>⚡ 今すぐAI記事を1本自動生成</span>
+            </button>
+          </div>
+
+          {/* 方法 2: キーワード指定 */}
+          <div className="bg-white rounded-2xl p-5 border border-amber-200 shadow-2xs space-y-4 flex flex-col justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 text-stone-900 font-black text-sm">
+                <span className="w-6 h-6 rounded-full bg-amber-500 text-stone-950 flex items-center justify-center text-xs font-black">
+                  2
+                </span>
+                <span>キーワード指定: 好きな話題で即座に執筆</span>
+              </div>
+              <p className="text-xs text-stone-600 leading-relaxed">
+                気になるキーワード（例: 大谷翔平、千鳥、iPhone 16 など）を入力するだけで、AIが一次情報を整理して記事にします。
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => onNavigate('create')}
+              className="w-full py-2.5 px-4 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs transition-colors shadow-xs flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>✍️ 指定キーワードで記事を生成</span>
             </button>
           </div>
         </div>

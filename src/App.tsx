@@ -29,7 +29,13 @@ export default function App() {
   const [selectedSort, setSelectedSort] = useState<'recent' | 'index' | 'rapid'>('recent');
 
   const [selectedArticle, setSelectedArticle] = useState<Article | null>(null);
-  const [activeView, setActiveView] = useState<'feed' | 'about' | 'rules' | 'admin'>('feed');
+  const [activeView, setActiveView] = useState<'feed' | 'about' | 'rules' | 'admin'>(() => {
+    if (typeof window !== 'undefined') {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get('view') === 'feed') return 'feed';
+    }
+    return 'admin';
+  });
   const [pageSlug, setPageSlug] = useState<'about' | 'privacy-policy' | 'que' | null>(null);
 
   // Load sites
