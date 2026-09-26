@@ -223,22 +223,6 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "記事ID #{$artId} を完全に削除しました。";
         }
 
-        // 2-2. AIによるページの生死判定の一括実行
-        if ($op === 'evaluate_lifecycle') {
-            require_once __DIR__ . '/classes/AiLifecycleEngine.php';
-            $res = AiLifecycleEngine::evaluateAll();
-            $flashMessage = "⚡ AIによるページの生死判定を実行しました。（全{$res['total']}件中、生存: {$res['active']}件 / 鮮度注意: {$res['warning']}件 / 休眠・非公開: {$res['dormant']}件）";
-        }
-
-        // 2-3. 個別記事のAI自動管理フラグ切替
-        if ($op === 'toggle_auto_lifecycle') {
-            $artId = (int)($_POST['article_id'] ?? 0);
-            $enabled = (int)($_POST['auto_lifecycle_enabled'] ?? 1);
-            $stmt = $db->prepare("UPDATE articles SET auto_lifecycle_enabled = ? WHERE id = ?");
-            $stmt->execute([$enabled, $artId]);
-            $flashMessage = "記事ID #{$artId} のAI自動判定対象を更新しました。";
-        }
-
         // 2-4. アイキャッチ画像の設定と即時公開
         if ($op === 'set_eyecatch_and_publish') {
             $artId = (int)($_POST['article_id'] ?? 0);
@@ -252,7 +236,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $newStatus = $publishNow === 1 ? 'published' : 'on_hold';
             $dangerReason = $publishNow === 1 ? null : 'アイキャッチ設定済み（保留中）';
 
-            $stmt = $db->prepare("UPDATE articles SET image_url = ?, status = ?, danger_reason = ?, lifecycle_status = 'active' WHERE id = ?");
+            $stmt = $db->prepare("UPDATE articles SET image_url = ?, status = ?, danger_reason = ? WHERE id = ?");
             $stmt->execute([$imgUrl, $newStatus, $dangerReason, $artId]);
 
             $flashMessage = $publishNow === 1 
@@ -895,25 +879,15 @@ $trendCandidates = [];
 if ($db && $isLoggedIn) {
     try {
         $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles")->fetchColumn();
-        $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, a.lifecycle_status, a.lifecycle_reason, a.auto_lifecycle_enabled, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
+        $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
         $categories = $db->query("SELECT id, name FROM categories WHERE site_id = 1")->fetchAll();
         
-        $countActive = 0;
-        $countWarning = 0;
-        $countDormant = 0;
-        $countOnHold = 0;
         $countNoImage = 0;
         foreach ($articles as $art) {
-            $st = $art['status'] ?? 'published';
-            $ls = $art['lifecycle_status'] ?? 'active';
             $hasImg = !empty($art['image_url']) && trim($art['image_url']) !== '';
             if (!$hasImg) {
                 $countNoImage++;
             }
-            if ($st === 'on_hold') $countOnHold++;
-            elseif ($ls === 'dormant' || $st === 'private') $countDormant++;
-            elseif ($ls === 'warning') $countWarning++;
-            else $countActive++;
         }
 
         // 相互リンク・アクセストレード集計
@@ -1011,7 +985,6 @@ $navGroups = [
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
-            'held_articles' => ['icon' => '🛡️', 'label' => '危険・保留記事の審査', 'badge' => $countOnHold > 0 ? $countOnHold . '件' : null],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
     ],
@@ -1311,25 +1284,11 @@ $navGroups = [
                 <?php if ($currentTab === 'dashboard'): ?>
                     <div class="space-y-6">
                         <!-- ダッシュボードヘッダー -->
-                        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-                            <div class="space-y-1">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-xl">📊</span>
-                                    <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">ダッシュボード</h1>
-                                    <span class="px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                        ● 稼働中
-                                    </span>
-                                </div>
-                                <p class="text-xs text-slate-500">
-                                    「しらんけど」のAI自動執筆・クーロン稼働状態と記事の運用状況を確認できます
-                                </p>
-                            </div>
-                            <div class="flex items-center gap-2 shrink-0">
-                                <a href="index.php" target="_blank" class="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs shadow-sm transition-all flex items-center gap-1.5">
-                                    <span>🌐 表のサイトを見る</span>
-                                    <span>↗</span>
-                                </a>
-                            </div>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>📊</span><span>ダッシュボード</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">AI自動執筆・クーロン稼働状態と記事の運用状況を確認できます。</p>
                         </div>
 
                         <!-- 🚦 4大リアルタイム診断カード (システム状態がひと目でわかるランプ) -->
@@ -1444,9 +1403,6 @@ $navGroups = [
                                 <div class="flex items-baseline gap-2">
                                     <div class="text-3xl font-black text-slate-900"><?= $publishedCount ?></div>
                                     <div class="text-xs font-bold text-emerald-600">本 公開中</div>
-                                    <?php if ($countOnHold > 0): ?>
-                                        <div class="text-xs text-slate-400 font-medium ml-auto">(下書き: <?= $countOnHold ?>本)</div>
-                                    <?php endif; ?>
                                 </div>
                                 <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
                                     <span class="text-slate-400 text-[10px]">客観ファクトまとめ</span>
@@ -1698,22 +1654,11 @@ $navGroups = [
                 <!-- 2. 📝 記事一覧・ページの生死判定 (AI自動ライフサイクル管理) タブ -->
                 <?php elseif ($currentTab === 'create_article'): ?>
                     <div class="space-y-6">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-                            <div>
-                                <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>✍️</span>
-                                    <span>記事をつくる (AI・手動)</span>
-                                </h1>
-                                <p class="text-xs text-slate-500 mt-1">
-                                    最新トレンドからの自動生成、キーワード指定のAI生成、トレンド収集をここから実行できます。
-                                </p>
-                            </div>
-                            <form method="POST" class="shrink-0">
-                                <input type="hidden" name="op" value="run_worker">
-                                <button type="submit" class="px-5 py-2.5 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all flex items-center gap-1.5">
-                                    <span>🚀 トレンド自動収集＆AI記事生成を今すぐ実行</span>
-                                </button>
-                            </form>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>✍️</span><span>記事をつくる (AI・手動)</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">AI生成と手動投稿で新しい記事を作成します。</p>
                         </div>
 
                         <!-- ⚡ 【今すぐAIに記事を作らせる】ワンクリック操作ボックス (Hero Box) -->
@@ -1841,64 +1786,11 @@ $navGroups = [
 
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
-                        <!-- ヘッダーと一括AI判定ボタン -->
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2.5">
-                                    <span>📝</span> 記事一覧・管理
-                                </h1>
-                                <p class="text-xs text-slate-500 mt-1">
-                                    ページの生死は基本的にAIが自動判定（鮮度・検索需要・読者投票・安全ブレーキを総合評価）。需要終息記事は自動休眠（非公開）へ移行します。
-                                </p>
-                            </div>
-                        </div>
-
-                        <!-- ページの生死 & アイキャッチ設定サマリーカード -->
-                        <div class="grid grid-cols-2 sm:grid-cols-5 gap-3">
-                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
-                                    <span>🟢 生存・公開中</span>
-                                    <span class="text-xs">良好</span>
-                                </div>
-                                <div class="text-2xl font-black text-emerald-600"><?= $countActive ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-slate-400">需要継続・鮮度良好</div>
-                            </div>
-
-                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
-                                    <span>🟡 鮮度注意</span>
-                                    <span class="text-xs">要観察</span>
-                                </div>
-                                <div class="text-2xl font-black text-amber-500"><?= $countWarning ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-slate-400">公開14日経過 / 懐疑投票有</div>
-                            </div>
-
-                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
-                                    <span>🔴 AI自動休眠</span>
-                                    <span class="text-xs">非公開</span>
-                                </div>
-                                <div class="text-2xl font-black text-rose-600"><?= $countDormant ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-slate-400">トレンド終息のためAI休眠</div>
-                            </div>
-
-                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-slate-500 flex items-center justify-between">
-                                    <span>⚠️ 安全保留</span>
-                                    <span class="text-xs">下書き</span>
-                                </div>
-                                <div class="text-2xl font-black text-purple-600"><?= $countOnHold ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-slate-400">危険キーワード等検知</div>
-                            </div>
-
-                            <div class="bg-white rounded-3xl p-4 sm:p-5 border border-amber-200 bg-amber-50/20 shadow-sm space-y-1">
-                                <div class="text-xs font-bold text-amber-900 flex items-center justify-between">
-                                    <span>🖼️ 画像未設定</span>
-                                    <span class="text-[10px] font-bold text-rose-600">表に非公開</span>
-                                </div>
-                                <div class="text-2xl font-black text-amber-600"><?= $countNoImage ?> <span class="text-xs font-normal text-slate-400">記事</span></div>
-                                <div class="text-[11px] text-amber-800">アイキャッチ設定待ち</div>
-                            </div>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>📄</span><span>記事一覧・管理</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">公開中・非公開の記事、アイキャッチ画像、公開状態を管理します。</p>
                         </div>
 
                         <?php if ($countNoImage > 0): ?>
@@ -1927,15 +1819,14 @@ $navGroups = [
                                     <div class="flex items-center gap-1.5 ml-3">
                                         <button type="button" onclick="setArticleFilter('all')" class="filter-tab-btn active px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-900 text-white" data-filter="all">すべて</button>
                                         <button type="button" onclick="setArticleFilter('no_image')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="no_image">🖼️ 画像未設定 (<?= $countNoImage ?>)</button>
-                                        <button type="button" onclick="setArticleFilter('published')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="published">🟢 表に公開中 (<?= $countActive ?>)</button>
-                                        <button type="button" onclick="setArticleFilter('on_hold')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="on_hold">⚠️ 保留・下書き (<?= $countOnHold ?>)</button>
+                                        <button type="button" onclick="setArticleFilter('published')" class="filter-tab-btn px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-600 hover:bg-slate-200" data-filter="published">🟢 公開中 (<?= $publishedCount ?>)</button>
                                     </div>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <input 
                                         type="text" 
                                         id="article-search-input" 
-                                        placeholder="タイトル・理由で絞り込み..." 
+                                        placeholder="タイトルで絞り込み..." 
                                         oninput="filterArticles()"
                                         class="px-3.5 py-1.5 rounded-xl border border-slate-200 text-xs w-64 focus:outline-none focus:border-amber-500"
                                     >
@@ -1949,45 +1840,33 @@ $navGroups = [
                                             <th class="py-2.5 w-14">画像</th>
                                             <th class="py-2.5">タイトル / カテゴリ</th>
                                             <th class="py-2.5">しらんけど指数</th>
-                                            <th class="py-2.5">公開日・経過</th>
-                                            <th class="py-2.5">AI生死判定ステータス</th>
-                                            <th class="py-2.5">AI判定理由</th>
-                                            <th class="py-2.5 text-center">AI自動管理</th>
-                                            <th class="py-2.5 text-right">アイキャッチ / ステータス操作</th>
+                                            <th class="py-2.5">公開日</th>
+                                            <th class="py-2.5">公開状態</th>
+                                            <th class="py-2.5 text-right">アイキャッチ / 操作</th>
                                         </tr>
                                     </thead>
                                     <tbody id="articles-tbody" class="divide-y divide-slate-100">
-                                        <?php foreach ($articles as $a): 
+                                        <?php foreach ($articles as $a):
                                             $pubTime = strtotime($a['published_at'] ?? 'now');
                                             $daysOld = max(0, round((time() - $pubTime) / 86400));
-                                            $ls = $a['lifecycle_status'] ?? 'active';
                                             $status = $a['status'] ?? 'published';
-                                            $autoEnabled = (int)($a['auto_lifecycle_enabled'] ?? 1);
                                             $hasImg = !empty($a['image_url']) && trim($a['image_url']) !== '';
 
                                             if (!$hasImg) {
-                                                $badgeText = '🖼️ 画像未設定 (表に非表示)';
-                                                $badgeClass = 'bg-rose-50 text-rose-800 border-rose-300';
+                                                $statusText = '画像未設定';
+                                                $statusClass = 'bg-rose-50 text-rose-800 border-rose-200';
                                                 $filterCategory = 'no_image';
-                                            } elseif ($status === 'on_hold') {
-                                                $badgeText = '⚠️ 安全保留';
-                                                $badgeClass = 'bg-purple-50 text-purple-800 border-purple-200';
-                                                $filterCategory = 'on_hold';
-                                            } elseif ($ls === 'dormant' || $status === 'private') {
-                                                $badgeText = '🔴 休眠 (非公開)';
-                                                $badgeClass = 'bg-rose-50 text-rose-800 border-rose-200';
-                                                $filterCategory = 'dormant';
-                                            } elseif ($ls === 'warning') {
-                                                $badgeText = '🟡 鮮度低下注意';
-                                                $badgeClass = 'bg-amber-50 text-amber-800 border-amber-200';
+                                            } elseif ($status === 'published') {
+                                                $statusText = '公開中';
+                                                $statusClass = 'bg-emerald-50 text-emerald-700 border-emerald-200';
                                                 $filterCategory = 'published';
                                             } else {
-                                                $badgeText = '🟢 生存 (公開中)';
-                                                $badgeClass = 'bg-emerald-50 text-emerald-800 border-emerald-200';
-                                                $filterCategory = 'published';
+                                                $statusText = '非公開';
+                                                $statusClass = 'bg-slate-100 text-slate-600 border-slate-200';
+                                                $filterCategory = 'private';
                                             }
                                         ?>
-                                            <tr class="hover:bg-slate-50 article-row" data-filter-type="<?= $filterCategory ?>" data-has-img="<?= $hasImg ? '1' : '0' ?>" data-search="<?= htmlspecialchars(mb_strtolower($a['title'] . ' ' . ($a['lifecycle_reason'] ?? ''))) ?>">
+                                            <tr class="hover:bg-slate-50 article-row" data-filter-type="<?= $filterCategory ?>" data-has-img="<?= $hasImg ? '1' : '0' ?>" data-search="<?= htmlspecialchars(mb_strtolower($a['title'])) ?>">
                                                 <td class="py-3">
                                                     <div class="w-12 h-8 rounded-lg bg-slate-200 overflow-hidden border border-slate-200 relative group cursor-pointer" onclick="openSetImageModal(<?= $a['id'] ?>, '<?= htmlspecialchars(addslashes($a['title']), ENT_QUOTES) ?>', '<?= htmlspecialchars(addslashes($a['image_url'] ?? ''), ENT_QUOTES) ?>')">
                                                         <?php if ($hasImg): ?>
@@ -2024,26 +1903,9 @@ $navGroups = [
                                                 </td>
 
                                                 <td class="py-3 whitespace-nowrap">
-                                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black border <?= $badgeClass ?>">
-                                                        <?= $badgeText ?>
+                                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black border <?= $statusClass ?>">
+                                                        <?= $statusText ?>
                                                     </span>
-                                                </td>
-
-                                                <td class="py-3 max-w-sm">
-                                                    <div class="text-[11px] text-slate-600 leading-tight">
-                                                        <?= htmlspecialchars($a['lifecycle_reason'] ?: ($daysOld >= 30 ? '公開後30日以上経過' : '鮮度良好')) ?>
-                                                    </div>
-                                                </td>
-
-                                                <td class="py-3 text-center whitespace-nowrap">
-                                                    <form method="POST" class="inline">
-                                                        <input type="hidden" name="op" value="toggle_auto_lifecycle">
-                                                        <input type="hidden" name="article_id" value="<?= $a['id'] ?>">
-                                                        <input type="hidden" name="auto_lifecycle_enabled" value="<?= $autoEnabled ? '0' : '1' ?>">
-                                                        <button type="submit" class="px-2 py-1 rounded-lg text-[10px] font-bold border transition-colors <?= $autoEnabled ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100' : 'bg-slate-100 text-slate-500 border-slate-300 hover:bg-slate-200' ?>" title="クリックで手動固定/自動判定を切替">
-                                                            <?= $autoEnabled ? '🤖 AI自動判定: ON' : '✋ 手動固定: OFF' ?>
-                                                        </button>
-                                                    </form>
                                                 </td>
 
                                                 <td class="py-3 text-right whitespace-nowrap space-x-1.5">
@@ -2221,16 +2083,11 @@ $navGroups = [
 
                 <?php elseif ($currentTab === 'images'): ?>
                     <div class="space-y-6">
-                        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-200 shadow-sm">
-                            <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>🖼️</span> 画像・素材管理
-                                </h1>
-                                <p class="text-xs text-slate-500 mt-1">最大30,000枚規模対応。Gemini AIが記事の重要キーワードと照合して最適な画像（800×450px）を自動選定します</p>
-                            </div>
-                            <div class="text-xs text-slate-400 font-bold">
-                                登録済み素材: <?= (int)$totalPoolCount ?> 枚
-                            </div>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>🖼️</span><span>画像・素材管理</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">アイキャッチ画像の登録・整理・自動マッチングを管理します。</p>
                         </div>
 
                         <!-- 💡 なぜプールが空でも画像がついたのか？ の説明 ＆ 動作設定 -->
@@ -2422,18 +2279,14 @@ $navGroups = [
                 <!-- 4. 🔗 相互リンク・相互RSS返還 タブ -->
                 <?php elseif ($currentTab === 'trade'): ?>
                     <div class="space-y-6">
-                        <!-- ヘッダー & トップ操作バー -->
-                        <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
-                            <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>🔗</span> 相互リンク・相互RSS提携
-                                </h1>
-                                <p class="text-xs text-slate-500 mt-1">
-                                    1サイトにつき<strong>複数のRSSフィード</strong>（通常フィード・カテゴリ別・速報用など）を登録可能。流入（IN）に応じたアクセス返還（100%、80%、120%、150%）と特別優遇枠を管理します。
-                                </p>
-                            </div>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>🔗</span><span>相互リンク・相互RSS提携</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">相互リンク・複数RSS・アクセス返還を管理します。</p>
+                        </div>
 
-                            <div class="flex flex-wrap items-center gap-3">
+                        <div class="flex flex-wrap items-center gap-3">
                                 <!-- 全RSS一括巡回ボタン -->
                                 <form method="POST" class="inline">
                                     <input type="hidden" name="op" value="fetch_trade_rss">
@@ -2454,7 +2307,6 @@ $navGroups = [
                                     </span>
                                 </form>
                             </div>
-                        </div>
 
                         <!-- サマリーメトリクス (4カラム) -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -2816,15 +2668,11 @@ $navGroups = [
                 <!-- 5. 💰 アフィリエイト広告スロット設定 タブ -->
                 <?php elseif ($currentTab === 'ads'): ?>
                     <div class="space-y-6">
-                        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-                            <div>
-                                <h1 class="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                    <span>💰</span> アフィリエイト・広告設定
-                                </h1>
-                                <p class="text-xs text-slate-500 mt-0.5">
-                                    広告枠ごとに個別に「表示 / 非表示」を設定できます。A8.net、もしもアフィリエイト、バリューコマース等の広告タグを配置できます。
-                                </p>
-                            </div>
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>💰</span><span>アフィリエイト・広告設定</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">広告枠ごとの表示・非表示と広告タグを管理します。</p>
                         </div>
 
                         <form method="POST" class="space-y-6">
@@ -3335,11 +3183,10 @@ $navGroups = [
                     ?>
                     <div class="space-y-6">
                         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
-                            <h1 class="text-2xl font-black text-slate-900 tracking-tight">アクセス解析</h1>
-                            <p class="text-xs text-slate-500 mt-1">実際に記録された表サイトのアクセスログからPV・UU・参照元・端末・人気記事を集計します。検索エンジンの順位やSearch Consoleの数値ではありません。</p>
-                            <?php if (!empty($stats['tracking_since'])): ?>
-                                <p class="text-[11px] text-amber-700 mt-2 font-bold">※ 集計方式を修正したため <?= htmlspecialchars($stats['tracking_since']) ?> 以降を新しい基準で集計しています。</p>
-                            <?php endif; ?>
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>📊</span><span>アクセス解析</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">PV・UU・参照元・端末・人気記事を確認します。</p>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3526,7 +3373,7 @@ $navGroups = [
                         </div>
                     </div>
 
-                <!-- 10. ✨ 基本設定（Gemini AI & 投稿スケジュール管理） タブ -->
+                <!-- API設定 -->
                 <?php elseif ($currentTab === 'api_settings'): ?>
                     <div class="space-y-6">
                         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
