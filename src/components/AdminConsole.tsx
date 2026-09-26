@@ -9,7 +9,6 @@ import { Site, Article, TrendCandidate, ImageItem, ImageGroup, SystemLog } from 
 import { DashboardTab } from './admin/DashboardTab';
 import { CreateArticleTab } from './admin/CreateArticleTab';
 import { ArticlesTab } from './admin/ArticlesTab';
-import { HeldArticlesTab } from './admin/HeldArticlesTab';
 import { ImagesTab } from './admin/ImagesTab';
 import { AnalyticsTab } from './admin/AnalyticsTab';
 import { CronTab } from './admin/CronTab';
@@ -30,7 +29,6 @@ export type AdminTab =
   | 'dashboard'
   | 'create'
   | 'articles'
-  | 'held_articles'
   | 'images'
   | 'analytics'
   | 'cron'
@@ -54,7 +52,6 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
       if (tabParam === 'dashboard') return 'dashboard';
       if (tabParam === 'create') return 'create';
       if (tabParam === 'articles') return 'articles';
-      if (tabParam === 'held_articles') return 'held_articles';
       if (tabParam === 'images') return 'images';
       if (tabParam === 'cron' || tabParam === 'sns') return 'cron';
       if (tabParam === 'ads') return 'ads';
@@ -272,11 +269,10 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
       id: 'content',
       icon: '📝',
       title: '記事・コンテンツ機能',
-      badge: '4項目',
+      badge: '3項目',
       items: [
         { tab: 'create' as AdminTab, label: '記事をつくる (AI・手動)', icon: PenTool },
         { tab: 'articles' as AdminTab, label: '記事一覧・管理', icon: FileText, badge: articles.length ? `${articles.length}` : '13' },
-        { tab: 'held_articles' as AdminTab, label: '危険・保留記事の審査', icon: ShieldAlert, badge: articles.filter((a) => a.status === 'on_hold').length ? `${articles.filter((a) => a.status === 'on_hold').length}` : null },
         { tab: 'images' as AdminTab, label: '画像・素材管理', icon: ImageIcon, badge: images.length ? `${images.length}枚` : '66枚' },
       ],
     },
