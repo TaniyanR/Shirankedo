@@ -201,6 +201,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $bodyHtml = trim($_POST['page_body_html'] ?? '');
             $status = ($_POST['page_status'] ?? 'published') === 'draft' ? 'draft' : 'published';
             $sortOrder = (int)($_POST['page_sort_order'] ?? 0);
+            $specialType = $_POST['page_special_type'] ?? 'content';
+            if (!in_array($specialType, ['content', 'trade', 'news', 'contact'], true)) {
+                $specialType = 'content';
+            }
 
             if ($title === '') {
                 throw new Exception('ページタイトルを入力してください。');
@@ -217,15 +221,15 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($pageId > 0) {
                 $stmt = $db->prepare("UPDATE static_pages
-                                      SET title = ?, slug = ?, body_html = ?, status = ?, sort_order = ?
+                                      SET title = ?, slug = ?, body_html = ?, special_type = ?, status = ?, sort_order = ?
                                       WHERE id = ? AND site_id = 1");
-                $stmt->execute([$title, $slug, $bodyHtml, $status, $sortOrder, $pageId]);
+                $stmt->execute([$title, $slug, $bodyHtml, $specialType, $status, $sortOrder, $pageId]);
                 $flashMessage = '固定ページを更新しました。';
             } else {
                 $stmt = $db->prepare("INSERT INTO static_pages
-                    (site_id, title, slug, body_html, status, sort_order)
-                    VALUES (1, ?, ?, ?, ?, ?)");
-                $stmt->execute([$title, $slug, $bodyHtml, $status, $sortOrder]);
+                    (site_id, title, slug, body_html, special_type, status, sort_order)
+                    VALUES (1, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$title, $slug, $bodyHtml, $specialType, $status, $sortOrder]);
                 $flashMessage = '固定ページを新規作成しました。';
             }
         }
@@ -1842,6 +1846,7 @@ $navGroups = [
                                 <input type="hidden" name="op" value="save_static_page">
                                 <input type="hidden" name="tab" value="pages">
                                 <input type="hidden" name="page_id" value="<?= (int)($editingPage['id'] ?? 0) ?>">
+                                <input type="hidden" name="page_special_type" value="<?= htmlspecialchars($editingPage['special_type'] ?? 'content') ?>">
 
                                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                     <div class="space-y-1.5">
