@@ -9,6 +9,7 @@ require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
 require_once __DIR__ . '/classes/SiteAssetManager.php';
+require_once __DIR__ . '/classes/StaticPageManager.php';
 
 // DB接続チェック
 $dbConnected = false;
@@ -37,6 +38,13 @@ $site = null;
 if ($dbConnected) {
     try {
         $site = SiteManager::resolveCurrentSite($subdomain);
+    } catch (Throwable $e) {}
+}
+
+$publishedStaticPages = [];
+if ($dbConnected) {
+    try {
+        $publishedStaticPages = StaticPageManager::published((int)($site['id'] ?? 1));
     } catch (Throwable $e) {}
 }
 
@@ -292,15 +300,11 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         <span class="hidden sm:inline">Threads</span>
                     </a>
                 <?php endif; ?>
-                <a href="page.php?slug=about" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all">
-                    サイトについて
-                </a>
-                <a href="page.php?slug=trade" class="px-3 py-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 font-bold border border-amber-200 transition-all">
-                    🤝 相互リンク依頼
-                </a>
-                <a href="page.php?slug=que" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all">
-                    お問い合わせ
-                </a>
+                <?php foreach (array_slice($publishedStaticPages, 0, 3) as $headerPage): ?>
+                    <a href="page.php?slug=<?= rawurlencode($headerPage['slug']) ?>" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 font-bold transition-all whitespace-nowrap">
+                        <?= htmlspecialchars($headerPage['title']) ?>
+                    </a>
+                <?php endforeach; ?>
             </div>
         </div>
     </header>
@@ -660,11 +664,9 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         <span>公式Threads</span>
                     </a>
                 <?php endif; ?>
-                <a href="page.php?slug=about" class="hover:text-amber-400 transition-colors">サイトについて</a>
-                <a href="page.php?slug=trade" class="hover:text-amber-400 transition-colors">相互リンク依頼</a>
-                <a href="page.php?slug=news" class="hover:text-amber-400 transition-colors">お知らせ</a>
-                <a href="page.php?slug=privacy-policy" class="hover:text-amber-400 transition-colors">プライバシーポリシー</a>
-                <a href="page.php?slug=que" class="hover:text-amber-400 transition-colors">お問い合わせ</a>
+                <?php foreach ($publishedStaticPages as $footerPage): ?>
+                    <a href="page.php?slug=<?= rawurlencode($footerPage['slug']) ?>" class="hover:text-amber-400 transition-colors"><?= htmlspecialchars($footerPage['title']) ?></a>
+                <?php endforeach; ?>
             </div>
         </div>
     </footer>
