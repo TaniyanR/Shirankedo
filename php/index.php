@@ -40,6 +40,10 @@ if ($dbConnected) {
     } catch (Throwable $e) {}
 }
 
+$assetBaseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+    . '://' . ($_SERVER['HTTP_HOST'] ?? '')
+    . rtrim(dirname($_SERVER['PHP_SELF'] ?? '/'), '/\\') . '/';
+
 // --- APIエンドポイント処理 (投票・コメント) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     header('Content-Type: application/json; charset=utf-8');
@@ -234,7 +238,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     <meta property="og:description" content="ネット上の話題を客観分析し、一次情報とともにお届けするトレンドメディア。しらんけど。">
     <meta property="og:type" content="website">
     <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
-    <meta property="og:image" content="<?= htmlspecialchars($baseUrl . '/' . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
+    <meta property="og:image" content="<?= htmlspecialchars($assetBaseUrl . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
     <?php endif; ?>
         <meta name="twitter:card" content="summary_large_image">
     <?= $headCustomTags ?>
