@@ -122,6 +122,7 @@ if ($page && ($page['special_type'] ?? 'content') === 'news' && $db) {
 
 $headCustomTags = SettingsManager::get('head_custom_tags');
 $bodyTopTags = SettingsManager::get('body_top_tags');
+$affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。');
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -154,7 +155,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     <?= $bodyTopTags ?>
 
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
-        <div class="max-w-4xl mx-auto flex items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto flex items-center gap-4">
             <a href="/" class="flex items-center gap-3">
                 <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">知</div>
                 <div>
@@ -162,23 +163,17 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                     <span class="text-[11px] text-stone-500 tracking-wider block mt-0.5">ネット話題を客観分析。最後はしらんけど。</span>
                 </div>
             </a>
-            <a href="/" class="px-3 py-1.5 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold">← トップへ戻る</a>
         </div>
     </header>
 
-    <?php if (!empty($publishedPages)): ?>
-    <div class="bg-white border-b border-stone-200">
-        <div class="max-w-4xl mx-auto px-4 sm:px-6 flex items-center gap-2 overflow-x-auto py-2 text-xs font-bold">
-            <?php foreach ($publishedPages as $navPage): ?>
-                <a href="page.php?slug=<?= rawurlencode($navPage['slug']) ?>" class="px-3.5 py-1.5 rounded-xl transition-all whitespace-nowrap <?= $slug === $navPage['slug'] ? 'bg-stone-950 text-white shadow-sm' : 'text-stone-600 hover:bg-stone-100' ?>">
-                    <?= htmlspecialchars($navPage['title']) ?>
-                </a>
-            <?php endforeach; ?>
+    <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 text-[11px] text-amber-950 font-medium shadow-xs">
+        <div class="max-w-7xl mx-auto py-1.5 flex items-center justify-between gap-4">
+            <span><?= htmlspecialchars($affiliatePrNoticeText) ?></span>
+            <a href="page.php?slug=about" class="font-bold text-stone-700 hover:text-amber-800 whitespace-nowrap">サイトについて</a>
         </div>
     </div>
-    <?php endif; ?>
 
-    <main class="flex-1 max-w-4xl w-full mx-auto px-4 sm:px-6 py-8 sm:py-12">
+    <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-7">
         <?php if (!$page): ?>
             <div class="bg-white rounded-3xl border border-stone-200 p-10 text-center shadow-sm">
                 <div class="text-4xl mb-3">404</div>
@@ -186,7 +181,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 <p class="text-sm text-stone-500 mt-2">削除されたか、現在非公開のページです。</p>
             </div>
         <?php else: ?>
-            <div class="bg-white rounded-3xl border border-stone-200/80 p-6 sm:p-10 shadow-sm space-y-8">
+            <div class="bg-white rounded-3xl border border-stone-200/80 p-6 sm:p-8 shadow-sm space-y-7">
                 <div class="border-b border-stone-100 pb-4">
                     <h1 class="text-2xl sm:text-3xl font-black text-stone-950"><?= htmlspecialchars($page['title']) ?></h1>
                 </div>
@@ -281,9 +276,12 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         <?php endif; ?>
     </main>
 
-    <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800 mt-12">
-        <div class="max-w-4xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div class="text-white font-black text-sm"><?= htmlspecialchars($siteName) ?></div>
+    <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800 mt-8">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="space-y-1 text-center sm:text-left">
+                <div class="text-white font-black text-sm"><?= htmlspecialchars($siteName) ?></div>
+                <div class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($siteName) ?></div>
+            </div>
             <?php if (!empty($publishedPages)): ?>
             <div class="flex flex-wrap items-center justify-center gap-4 text-xs font-bold">
                 <?php foreach ($publishedPages as $footerPage): ?>
