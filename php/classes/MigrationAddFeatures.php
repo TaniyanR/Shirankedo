@@ -112,6 +112,7 @@ class MigrationAddFeatures {
           title VARCHAR(191) NOT NULL,
           slug VARCHAR(191) NOT NULL,
           body_html MEDIUMTEXT NOT NULL,
+          special_type ENUM('content','trade','news','contact') NOT NULL DEFAULT 'content',
           status ENUM('published','draft') NOT NULL DEFAULT 'published',
           sort_order INT NOT NULL DEFAULT 0,
           created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -120,6 +121,8 @@ class MigrationAddFeatures {
           UNIQUE KEY idx_site_slug (site_id, slug),
           KEY idx_status_sort (site_id, status, sort_order)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        try { $db->exec("ALTER TABLE static_pages ADD COLUMN special_type ENUM('content','trade','news','contact') NOT NULL DEFAULT 'content' AFTER body_html"); } catch (Throwable $e) {}
 
         // 初回だけ既存5ページをDBへ移行。以後、削除したページを自動復活させない。
         $seededStmt = $db->prepare("SELECT setting_value FROM site_settings WHERE site_id = 1 AND setting_key = 'static_pages_seeded' LIMIT 1");
@@ -132,37 +135,42 @@ class MigrationAddFeatures {
                     'サイトについて',
                     'about',
                     '<p><strong>「しらんけど」は、SNSや検索エンジンで今まさに急上昇しているトレンド話題を自動収集し、一次情報（公式発表・大手報道機関）を確認した上で要約してお届けするメディアです。</strong></p><p>ネット上の噂やセンセーショナルな言説に惑わされず、客観的な事実（ファクト）だけを抽出。最後に関西特有のクッション表現「しらんけど。」を添えることで、適度な距離感とユーモアを持ってトレンドを楽しめる場を提供しています。</p><blockquote>ネットの情報は真に受けすぎず、気楽に楽しむのが一番です。しらんけど。</blockquote>',
+                    'content',
                     10
                 ],
                 [
                     '相互リンク依頼',
                     'trade',
                     '<p>当サイトでは、アンテナサイト・まとめサイト・ブログ運営者様との相互リンクおよび相互RSSを広く募集しております。</p><p>下の申請フォームから、サイト名・URL・RSSをご入力ください。</p>',
+                    'trade',
                     20
                 ],
                 [
                     'お知らせ',
                     'news',
                     '<p>当サイトからのお知らせを掲載しています。</p>',
+                    'news',
                     30
                 ],
                 [
                     'プライバシーポリシー',
                     'privacy-policy',
                     '<h3>1. 個人情報の収集・利用目的</h3><p>当サイトでは、お問い合わせや相互リンク申請の際に、サイト名・URL・メールアドレス等の個人情報をご登録いただく場合があります。これらの個人情報は、ご質問への回答や提携管理のためにのみ利用し、目的外の利用は行いません。</p><h3>2. アクセス解析とCookie</h3><p>当サイトでは、アクセス状況の把握のためにCookie等を利用する場合があります。収集した情報はサイト運営・改善のために利用します。</p><h3>3. 免責事項</h3><p>当サイトの掲載内容は正確性に配慮していますが、その完全性・安全性を保証するものではありません。情報の利用によって生じた損害について責任を負いかねます。</p>',
+                    'content',
                     40
                 ],
                 [
                     'お問い合わせ',
                     'que',
                     '<p>当サイトへのご連絡は、下のお問い合わせフォームからお願いいたします。</p>',
+                    'contact',
                     50
                 ],
             ];
 
             $pageIns = $db->prepare("INSERT IGNORE INTO static_pages
-                (site_id, title, slug, body_html, status, sort_order)
-                VALUES (1, ?, ?, ?, 'published', ?)");
+                (site_id, title, slug, body_html, special_type, status, sort_order)
+                VALUES (1, ?, ?, ?, ?, 'published', ?)");
             foreach ($initialPages as $page) {
                 $pageIns->execute($page);
             }
