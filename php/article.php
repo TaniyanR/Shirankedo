@@ -228,9 +228,15 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
         <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
             <a href="index.php" class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
-                    知
-                </div>
+                <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'logo')): ?>
+                    <div class="w-10 h-10 rounded-2xl bg-white border border-stone-200 overflow-hidden shadow-sm flex items-center justify-center">
+                        <img src="<?= htmlspecialchars(SiteAssetManager::url('logo', (int)($site['id'] ?? 1))) ?>" alt="" class="w-full h-full object-contain">
+                    </div>
+                <?php else: ?>
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
+                        知
+                    </div>
+                <?php endif; ?>
                 <div>
                     <span class="text-xl font-black tracking-tight text-stone-950 block leading-none">
                         <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>
