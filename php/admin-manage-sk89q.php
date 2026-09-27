@@ -877,6 +877,7 @@ if ($currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 
 
 $articles = [];
 $totalArticles = 0;
+$staticPageCount = 0;
 $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
@@ -892,6 +893,7 @@ $trendCandidates = [];
 if ($db && $isLoggedIn) {
     try {
         $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles")->fetchColumn();
+        $staticPageCount = (int)$db->query("SELECT COUNT(*) FROM static_pages WHERE site_id = 1")->fetchColumn();
         $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
         $categories = $db->query("SELECT id, name FROM categories WHERE site_id = 1")->fetchAll();
         
@@ -1005,7 +1007,7 @@ $navGroups = [
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
-            'pages' => ['icon' => '📑', 'label' => '個別ページ一覧', 'badge' => null],
+            'pages' => ['icon' => '📑', 'label' => '個別ページ一覧', 'badge' => $staticPageCount ? (string)$staticPageCount : null],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
     ],
