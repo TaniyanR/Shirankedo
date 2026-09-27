@@ -45,7 +45,7 @@ if (!$page) {
 // お問い合わせフォーム
 $contactSuccess = false;
 $contactError = '';
-if ($page && $slug === 'que' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($page && ($page['special_type'] ?? 'content') === 'contact' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $name = trim($_POST['name'] ?? '');
     $email = trim($_POST['email'] ?? '');
     $subject = trim($_POST['subject'] ?? '');
@@ -72,7 +72,7 @@ if ($page && $slug === 'que' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 // 相互リンク・相互RSS申請
 $tradeSuccess = false;
 $tradeError = '';
-if ($page && $slug === 'trade' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($page && ($page['special_type'] ?? 'content') === 'trade' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $siteTitle = trim($_POST['site_name'] ?? '');
     $siteUrl = trim($_POST['url'] ?? '');
     $rawRss = trim($_POST['rss_url'] ?? '');
@@ -109,7 +109,7 @@ if ($page && $slug === 'trade' && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // お知らせ一覧
 $newsList = [];
-if ($page && $slug === 'news' && $db) {
+if ($page && ($page['special_type'] ?? 'content') === 'news' && $db) {
     try {
         $newsList = $db->query("SELECT * FROM announcements WHERE site_id = 1 AND is_public = 1 ORDER BY published_at DESC LIMIT 50")->fetchAll();
     } catch (Throwable $e) {}
@@ -192,7 +192,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                     </div>
                 <?php endif; ?>
 
-                <?php if ($slug === 'trade'): ?>
+                <?php if (($page['special_type'] ?? 'content') === 'trade'): ?>
                     <?php if ($tradeSuccess): ?>
                         <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3">
                             <div class="text-3xl">🎉</div>
@@ -220,7 +220,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         </form>
                     <?php endif; ?>
 
-                <?php elseif ($slug === 'news'): ?>
+                <?php elseif (($page['special_type'] ?? 'content') === 'news'): ?>
                     <?php if (empty($newsList)): ?>
                         <div class="text-center py-10 text-xs text-stone-400">現在新しいお知らせはありません。</div>
                     <?php else: ?>
@@ -235,7 +235,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         </div>
                     <?php endif; ?>
 
-                <?php elseif ($slug === 'que'): ?>
+                <?php elseif (($page['special_type'] ?? 'content') === 'contact'): ?>
                     <?php if ($contactSuccess): ?>
                         <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3">
                             <div class="text-3xl">✉️</div>
