@@ -21,6 +21,9 @@ $db = null;
 try {
     $db = Database::getConnection();
     $dbConnected = true;
+    try {
+        MigrationAddFeatures::run();
+    } catch (Throwable $ignore) {}
 } catch (Throwable $e) {
     // DB接続エラー
 }
