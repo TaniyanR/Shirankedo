@@ -8,10 +8,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
-
-// アクセス解析トラッキング & 相互リンク逆アクセスの自動記録
-TradeEngine::trackIncomingReferrer();
-AnalyticsTracker::track('home');
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 
 // DB接続チェック
 $dbConnected = false;
@@ -121,6 +118,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     }
 }
 
+// 実アクセスだけを計測。POST操作・管理者・BotはAnalyticsTracker側で除外。
+TradeEngine::trackIncomingReferrer();
+AnalyticsTracker::track('home', null, (int)($site['id'] ?? 1));
+
 // 記事一覧・カテゴリ一覧の取得
 $articles = [];
 $categories = [];
@@ -225,11 +226,17 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($site['name'] ?? 'しらんけど') ?> - 完全自動トレンドサイト</title>
     <meta name="description" content="<?= htmlspecialchars($site['description'] ?? 'ネット上の話題を客観分析し、一次情報とともにお届けするトレンドメディア。しらんけど。') ?>">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'favicon')): ?>
+    <link rel="icon" href="<?= htmlspecialchars(SiteAssetManager::url('favicon', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
     <meta name="referrer" content="unsafe-url">
     <meta property="og:title" content="<?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>">
     <meta property="og:description" content="ネット上の話題を客観分析し、一次情報とともにお届けするトレンドメディア。しらんけど。">
     <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary_large_image">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
+    <meta property="og:image" content="<?= htmlspecialchars($baseUrl . '/' . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
+        <meta name="twitter:card" content="summary_large_image">
     <?= $headCustomTags ?>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
