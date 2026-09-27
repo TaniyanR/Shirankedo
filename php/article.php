@@ -9,6 +9,7 @@ require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
 require_once __DIR__ . '/classes/SiteAssetManager.php';
+require_once __DIR__ . '/classes/StaticPageManager.php';
 
 // 流入アクセスの自動トラッキング (INカウント加算)
 TradeEngine::trackIncomingReferrer();
@@ -35,6 +36,13 @@ if ($dbConnected) {
     } catch (Throwable $e) {
         // フォールバック
     }
+}
+
+$publishedStaticPages = [];
+if ($dbConnected) {
+    try {
+        $publishedStaticPages = StaticPageManager::published((int)($site['id'] ?? 1));
+    } catch (Throwable $e) {}
 }
 
 $assetBaseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
@@ -642,11 +650,9 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <?php endif; ?>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold">
-                <a href="page.php?slug=about" class="hover:text-amber-400 transition-colors">サイトについて</a>
-                <a href="page.php?slug=trade" class="hover:text-amber-400 transition-colors">相互リンク依頼</a>
-                <a href="page.php?slug=news" class="hover:text-amber-400 transition-colors">お知らせ</a>
-                <a href="page.php?slug=privacy-policy" class="hover:text-amber-400 transition-colors">プライバシーポリシー</a>
-                <a href="page.php?slug=que" class="hover:text-amber-400 transition-colors">お問い合わせ</a>
+                <?php foreach ($publishedStaticPages as $footerPage): ?>
+                    <a href="page.php?slug=<?= rawurlencode($footerPage['slug']) ?>" class="hover:text-amber-400 transition-colors"><?= htmlspecialchars($footerPage['title']) ?></a>
+                <?php endforeach; ?>
             </div>
         </div>
     </footer>
