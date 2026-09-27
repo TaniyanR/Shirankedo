@@ -501,7 +501,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMessage = "RSSフィードURLを最低1件以上正しく入力してください（複数ある場合は改行してください）。";
             } else {
                 $savedRss = implode("\n", $rssUrls);
-                $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, is_boosted, boost_weight, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, partnership_type, application_source, status, return_rate, is_boosted, boost_weight, created_at) VALUES (?, ?, ?, 'link_rss', 'admin', ?, ?, ?, ?, NOW())");
                 $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight]);
                 $newId = (int)$db->lastInsertId();
 
@@ -522,6 +522,59 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // 4-B. 外部から届いた相互リンク申請の承認・非承認
+        if ($op === 'review_trade_application') {
+            $tradeId = (int)($_POST['trade_id'] ?? 0);
+            $decision = $_POST['decision'] ?? '';
+            $partnershipType = $_POST['partnership_type'] ?? 'link_only';
+            if (!in_array($partnershipType, ['link_only', 'link_rss'], true)) {
+                $partnershipType = 'link_only';
+            }
+
+            $stmt = $db->prepare("SELECT * FROM trade_sites
+                                  WHERE id = ? AND application_source = 'external' AND status = 'pending'
+                                  LIMIT 1");
+            $stmt->execute([$tradeId]);
+            $application = $stmt->fetch();
+            if (!$application) {
+                throw new Exception('対象の申請が見つからないか、すでに処理済みです。');
+            }
+
+            if ($decision === 'approve') {
+                $db->prepare("UPDATE trade_sites
+                              SET status = 'approved', partnership_type = ?
+                              WHERE id = ?")
+                   ->execute([$partnershipType, $tradeId]);
+
+                $isRss = $partnershipType === 'link_rss';
+                $annTitle = $isRss
+                    ? "【相互リンク・相互RSS】「{$application['site_name']}」様との提携を開始しました"
+                    : "【相互リンク】「{$application['site_name']}」様との相互リンクを開始しました";
+                $annBody = $isRss
+                    ? "「{$application['site_name']}」様（{$application['url']}）との相互リンク・相互RSS提携を承認し、掲載を開始しました。"
+                    : "「{$application['site_name']}」様（{$application['url']}）との相互リンクを承認し、掲載を開始しました。";
+                $db->prepare("INSERT INTO announcements
+                    (site_id, title, body, type, trade_site_id, is_public, published_at, created_at)
+                    VALUES (1, ?, ?, 'trade_approved', ?, 1, NOW(), NOW())")
+                   ->execute([$annTitle, $annBody, $tradeId]);
+
+                $fetchMsg = '';
+                if ($isRss) {
+                    $stats = TradeEngine::fetchRssFeeds($tradeId);
+                    $fetchMsg = " RSS取得 {$stats['items_saved']}件。";
+                }
+
+                $flashMessage = "「{$application['site_name']}」様の申請を承認しました。"
+                    . ($isRss ? '相互リンク＋相互RSSとして開始します。' : '相互リンクのみで開始します。')
+                    . $fetchMsg;
+            } elseif ($decision === 'reject') {
+                $db->prepare("UPDATE trade_sites SET status = 'rejected' WHERE id = ?")->execute([$tradeId]);
+                $flashMessage = "「{$application['site_name']}」様の申請を非承認にしました。";
+            } else {
+                throw new Exception('承認または非承認を選択してください。');
+            }
+        }
+
         // 4-C. 相互リンク・相互RSSの設定更新 (複数RSSフィード対応)
         if ($op === 'update_trade_site') {
             $tradeId = (int)($_POST['trade_id'] ?? 0);
@@ -529,6 +582,11 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $siteUrl = trim($_POST['url'] ?? '');
             $rawRss = trim($_POST['rss_url'] ?? '');
             $status = $_POST['status'] ?? 'pending';
+            $partnershipType = $_POST['partnership_type'] ?? 'link_rss';
+            if (!in_array($partnershipType, ['link_only', 'link_rss'], true)) {
+                $partnershipType = 'link_rss';
+            }
+            $contactEmail = trim($_POST['contact_email'] ?? '');
             $rate = (int)($_POST['return_rate'] ?? 100);
             $isBoosted = !empty($_POST['is_boosted']) ? 1 : 0;
             $boostWeight = (int)($_POST['boost_weight'] ?? 1);
@@ -537,25 +595,31 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $savedRss = !empty($rssUrls) ? implode("\n", $rssUrls) : $rawRss;
 
             // 以前のステータスを取得してお知らせ連動
-            $prev = $db->prepare("SELECT site_name, url, status FROM trade_sites WHERE id = ?");
+            $prev = $db->prepare("SELECT site_name, url, status, partnership_type FROM trade_sites WHERE id = ?");
             $prev->execute([$tradeId]);
             $oldSite = $prev->fetch();
 
             if (!empty($siteName) && !empty($siteUrl)) {
-                $stmt = $db->prepare("UPDATE trade_sites SET site_name = ?, url = ?, rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
-                $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+                $stmt = $db->prepare("UPDATE trade_sites SET site_name = ?, url = ?, rss_url = ?, contact_email = ?, partnership_type = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$siteName, $siteUrl, $savedRss, $contactEmail !== '' ? $contactEmail : null, $partnershipType, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
             } else {
-                $stmt = $db->prepare("UPDATE trade_sites SET rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
-                $stmt->execute([$savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+                $stmt = $db->prepare("UPDATE trade_sites SET rss_url = ?, contact_email = ?, partnership_type = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$savedRss, $contactEmail !== '' ? $contactEmail : null, $partnershipType, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
             }
 
             // 承認時にお知らせ自動投稿
             if ($oldSite && $oldSite['status'] !== 'approved' && $status === 'approved') {
                 $targetName = !empty($siteName) ? $siteName : $oldSite['site_name'];
                 $targetUrl = !empty($siteUrl) ? $siteUrl : $oldSite['url'];
-                $annTitle = "【相互リンク】「" . $targetName . "」様と相互リンク・相互RSSを開始しました";
-                $annBody = "「" . $targetName . "」様（" . $targetUrl . "）と相互リンクおよび相互RSSの提携を開始いたしました。今後ともよろしくお願い申し上げます。";
-                $db->prepare("INSERT INTO announcements (title, body, type, trade_site_id, is_public) VALUES (?, ?, 'trade_approved', ?, 1)")
+                $isRss = $partnershipType === 'link_rss';
+                $annTitle = $isRss
+                    ? "【相互リンク・相互RSS】「{$targetName}」様との提携を開始しました"
+                    : "【相互リンク】「{$targetName}」様との相互リンクを開始しました";
+                $annBody = $isRss
+                    ? "「{$targetName}」様（{$targetUrl}）との相互リンク・相互RSS提携を開始しました。"
+                    : "「{$targetName}」様（{$targetUrl}）との相互リンクを開始しました。";
+                $db->prepare("INSERT INTO announcements (site_id, title, body, type, trade_site_id, is_public, published_at, created_at)
+                              VALUES (1, ?, ?, 'trade_approved', ?, 1, NOW(), NOW())")
                    ->execute([$annTitle, $annBody, $tradeId]);
             }
             // 削除・解除時にお知らせ自動投稿
