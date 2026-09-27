@@ -901,11 +901,19 @@ if ($db && $isLoggedIn) {
 
         // トレンド候補データ取得
         try {
-            $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+            $trendCandidates = $db->query("SELECT * FROM trend_candidates
+                WHERE site_id = 1
+                  AND (sources_json LIKE '%google_trends%' OR sources_json LIKE '%google_news%')
+                ORDER BY last_updated_at DESC, shirankedo_index DESC
+                LIMIT 50")->fetchAll();
             if (empty($trendCandidates)) {
                 require_once __DIR__ . '/classes/TrendCollector.php';
                 TrendCollector::collectAndIntegrate(1);
-                $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+                $trendCandidates = $db->query("SELECT * FROM trend_candidates
+                WHERE site_id = 1
+                  AND (sources_json LIKE '%google_trends%' OR sources_json LIKE '%google_news%')
+                ORDER BY last_updated_at DESC, shirankedo_index DESC
+                LIMIT 50")->fetchAll();
             }
         } catch (Throwable $e) {}
 
