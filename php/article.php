@@ -8,6 +8,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 
 // 流入アクセスの自動トラッキング (INカウント加算)
 TradeEngine::trackIncomingReferrer();
@@ -131,7 +132,7 @@ if ($dbConnected) {
 }
 
 // 閲覧トラッキング
-AnalyticsTracker::track('article', (int)($article['id'] ?? null));
+AnalyticsTracker::track('article', (int)($article['id'] ?? 0), (int)($site['id'] ?? 1));
 
 // 表示切り替えフラグ
 $showAds = true; // 全体マスターは廃止。各広告枠の個別設定だけで表示/非表示を制御
@@ -190,6 +191,9 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($article['title']) ?> - <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></title>
     <meta name="description" content="<?= htmlspecialchars(mb_substr(strip_tags($article['why_trending']), 0, 120)) ?>">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'favicon')): ?>
+    <link rel="icon" href="<?= htmlspecialchars(SiteAssetManager::url('favicon', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
     <meta name="referrer" content="unsafe-url">
     <meta property="og:site_name" content="しらんけど - トレンド速報">
     <meta property="og:title" content="<?= htmlspecialchars($article['title']) ?> - しらんけど">
@@ -201,6 +205,8 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <meta property="og:image" content="<?= htmlspecialchars($article['image_url']) ?>">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <?php elseif (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
+    <meta property="og:image" content="<?= htmlspecialchars(SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
     <?php endif; ?>
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<?= htmlspecialchars($article['title']) ?>">
