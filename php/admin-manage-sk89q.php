@@ -1103,7 +1103,7 @@ $navGroups = [
         'icon' => '💰',
         'children' => [
             'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
-            'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
+            'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => !empty($pendingTradeApplications) ? count($pendingTradeApplications) . '件待ち' : null],
             'trends' => ['icon' => '🔥', 'label' => '急上昇トレンド候補一覧', 'badge' => !empty($trendCandidates) ? count($trendCandidates) . '件' : null],
         ]
     ],
@@ -2598,15 +2598,16 @@ $navGroups = [
                                                 <input type="hidden" name="trade_id" value="<?= (int)$app['id'] ?>">
                                                 <div class="flex-1">
                                                     <label class="block text-xs font-black text-slate-700 mb-1">承認する提携内容</label>
-                                                    <select name="partnership_type" class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold">
+                                                    <select name="partnership_type" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold">
+                                                        <option value="" selected disabled>選択してください</option>
                                                         <option value="link_only">相互リンクのみ</option>
-                                                        <option value="link_rss" selected>相互リンク＋相互RSS</option>
+                                                        <option value="link_rss">相互リンク＋相互RSS</option>
                                                     </select>
                                                 </div>
                                                 <button type="submit" name="decision" value="approve" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-sm">
                                                     ✓ 承認
                                                 </button>
-                                                <button type="submit" name="decision" value="reject" onclick="return confirm('この申請を非承認にしますか？');" class="px-5 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black">
+                                                <button type="submit" name="decision" value="reject" formnovalidate onclick="return confirm('この申請を非承認にしますか？');" class="px-5 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black">
                                                     非承認
                                                 </button>
                                             </form>
