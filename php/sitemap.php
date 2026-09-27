@@ -4,11 +4,13 @@
  */
 header('Content-Type: application/xml; charset=utf-8');
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/classes/StaticPageManager.php';
 
 $domain = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz');
 
 $articles = [];
 $categories = [];
+$staticPages = [];
 try {
     $db = Database::getConnection();
     $stmt = $db->query("SELECT slug, id, published_at FROM articles WHERE status = 'published' AND image_url IS NOT NULL AND TRIM(image_url) != '' ORDER BY published_at DESC LIMIT 1000");
@@ -16,6 +18,11 @@ try {
 
     $catStmt = $db->query("SELECT slug FROM categories ORDER BY sort_order ASC");
     $categories = $catStmt->fetchAll();
+
+    try {
+        MigrationAddFeatures::run();
+        $staticPages = StaticPageManager::published(1);
+    } catch (Throwable $e) {}
 } catch (Throwable $e) {}
 
 echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
@@ -28,31 +35,14 @@ echo '<?xml version="1.0" encoding="UTF-8"?>' . "\n";
         <priority>1.0</priority>
     </url>
     <!-- 固定ページ -->
+    <?php foreach ($staticPages as $page): ?>
     <url>
-        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=about</loc>
+        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=<?= rawurlencode($page['slug']) ?></loc>
+        <lastmod><?= date('c', strtotime($page['updated_at'] ?? 'now')) ?></lastmod>
         <changefreq>monthly</changefreq>
         <priority>0.5</priority>
     </url>
-    <url>
-        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=trade</loc>
-        <changefreq>weekly</changefreq>
-        <priority>0.7</priority>
-    </url>
-    <url>
-        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=news</loc>
-        <changefreq>weekly</changefreq>
-        <priority>0.6</priority>
-    </url>
-    <url>
-        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=privacy-policy</loc>
-        <changefreq>monthly</changefreq>
-        <priority>0.3</priority>
-    </url>
-    <url>
-        <loc><?= htmlspecialchars($domain) ?>/page.php?slug=que</loc>
-        <changefreq>monthly</changefreq>
-        <priority>0.4</priority>
-    </url>
+    <?php endforeach; ?>
 
     <!-- カテゴリ一覧 -->
     <?php foreach ($categories as $cat): ?>
