@@ -17,6 +17,7 @@ session_start();
 ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 require_once __DIR__ . '/classes/Installer.php';
 
 // DB初期設定の自動検出 (未インストールまたはDB未接続時はインストーラーを起動)
@@ -134,6 +135,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'login') {
         $_SESSION['admin_logged_in'] = true;
         $_SESSION['admin_username'] = $adminId;
         $_SESSION['admin_login_time'] = time();
+        @setcookie('shirankedo_admin', '1', [
+            'expires' => time() + 400 * 86400,
+            'path' => '/',
+            'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
         header("Location: {$thisFileUrl}");
         exit;
     } else {
@@ -146,11 +154,28 @@ if (isset($_GET['logout'])) {
     unset($_SESSION['admin_logged_in']);
     unset($_SESSION['admin_username']);
     session_destroy();
+    @setcookie('shirankedo_admin', '', [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     header("Location: {$thisFileUrl}");
     exit;
 }
 
 $isLoggedIn = !empty($_SESSION['admin_logged_in']);
+if ($isLoggedIn) {
+    @setcookie('shirankedo_admin', '1', [
+        'expires' => time() + 400 * 86400,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    $_COOKIE['shirankedo_admin'] = '1';
+}
 
 // DB接続
 $db = null;
@@ -445,45 +470,6 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // 4-B. 相互リンク・相互RSSの一括バルク登録 (複数RSSフィード対応)
-        if ($op === 'bulk_add_trade_sites') {
-            $bulkText = trim($_POST['bulk_data'] ?? '');
-            $lines = preg_split('/[\r\n]+/', $bulkText);
-            $addedCount = 0;
-            $totalFeeds = 0;
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line) || str_starts_with($line, '#')) continue;
-                $parts = array_map('trim', explode('|', $line));
-                if (count($parts) >= 2) {
-                    $bName = $parts[0];
-                    $bUrl = $parts[1];
-                    $bRawRss = $parts[2] ?? '';
-                    $bRssUrls = TradeEngine::extractRssUrls($bRawRss);
-                    if (empty($bRssUrls)) {
-                        continue;
-                    }
-                    if (filter_var($bUrl, FILTER_VALIDATE_URL)) {
-                        $savedRss = implode("\n", $bRssUrls);
-                        $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, created_at) VALUES (?, ?, ?, 'approved', 100, NOW())");
-                        $stmt->execute([$bName, $bUrl, $savedRss]);
-                        $addedCount++;
-                        $totalFeeds += count($bRssUrls);
-                    }
-                }
-            }
-            if ($addedCount > 0) {
-                if (!empty($_POST['fetch_now_bulk'])) {
-                    $stats = TradeEngine::fetchRssFeeds();
-                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録し、新着記事{$stats['items_saved']}件を取得・同期しました！";
-                } else {
-                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録しました！";
-                }
-            } else {
-                $errorMessage = "有効な提携サイトデータが見つかりませんでした。「サイト名 | サイトURL | RSS URL1, RSS URL2」の形式で入力してください。";
-            }
-        }
-
         // 4-C. 相互リンク・相互RSSの設定更新 (複数RSSフィード対応)
         if ($op === 'update_trade_site') {
             $tradeId = (int)($_POST['trade_id'] ?? 0);
@@ -548,52 +534,31 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "RSS巡回完了: 提携{$stats['sites_checked']}サイト、合計{$stats['feeds_checked']}フィードを巡回し、最新記事{$stats['items_saved']}件を同期・更新しました！{$errMsg}";
         }
 
-        // 4-F. 定番アンテナ・相互リンクサイトの一括初期追加（相互リンク枠の拡充）
-        if ($op === 'seed_popular_trade_sites') {
-            require_once __DIR__ . '/classes/MigrationAddFeatures.php';
-            $inserted = MigrationAddFeatures::seedInitialTradeSites($db);
-            TradeEngine::fetchRssFeeds();
-            $flashMessage = "🌟 定番アンテナ・相互リンクサイト（{$inserted}件）を一括登録し、最新RSSフィードを巡回取得しました！";
-        }
-
         // 4-Z. サイト基本設定の更新
         if ($op === 'save_site_settings') {
             $siteName = trim($_POST['site_name'] ?? '');
             $siteDescription = trim($_POST['site_description'] ?? '');
-            $siteGenre = trim($_POST['site_genre'] ?? 'general');
-            $logoUrl = trim($_POST['logo_url'] ?? '');
-            $faviconUrl = trim($_POST['favicon_url'] ?? '');
-            $isPublic = isset($_POST['is_public']) ? 1 : 0;
-            $allowAutoPublish = isset($_POST['allow_auto_publish']) ? 1 : 0;
-            $youtubeThumbnailEnabled = isset($_POST['youtube_thumbnail_enabled']) ? 1 : 0;
 
             if ($siteName === '') {
                 throw new Exception('サイト名を入力してください。');
             }
 
-            $stmt = $db->prepare("UPDATE sites
-                SET name = ?, description = ?, genre = ?, logo_url = ?, favicon_url = ?,
-                    is_public = ?, allow_auto_publish = ?, youtube_thumbnail_enabled = ?
-                WHERE id = 1");
-            $stmt->execute([
-                $siteName,
-                $siteDescription,
-                $siteGenre !== '' ? $siteGenre : 'general',
-                $logoUrl !== '' ? $logoUrl : null,
-                $faviconUrl !== '' ? $faviconUrl : null,
-                $isPublic,
-                $allowAutoPublish,
-                $youtubeThumbnailEnabled
-            ]);
+            $stmt = $db->prepare("UPDATE sites SET name = ?, description = ? WHERE id = 1");
+            $stmt->execute([$siteName, $siteDescription]);
+
+            foreach (['logo', 'favicon', 'ogp'] as $assetType) {
+                $field = 'site_' . $assetType;
+                if (isset($_FILES[$field]) && ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    SiteAssetManager::saveUploadedAsset(1, $assetType, $_FILES[$field]);
+                }
+            }
+
             $flashMessage = 'サイト設定を保存しました。';
         }
 
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
             SettingsManager::set('show_ads', '1'); // 全体マスターは廃止。個別広告枠のみで制御
-            // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
-            SettingsManager::set('affiliate_pr_notice_enabled', isset($_POST['affiliate_pr_notice_enabled']) ? '1' : '0');
-            SettingsManager::set('affiliate_pr_notice_text', trim($_POST['affiliate_pr_notice_text'] ?? '当サイトはアフィリエイト広告を利用しています。'));
 
             // 個別広告枠ごとの表示/非表示設定
             SettingsManager::set('ad_pc_header_enabled', isset($_POST['ad_pc_header_enabled']) ? '1' : '0');
@@ -615,12 +580,6 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = 'アフィリエイト広告スロット・個別表示/非表示設定を保存しました。';
         }
 
-        // 5-2. 相互RSS表示/非表示設定の更新
-        if ($op === 'save_rss_settings') {
-            SettingsManager::set('show_rss', isset($_POST['show_rss']) ? '1' : '0');
-            $flashMessage = '相互RSS表示設定を保存しました。';
-        }
-
         // 5-3. API設定の更新
         if ($op === 'save_api_settings') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
@@ -632,11 +591,17 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($op === 'save_system_settings') {
             SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
             SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
-            SettingsManager::set('auto_post_max_per_day', (int)($_POST['auto_post_max_per_day'] ?? 10));
-            SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
-            SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
             SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
             $flashMessage = 'システム設定を保存しました。';
+        }
+
+        // 5-3C. 実トレンドの手動更新
+        if ($op === 'refresh_trends') {
+            require_once __DIR__ . '/classes/TrendCollector.php';
+            $trendStats = TrendCollector::collectAndIntegrate(1);
+            $flashMessage = $trendStats['fetched'] > 0
+                ? "トレンドを更新しました（取得 {$trendStats['fetched']}件 / 新規 {$trendStats['inserted']}件 / 更新 {$trendStats['updated']}件）。"
+                : 'トレンド取得元へ接続できませんでした。架空データは追加していません。';
         }
 
         // 5-4. 手動キーワードからの即時AI記事自動生成テスト
@@ -936,11 +901,19 @@ if ($db && $isLoggedIn) {
 
         // トレンド候補データ取得
         try {
-            $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+            $trendCandidates = $db->query("SELECT * FROM trend_candidates
+                WHERE site_id = 1
+                  AND (sources_json LIKE '%google_trends%' OR sources_json LIKE '%google_news%')
+                ORDER BY last_updated_at DESC, shirankedo_index DESC
+                LIMIT 50")->fetchAll();
             if (empty($trendCandidates)) {
                 require_once __DIR__ . '/classes/TrendCollector.php';
                 TrendCollector::collectAndIntegrate(1);
-                $trendCandidates = $db->query("SELECT * FROM trend_candidates WHERE site_id = 1 ORDER BY shirankedo_index DESC LIMIT 50")->fetchAll();
+                $trendCandidates = $db->query("SELECT * FROM trend_candidates
+                WHERE site_id = 1
+                  AND (sources_json LIKE '%google_trends%' OR sources_json LIKE '%google_news%')
+                ORDER BY last_updated_at DESC, shirankedo_index DESC
+                LIMIT 50")->fetchAll();
             }
         } catch (Throwable $e) {}
 
@@ -958,7 +931,6 @@ $hasGeminiKey = !empty($geminiApiKey);
 
 $autoPostEnabled = SettingsManager::get('auto_post_enabled', '1') === '1';
 $intervalHours = (float)SettingsManager::get('auto_post_interval_hours', '1');
-$maxPerDay = (int)SettingsManager::get('auto_post_max_per_day', '10');
 $lastCronTime = SettingsManager::get('last_cron_executed_at');
 $lastCronLog = SettingsManager::get('last_cron_log', '');
 $lastCronStatus = SettingsManager::get('last_cron_status', '待機中');
@@ -992,7 +964,7 @@ $navGroups = [
         'title' => 'アクセス解析・分析',
         'icon' => '📈',
         'children' => [
-            'analytics' => ['icon' => '📊', 'label' => 'アクセス解析', 'badge' => 'LIVE'],
+            'analytics' => ['icon' => '📊', 'label' => 'アクセス解析', 'badge' => null],
         ]
     ],
     'monetization' => [
@@ -1339,7 +1311,7 @@ $navGroups = [
                                     </span>
                                 </div>
                                 <div class="text-xs text-slate-600 space-y-1">
-                                    <div>投稿間隔: <span class="font-bold text-slate-800"><?= $intervalHours ?>時間ごと</span> (1日最大<?= $maxPerDay ?>本)</div>
+                                    <div>投稿間隔: <span class="font-bold text-slate-800"><?= $intervalHours ?>時間ごと</span></div>
                                     <div class="text-[11px] text-slate-500">
                                         <?php if ($canPostNextIn > 0): ?>
                                             次回可能まで: <span class="font-bold text-amber-700">あと約<?= $canPostNextIn ?>分</span>
@@ -2286,28 +2258,7 @@ $navGroups = [
                             <p class="text-xs text-slate-500 mt-1">相互リンク・複数RSS・アクセス返還を管理します。</p>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-3">
-                                <!-- 全RSS一括巡回ボタン -->
-                                <form method="POST" class="inline">
-                                    <input type="hidden" name="op" value="fetch_trade_rss">
-                                    <button type="submit" class="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition-all">
-                                        <span>⚡</span> 全提携サイトのRSSを一括巡回・更新
-                                    </button>
-                                </form>
-
-                                <!-- 相互RSS表示/非表示トグルスイッチ -->
-                                <form method="POST" class="bg-white border border-slate-200 px-4 py-2.5 rounded-2xl shadow-sm flex items-center gap-3">
-                                    <input type="hidden" name="op" value="save_rss_settings">
-                                    <label class="flex items-center gap-2 cursor-pointer select-none">
-                                        <input type="checkbox" name="show_rss" value="1" <?= SettingsManager::get('show_rss', '1') === '1' ? 'checked' : '' ?> onchange="this.form.submit()" class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
-                                        <span class="text-xs font-bold text-slate-800">相互RSS枠を表示</span>
-                                    </label>
-                                    <span class="text-[10px] px-2 py-0.5 rounded-full font-bold <?= SettingsManager::get('show_rss', '1') === '1' ? 'bg-emerald-50 text-emerald-700' : 'bg-rose-50 text-rose-700' ?>">
-                                        <?= SettingsManager::get('show_rss', '1') === '1' ? '表示中' : '非表示' ?>
-                                    </span>
-                                </form>
-                            </div>
-
+                        
                         <!-- サマリーメトリクス (4カラム) -->
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
@@ -2410,51 +2361,10 @@ $navGroups = [
                         </div>
 
                         <!-- 一括バルク登録フォーム (折りたたみ) -->
-                        <details class="bg-white rounded-3xl border border-slate-200 p-5 shadow-sm group">
-                            <summary class="font-bold text-xs text-slate-700 cursor-pointer flex items-center justify-between">
-                                <span class="flex items-center gap-2">
-                                    <span>📋</span> 提携サイトのまとめて一括インポート（バルク登録）
-                                </span>
-                                <span class="text-indigo-600 text-[11px] group-open:hidden">開いて入力 ▾</span>
-                                <span class="text-slate-400 text-[11px] hidden group-open:inline">閉じる ▴</span>
-                            </summary>
-                            <form method="POST" class="mt-4 space-y-3 pt-3 border-t border-slate-100">
-                                <input type="hidden" name="op" value="bulk_add_trade_sites">
-                                <p class="text-xs text-slate-500">
-                                    1行に1サイトずつ「<code>サイト名 | サイトURL | RSS URL1, RSS URL2...</code>」の形式で入力してください。複数RSSはカンマまたはスペース区切りで指定できます。
-                                </p>
-                                <textarea name="bulk_data" rows="4" placeholder="テストアンテナ1 | https://site1.example.com | https://site1.example.com/rss1.xml, https://site1.example.com/rss2.xml&#10;テストアンテナ2 | https://site2.example.com | https://site2.example.com/feed/" class="w-full px-3.5 py-2 rounded-xl border border-slate-200 text-xs font-mono focus:ring-2 focus:ring-indigo-500 focus:outline-none"></textarea>
-                                <div class="flex items-center justify-between">
-                                    <label class="flex items-center gap-2 cursor-pointer">
-                                        <input type="checkbox" name="fetch_now_bulk" value="1" checked class="rounded border-slate-300 text-indigo-600 focus:ring-indigo-400">
-                                        <span class="text-xs font-bold text-slate-700">登録後に全RSSを自動巡回する</span>
-                                    </label>
-                                    <button type="submit" class="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs shadow-sm">
-                                        一括インポートを実行
-                                    </button>
-                                </div>
-                            </form>
-                        </details>
+                        
 
                         <!-- 提携アンテナ・相互リンクの一括拡充バナー -->
-                        <div class="bg-gradient-to-r from-amber-500/10 via-amber-500/5 to-transparent border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-                            <div class="space-y-1">
-                                <div class="text-sm font-black text-slate-900 flex items-center gap-2">
-                                    <span>🌟</span> 相互リンク・提携アンテナサイト枠の自動拡充
-                                </div>
-                                <p class="text-xs text-slate-600">
-                                    大手・定番のアンテナサイト・まとめサイト（しぃアンテナ、にゅーもふ、ワロタあんてな、2chまとめくす等 12サイト）をワンクリックで一括追加・相互掲載できます。
-                                </p>
-                            </div>
-                            <form method="POST">
-                                <input type="hidden" name="op" value="seed_popular_trade_sites">
-                                <button type="submit" class="px-5 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all whitespace-nowrap flex items-center gap-2">
-                                    <span>🚀</span> 定番アンテナ12件を一括追加・拡充する
-                                </button>
-                            </form>
-                        </div>
-
-                        <!-- 提携サイト一覧 & 各サイト複数RSS管理テーブル -->
+                                                <!-- 提携サイト一覧 & 各サイト複数RSS管理テーブル -->
                         <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
                             <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
                                 <div>
@@ -2680,34 +2590,7 @@ $navGroups = [
 
                             <!-- マスター表示切替 -->
                                                         <!-- ステマ規制法対応 アフィリエイト広告表記 (PR表記) -->
-                            <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-4">
-                                <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-lg">⚖️</span>
-                                        <div>
-                                            <h2 class="text-base font-black text-slate-900">ステマ規制法対応 アフィリエイト広告・PR表記設定</h2>
-                                            <p class="text-xs text-slate-500">2023年10月施行の景品表示法（ステマ規制）に基づき、全ページ上部および記事内にPR明記を自動表示します。</p>
-                                        </div>
-                                    </div>
-                                    <label class="relative flex items-center gap-2 cursor-pointer bg-slate-50 px-4 py-2 rounded-xl border border-slate-200 shadow-2xs">
-                                        <input type="checkbox" name="affiliate_pr_notice_enabled" value="1" <?= SettingsManager::get('affiliate_pr_notice_enabled', '1') === '1' ? 'checked' : '' ?> class="w-4 h-4 rounded text-amber-500 focus:ring-amber-400">
-                                        <span class="text-xs font-black text-slate-800">PR表記を表示する (推奨: ON)</span>
-                                    </label>
-                                </div>
-                                <div class="space-y-2">
-                                    <label class="block text-xs font-bold text-slate-700">表示する告知文言</label>
-                                    <input type="text" name="affiliate_pr_notice_text" value="<?= htmlspecialchars(SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。')) ?>" class="w-full px-4 py-2.5 rounded-2xl border border-slate-200 text-xs sm:text-sm focus:outline-none focus:border-amber-500" placeholder="当サイトはアフィリエイト広告を利用しています。">
-                                    <div class="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
-                                        <span class="font-bold text-amber-600">表示プレビュー:</span>
-                                        <span class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-200 text-[11px]">
-                                            <span class="px-1.5 py-0.2 rounded bg-amber-500 text-slate-950 font-bold text-[9px]">PR</span>
-                                            <span><?= htmlspecialchars(SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。')) ?></span>
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-
-                            <!-- PC専用広告スロット -->
+                                                        <!-- PC専用広告スロット -->
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                                 <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                                     <span class="text-lg">💻</span>
@@ -3088,85 +2971,136 @@ $navGroups = [
                     </div>
 
                 <!-- 9. 📈 アクセス解析 タブ -->
+                <?php elseif ($currentTab === 'trends'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>🔥</span><span>急上昇トレンド候補一覧</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">Google Trends・Googleニュースから実際に取得できた話題ワードを表示します。</p>
+                        </div>
+
+                        <div class="flex justify-end">
+                            <form method="POST">
+                                <input type="hidden" name="op" value="refresh_trends">
+                                <input type="hidden" name="tab" value="trends">
+                                <button type="submit" class="px-4 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs">
+                                    🔄 最新トレンドを取得
+                                </button>
+                            </form>
+                        </div>
+
+                        <div class="bg-white rounded-3xl border border-slate-200 p-5 sm:p-6 shadow-sm">
+                            <?php if (empty($trendCandidates)): ?>
+                                <div class="py-12 text-center">
+                                    <div class="text-3xl mb-3">🔥</div>
+                                    <div class="text-sm font-black text-slate-800">取得できたトレンドはまだありません</div>
+                                    <p class="text-xs text-slate-500 mt-1">取得元へ接続できない場合も、架空のワードは表示しません。</p>
+                                </div>
+                            <?php else: ?>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs">
+                                        <thead>
+                                            <tr class="border-b border-slate-100 text-slate-400">
+                                                <th class="py-3">人気ワード</th>
+                                                <th class="py-3">取得元</th>
+                                                <th class="py-3 text-center">注目度</th>
+                                                <th class="py-3">最終取得</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <?php foreach ($trendCandidates as $tc):
+                                                $sources = json_decode($tc['sources_json'] ?? '[]', true);
+                                                if (!is_array($sources)) $sources = [];
+                                                $sourceLabels = [];
+                                                foreach ($sources as $src) {
+                                                    if ($src === 'google_trends') $sourceLabels[] = 'Google Trends';
+                                                    elseif ($src === 'google_news') $sourceLabels[] = 'Googleニュース';
+                                                    else $sourceLabels[] = $src;
+                                                }
+                                            ?>
+                                                <tr class="hover:bg-slate-50">
+                                                    <td class="py-3 pr-4">
+                                                        <div class="font-black text-slate-900"><?= htmlspecialchars($tc['display_keyword']) ?></div>
+                                                        <?php if (!empty($tc['is_rapid_rise'])): ?>
+                                                            <span class="inline-block mt-1 px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 text-[10px] font-bold">急上昇</span>
+                                                        <?php endif; ?>
+                                                    </td>
+                                                    <td class="py-3 text-slate-600"><?= htmlspecialchars(implode(' / ', $sourceLabels) ?: '取得元不明') ?></td>
+                                                    <td class="py-3 text-center">
+                                                        <span class="px-2.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-black"><?= (int)$tc['shirankedo_index'] ?></span>
+                                                    </td>
+                                                    <td class="py-3 text-slate-500 whitespace-nowrap"><?= htmlspecialchars($tc['last_updated_at'] ?? $tc['first_detected_at'] ?? '') ?></td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
                 <?php elseif ($currentTab === 'site_settings'): ?>
                     <?php
-                    $siteSettingsRow = [
-                        'name' => 'しらんけど',
-                        'description' => '',
-                        'genre' => 'general',
-                        'logo_url' => '',
-                        'favicon_url' => '',
-                        'is_public' => 1,
-                        'allow_auto_publish' => 1,
-                        'youtube_thumbnail_enabled' => 1,
-                    ];
+                    $siteSettingsRow = ['name' => 'しらんけど', 'description' => ''];
                     try {
-                        $siteStmt = $db->query("SELECT name, description, genre, logo_url, favicon_url, is_public, allow_auto_publish, youtube_thumbnail_enabled FROM sites WHERE id = 1 LIMIT 1");
+                        $siteStmt = $db->query("SELECT name, description FROM sites WHERE id = 1 LIMIT 1");
                         $loadedSite = $siteStmt ? $siteStmt->fetch() : false;
-                        if ($loadedSite) {
-                            $siteSettingsRow = array_merge($siteSettingsRow, $loadedSite);
-                        }
+                        if ($loadedSite) $siteSettingsRow = array_merge($siteSettingsRow, $loadedSite);
                     } catch (Throwable $e) {}
                     ?>
                     <div class="space-y-6">
                         <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
                             <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                                <span>⚙️</span>
-                                <span>サイト設定</span>
+                                <span>⚙️</span><span>サイト設定</span>
                             </h1>
-                            <p class="text-xs text-slate-500 mt-1">
-                                サイト自体の基本情報と公開設定を管理します。
-                            </p>
+                            <p class="text-xs text-slate-500 mt-1">サイト名・説明・サイト画像を管理します。</p>
                         </div>
 
-                        <form method="POST" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
+                        <form method="POST" enctype="multipart/form-data" class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                             <input type="hidden" name="op" value="save_site_settings">
                             <input type="hidden" name="tab" value="site_settings">
 
-                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-5">
-                                <div class="sm:col-span-2 space-y-1.5">
-                                    <label class="block text-xs font-black text-slate-700">サイト名</label>
-                                    <input type="text" name="site_name" required value="<?= htmlspecialchars($siteSettingsRow['name'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
-                                </div>
-
-                                <div class="sm:col-span-2 space-y-1.5">
-                                    <label class="block text-xs font-black text-slate-700">サイト説明</label>
-                                    <textarea name="site_description" rows="4" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm"><?= htmlspecialchars($siteSettingsRow['description'] ?? '') ?></textarea>
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-black text-slate-700">ジャンル</label>
-                                    <input type="text" name="site_genre" value="<?= htmlspecialchars($siteSettingsRow['genre'] ?? 'general') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
-                                </div>
-
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-black text-slate-700">ロゴURL</label>
-                                    <input type="text" name="logo_url" value="<?= htmlspecialchars($siteSettingsRow['logo_url'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
-                                </div>
-
-                                <div class="sm:col-span-2 space-y-1.5">
-                                    <label class="block text-xs font-black text-slate-700">favicon URL</label>
-                                    <input type="text" name="favicon_url" value="<?= htmlspecialchars($siteSettingsRow['favicon_url'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
-                                </div>
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-black text-slate-700">サイト名</label>
+                                <input type="text" name="site_name" required value="<?= htmlspecialchars($siteSettingsRow['name'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm">
                             </div>
 
-                            <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
-                                    <input type="checkbox" name="is_public" value="1" <?= !empty($siteSettingsRow['is_public']) ? 'checked' : '' ?> class="w-4 h-4">
-                                    <span class="text-xs font-bold text-slate-700">サイトを公開する</span>
-                                </label>
-                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
-                                    <input type="checkbox" name="allow_auto_publish" value="1" <?= !empty($siteSettingsRow['allow_auto_publish']) ? 'checked' : '' ?> class="w-4 h-4">
-                                    <span class="text-xs font-bold text-slate-700">安全記事の自動公開</span>
-                                </label>
-                                <label class="flex items-center gap-3 p-4 rounded-2xl bg-slate-50 border border-slate-200 cursor-pointer">
-                                    <input type="checkbox" name="youtube_thumbnail_enabled" value="1" <?= !empty($siteSettingsRow['youtube_thumbnail_enabled']) ? 'checked' : '' ?> class="w-4 h-4">
-                                    <span class="text-xs font-bold text-slate-700">YouTubeサムネイルを使用</span>
-                                </label>
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-black text-slate-700">サイト説明</label>
+                                <textarea name="site_description" rows="4" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm"><?= htmlspecialchars($siteSettingsRow['description'] ?? '') ?></textarea>
+                            </div>
+
+                            <div class="grid grid-cols-1 lg:grid-cols-3 gap-5 pt-2">
+                                <?php
+                                $assetConfigs = [
+                                    'logo' => ['label'=>'ロゴ画像', 'hint'=>'ヘッダー等で使用するサイトロゴ'],
+                                    'favicon' => ['label'=>'favicon', 'hint'=>'ブラウザタブの小さいアイコン'],
+                                    'ogp' => ['label'=>'OGP画像', 'hint'=>'SNSでサイトURLを共有した時の画像'],
+                                ];
+                                foreach ($assetConfigs as $assetType => $assetConfig):
+                                    $hasAsset = SiteAssetManager::exists(1, $assetType);
+                                ?>
+                                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                                        <div>
+                                            <div class="text-xs font-black text-slate-900"><?= htmlspecialchars($assetConfig['label']) ?></div>
+                                            <div class="text-[11px] text-slate-500 mt-0.5"><?= htmlspecialchars($assetConfig['hint']) ?></div>
+                                        </div>
+                                        <?php if ($hasAsset): ?>
+                                            <div class="h-28 rounded-xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden">
+                                                <img src="<?= htmlspecialchars(SiteAssetManager::url($assetType, 1)) ?>&v=<?= time() ?>" alt="" class="<?= $assetType === 'favicon' ? 'w-16 h-16 object-contain' : 'max-w-full max-h-full object-contain' ?>">
+                                            </div>
+                                        <?php else: ?>
+                                            <div class="h-28 rounded-xl bg-white border border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400">未登録</div>
+                                        <?php endif; ?>
+                                        <input type="file" name="site_<?= htmlspecialchars($assetType) ?>" accept="image/jpeg,image/png,image/webp,image/gif,image/x-icon,.ico" class="block w-full text-xs text-slate-600 file:mr-3 file:px-3 file:py-2 file:rounded-xl file:border-0 file:bg-slate-900 file:text-white file:font-bold">
+                                        <p class="text-[10px] text-slate-400">画像本体をDBへ保存します。最大5MB。</p>
+                                    </div>
+                                <?php endforeach; ?>
                             </div>
 
                             <div class="flex justify-end">
-                                <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md transition-all">
+                                <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">
                                     サイト設定を保存
                                 </button>
                             </div>
@@ -3186,7 +3120,17 @@ $navGroups = [
                             <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 <span>📊</span><span>アクセス解析</span>
                             </h1>
-                            <p class="text-xs text-slate-500 mt-1">PV・UU・参照元・端末・人気記事を確認します。</p>
+                            <p class="text-xs text-slate-500 mt-1">管理者・Botを除外した実アクセスのPV・UU・参照元・端末・人気記事を確認します。</p>
+                        </div>
+
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 text-xs text-emerald-900 flex flex-wrap items-center gap-x-5 gap-y-1">
+                            <span class="font-black">✓ 実アクセス計測中</span>
+                            <span>PV: GETのページ閲覧のみ</span>
+                            <span>UU: 1st-party Cookieで識別</span>
+                            <span>除外: 管理者 / Bot / クローラー / プレビュー取得</span>
+                            <?php if (!empty($stats['tracking_since'])): ?>
+                                <span class="text-emerald-700">新方式の計測開始: <?= htmlspecialchars($stats['tracking_since']) ?></span>
+                            <?php endif; ?>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3460,7 +3404,7 @@ $navGroups = [
                             <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 <span>💻</span><span>システム設定</span>
                             </h1>
-                            <p class="text-xs text-slate-500 mt-1">自動投稿の動作、実行時間、Cronなどシステム運用に関する設定をまとめています。</p>
+                            <p class="text-xs text-slate-500 mt-1">自動投稿の投稿間隔とCronなど、システム運用に関する設定を管理します。</p>
                         </div>
 
                                                 <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
@@ -3482,7 +3426,7 @@ $navGroups = [
                             <div class="flex items-center justify-between border-b border-slate-100 pb-4">
                                 <div>
                                     <h2 class="text-base font-black text-slate-900">⏰ 自動投稿・実行設定</h2>
-                                    <p class="text-xs text-slate-500">投稿間隔、稼働時間帯、1日の上限を設定します。</p>
+                                    <p class="text-xs text-slate-500">投稿間隔を設定します。</p>
                                 </div>
                                 <span class="px-3 py-1 rounded-full <?= $autoPostEnabled ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-600' ?> text-[11px] font-bold">
                                     <?= $autoPostEnabled ? '自動投稿: 有効' : '自動投稿: 停止中' ?>
@@ -3506,28 +3450,6 @@ $navGroups = [
                                             <option value="<?= $value ?>" <?= $currentInterval === $value ? 'selected' : '' ?>><?= $label ?>に1本</option>
                                         <?php endforeach; ?>
                                     </select>
-                                </div>
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">1日の最大自動投稿本数</label>
-                                    <?php $currentMax = (int)SettingsManager::get('auto_post_max_per_day', '10'); ?>
-                                    <select name="auto_post_max_per_day" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
-                                        <?php foreach ([3,5,10,15,20,30,0] as $max): ?>
-                                            <option value="<?= $max ?>" <?= $currentMax === $max ? 'selected' : '' ?>><?= $max === 0 ? '無制限' : '1日 '.$max.'本まで' ?></option>
-                                        <?php endforeach; ?>
-                                    </select>
-                                </div>
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">自動投稿を許可する時間帯</label>
-                                    <?php $startHour=(int)SettingsManager::get('auto_post_start_hour','8'); $endHour=(int)SettingsManager::get('auto_post_end_hour','23'); ?>
-                                    <div class="flex items-center gap-2">
-                                        <select name="auto_post_start_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
-                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $startHour===$h?'selected':'' ?>><?= sprintf('%02d:00',$h) ?></option><?php endfor; ?>
-                                        </select>
-                                        <span class="text-slate-400">〜</span>
-                                        <select name="auto_post_end_hour" class="flex-1 px-3 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
-                                            <?php for ($h=0;$h<=23;$h++): ?><option value="<?= $h ?>" <?= $endHour===$h?'selected':'' ?>><?= sprintf('%02d:59',$h) ?></option><?php endfor; ?>
-                                        </select>
-                                    </div>
                                 </div>
                                 <div class="space-y-1.5">
                                     <label class="block text-xs font-bold text-slate-700">自動生成記事の公開設定</label>

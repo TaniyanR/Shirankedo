@@ -8,6 +8,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 
 // 流入アクセスの自動トラッキング (INカウント加算)
 TradeEngine::trackIncomingReferrer();
@@ -20,6 +21,9 @@ $db = null;
 try {
     $db = Database::getConnection();
     $dbConnected = true;
+    try {
+        MigrationAddFeatures::run();
+    } catch (Throwable $ignore) {}
 } catch (Throwable $e) {
     // DB接続エラー
 }
@@ -32,6 +36,10 @@ if ($dbConnected) {
         // フォールバック
     }
 }
+
+$assetBaseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+    . '://' . ($_SERVER['HTTP_HOST'] ?? '')
+    . rtrim(dirname($_SERVER['PHP_SELF'] ?? '/'), '/\\') . '/';
 
 // 記事取得
 $article = null;
@@ -131,7 +139,7 @@ if ($dbConnected) {
 }
 
 // 閲覧トラッキング
-AnalyticsTracker::track('article', (int)($article['id'] ?? null));
+AnalyticsTracker::track('article', (int)($article['id'] ?? 0), (int)($site['id'] ?? 1));
 
 // 表示切り替えフラグ
 $showAds = true; // 全体マスターは廃止。各広告枠の個別設定だけで表示/非表示を制御
@@ -190,6 +198,9 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($article['title']) ?> - <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></title>
     <meta name="description" content="<?= htmlspecialchars(mb_substr(strip_tags($article['why_trending']), 0, 120)) ?>">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'favicon')): ?>
+    <link rel="icon" href="<?= htmlspecialchars(SiteAssetManager::url('favicon', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
     <meta name="referrer" content="unsafe-url">
     <meta property="og:site_name" content="しらんけど - トレンド速報">
     <meta property="og:title" content="<?= htmlspecialchars($article['title']) ?> - しらんけど">
@@ -201,6 +212,8 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <meta property="og:image" content="<?= htmlspecialchars($article['image_url']) ?>">
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
+    <?php elseif (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
+    <meta property="og:image" content="<?= htmlspecialchars($assetBaseUrl . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
     <?php endif; ?>
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<?= htmlspecialchars($article['title']) ?>">
@@ -222,9 +235,15 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
         <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
             <a href="index.php" class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
-                    知
-                </div>
+                <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'logo')): ?>
+                    <div class="w-10 h-10 rounded-2xl bg-white border border-stone-200 overflow-hidden shadow-sm flex items-center justify-center">
+                        <img src="<?= htmlspecialchars(SiteAssetManager::url('logo', (int)($site['id'] ?? 1))) ?>" alt="" class="w-full h-full object-contain">
+                    </div>
+                <?php else: ?>
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
+                        知
+                    </div>
+                <?php endif; ?>
                 <div>
                     <span class="text-xl font-black tracking-tight text-stone-950 block leading-none">
                         <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>

@@ -8,10 +8,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/AnalyticsTracker.php';
-
-// アクセス解析トラッキング & 相互リンク逆アクセスの自動記録
-TradeEngine::trackIncomingReferrer();
-AnalyticsTracker::track('home');
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 
 // DB接続チェック
 $dbConnected = false;
@@ -42,6 +39,10 @@ if ($dbConnected) {
         $site = SiteManager::resolveCurrentSite($subdomain);
     } catch (Throwable $e) {}
 }
+
+$assetBaseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+    . '://' . ($_SERVER['HTTP_HOST'] ?? '')
+    . rtrim(dirname($_SERVER['PHP_SELF'] ?? '/'), '/\\') . '/';
 
 // --- APIエンドポイント処理 (投票・コメント) ---
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
@@ -120,6 +121,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
         exit;
     }
 }
+
+// 実アクセスだけを計測。POST操作・管理者・BotはAnalyticsTracker側で除外。
+TradeEngine::trackIncomingReferrer();
+AnalyticsTracker::track('home', null, (int)($site['id'] ?? 1));
 
 // 記事一覧・カテゴリ一覧の取得
 $articles = [];
@@ -225,11 +230,17 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= htmlspecialchars($site['name'] ?? 'しらんけど') ?> - 完全自動トレンドサイト</title>
     <meta name="description" content="<?= htmlspecialchars($site['description'] ?? 'ネット上の話題を客観分析し、一次情報とともにお届けするトレンドメディア。しらんけど。') ?>">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'favicon')): ?>
+    <link rel="icon" href="<?= htmlspecialchars(SiteAssetManager::url('favicon', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
     <meta name="referrer" content="unsafe-url">
     <meta property="og:title" content="<?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>">
     <meta property="og:description" content="ネット上の話題を客観分析し、一次情報とともにお届けするトレンドメディア。しらんけど。">
     <meta property="og:type" content="website">
-    <meta name="twitter:card" content="summary_large_image">
+    <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
+    <meta property="og:image" content="<?= htmlspecialchars($assetBaseUrl . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
+    <?php endif; ?>
+        <meta name="twitter:card" content="summary_large_image">
     <?= $headCustomTags ?>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -247,9 +258,15 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
         <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <a href="?" class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
-                    知
-                </div>
+                <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'logo')): ?>
+                    <div class="w-10 h-10 rounded-2xl bg-white border border-stone-200 overflow-hidden shadow-sm flex items-center justify-center">
+                        <img src="<?= htmlspecialchars(SiteAssetManager::url('logo', (int)($site['id'] ?? 1))) ?>" alt="" class="w-full h-full object-contain">
+                    </div>
+                <?php else: ?>
+                    <div class="w-10 h-10 rounded-2xl bg-amber-500 text-stone-950 font-black text-xl flex items-center justify-center shadow-md rotate-[-2deg]">
+                        知
+                    </div>
+                <?php endif; ?>
                 <div>
                     <span class="text-xl font-black tracking-tight text-stone-950 block leading-none">
                         <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>

@@ -20,12 +20,12 @@ $db = Database::getConnection();
 
 // サイトテーブル初期化の自己修復 (未登録の場合自動作成)
 try {
-    $sites = $db->query("SELECT id, name, allow_auto_publish FROM sites WHERE is_public = 1")->fetchAll();
+    $sites = $db->query("SELECT id, name FROM sites")->fetchAll();
     if (empty($sites)) {
-        $db->exec("INSERT INTO sites (id, subdomain, name, description, genre, is_public, allow_auto_publish) 
+        $db->exec("INSERT INTO sites (id, subdomain, name, description, genre, is_public, allow_auto_publish)
                    VALUES (1, '', 'しらんけど', 'いま話題のトレンドを客観一次情報とともにまとめ。しらんけど。', 'general', 1, 1)
-                   ON DUPLICATE KEY UPDATE is_public = 1, allow_auto_publish = 1");
-        $sites = $db->query("SELECT id, name, allow_auto_publish FROM sites WHERE is_public = 1")->fetchAll();
+                   ON DUPLICATE KEY UPDATE name = VALUES(name)");
+        $sites = $db->query("SELECT id, name FROM sites")->fetchAll();
         echo "  [Worker初期化] デフォルトサイト(ID:1)を自動構成しました。\n";
     }
 
@@ -49,12 +49,7 @@ try {
 // 自動投稿コントロール設定の取得
 $autoPostEnabled = SettingsManager::get('auto_post_enabled', '1') === '1';
 $intervalHours = (float)SettingsManager::get('auto_post_interval_hours', '1');
-$maxPerDay = (int)SettingsManager::get('auto_post_max_per_day', '10');
-$startHour = (int)SettingsManager::get('auto_post_start_hour', '8');
-$endHour = (int)SettingsManager::get('auto_post_end_hour', '23');
 $defaultStatus = SettingsManager::get('auto_post_default_status', 'published');
-
-$currentHour = (int)date('G'); // 0〜23
 $canGenerateArticles = true;
 $skipReason = '';
 
@@ -62,43 +57,23 @@ if (!$isForce) {
     if (!$autoPostEnabled) {
         $canGenerateArticles = false;
         $skipReason = 'AI自動投稿が無効化（OFF）に設定されています。';
-    } elseif ($startHour <= $endHour) {
-        if ($currentHour < $startHour || $currentHour > $endHour) {
-            $canGenerateArticles = false;
-            $skipReason = "稼働時間外です（設定許可時間帯: {$startHour}時〜{$endHour}時、現在: {$currentHour}時）。";
-        }
-    } else {
-        // 日をまたぐ設定
-        if ($currentHour < $startHour && $currentHour > $endHour) {
-            $canGenerateArticles = false;
-            $skipReason = "稼働時間外です（設定許可時間帯: {$startHour}時〜翌{$endHour}時、現在: {$currentHour}時）。";
-        }
     }
 
-    // 1日の上限本数のチェック
-    if ($canGenerateArticles && $maxPerDay > 0) {
-        $todayCount = (int)$db->query("SELECT COUNT(*) FROM articles WHERE DATE(published_at) = CURDATE()")->fetchColumn();
-        if ($todayCount >= $maxPerDay) {
-            $canGenerateArticles = false;
-            $skipReason = "本日の投稿上限（{$maxPerDay}本）に達しています（本日実績: {$todayCount}本）。";
-        }
-    }
-
-    // 投稿間隔のチェック
+    // 投稿間隔だけを自動投稿の制御条件にする。
     if ($canGenerateArticles && $intervalHours > 0) {
-        $lastPostTime = $db->query("SELECT published_at FROM articles ORDER BY published_at DESC LIMIT 1")->fetchColumn();
+        $lastPostTime = $db->query("SELECT published_at FROM articles WHERE published_at IS NOT NULL ORDER BY published_at DESC LIMIT 1")->fetchColumn();
         if ($lastPostTime) {
             $diffMinutes = (time() - strtotime($lastPostTime)) / 60;
             $requiredMinutes = $intervalHours * 60;
             if ($diffMinutes < $requiredMinutes) {
                 $canGenerateArticles = false;
-                $remMinutes = round($requiredMinutes - $diffMinutes);
-                $skipReason = "前回投稿からまだ " . round($diffMinutes) . "分しか経過していません（設定間隔: {$intervalHours}時間 = {$requiredMinutes}分、次回可能まで約 {$remMinutes}分）。";
+                $remMinutes = max(1, round($requiredMinutes - $diffMinutes));
+                $skipReason = "前回投稿からの設定間隔（{$intervalHours}時間）待ちです。次回可能まで約 {$remMinutes}分。";
             }
         }
     }
 } else {
-    echo "  [Worker] 手動/強制モードのため、時間帯・投稿間隔チェックをバイパスします。\n";
+    echo "  [Worker] 手動/強制モードのため、投稿間隔チェックをバイパスします。\n";
 }
 
 foreach ($sites as $site) {
@@ -169,7 +144,7 @@ foreach ($sites as $site) {
         $hasImage = !empty($imgUrl);
 
         // ステータス判定
-        $status = ($safety['needs_hold'] || $site['allow_auto_publish'] != 1 || $defaultStatus === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
+        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
         $slug = 'trend-' . time() . '-' . rand(100, 999);
         $dangerReason = $safety['is_dangerous'] 
             ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 

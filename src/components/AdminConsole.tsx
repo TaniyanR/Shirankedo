@@ -86,18 +86,6 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
   const [isGenerating, setIsGenerating] = useState(false);
   const [genStatusMsg, setGenStatusMsg] = useState<string | null>(null);
 
-  // リアルタイム訪問者数 (18人〜25人)
-  const [realtimeVisitors, setRealtimeVisitors] = useState(18);
-  useEffect(() => {
-    const timer = setInterval(() => {
-      setRealtimeVisitors((prev) => {
-        const delta = Math.floor(Math.random() * 5) - 2;
-        return Math.max(12, Math.min(35, prev + delta));
-      });
-    }, 4500);
-    return () => clearInterval(timer);
-  }, []);
-
   // データ初期ロード
   const loadData = () => {
     fetch('/api/dashboard-stats')
@@ -282,7 +270,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
       title: 'アクセス解析・分析',
       badge: '1項目',
       items: [
-        { tab: 'analytics' as AdminTab, label: 'アクセス解析', icon: BarChart3, badge: 'LIVE', badgeColor: 'amber' },
+        { tab: 'analytics' as AdminTab, label: 'アクセス解析', icon: BarChart3 },
       ],
     },
     {
@@ -508,7 +496,7 @@ export const AdminConsole: React.FC<AdminConsoleProps> = ({
           )}
 
           {activeTab === 'analytics' && (
-            <AnalyticsTab realtimeVisitors={realtimeVisitors} />
+            <AnalyticsTab />
           )}
 
           {activeTab === 'cron' && <CronTab />}
