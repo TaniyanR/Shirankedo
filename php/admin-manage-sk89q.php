@@ -17,6 +17,7 @@ session_start();
 ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
+require_once __DIR__ . '/classes/SiteAssetManager.php';
 require_once __DIR__ . '/classes/Installer.php';
 
 // DB初期設定の自動検出 (未インストールまたはDB未接続時はインストーラーを起動)
@@ -134,6 +135,13 @@ if (isset($_POST['action']) && $_POST['action'] === 'login') {
         $_SESSION['admin_logged_in'] = true;
         $_SESSION['admin_username'] = $adminId;
         $_SESSION['admin_login_time'] = time();
+        @setcookie('shirankedo_admin', '1', [
+            'expires' => time() + 400 * 86400,
+            'path' => '/',
+            'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+            'httponly' => true,
+            'samesite' => 'Lax',
+        ]);
         header("Location: {$thisFileUrl}");
         exit;
     } else {
@@ -146,11 +154,28 @@ if (isset($_GET['logout'])) {
     unset($_SESSION['admin_logged_in']);
     unset($_SESSION['admin_username']);
     session_destroy();
+    @setcookie('shirankedo_admin', '', [
+        'expires' => time() - 3600,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
     header("Location: {$thisFileUrl}");
     exit;
 }
 
 $isLoggedIn = !empty($_SESSION['admin_logged_in']);
+if ($isLoggedIn) {
+    @setcookie('shirankedo_admin', '1', [
+        'expires' => time() + 400 * 86400,
+        'path' => '/',
+        'secure' => !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off',
+        'httponly' => true,
+        'samesite' => 'Lax',
+    ]);
+    $_COOKIE['shirankedo_admin'] = '1';
+}
 
 // DB接続
 $db = null;
@@ -445,45 +470,6 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
-        // 4-B. 相互リンク・相互RSSの一括バルク登録 (複数RSSフィード対応)
-        if ($op === 'bulk_add_trade_sites') {
-            $bulkText = trim($_POST['bulk_data'] ?? '');
-            $lines = preg_split('/[\r\n]+/', $bulkText);
-            $addedCount = 0;
-            $totalFeeds = 0;
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line) || str_starts_with($line, '#')) continue;
-                $parts = array_map('trim', explode('|', $line));
-                if (count($parts) >= 2) {
-                    $bName = $parts[0];
-                    $bUrl = $parts[1];
-                    $bRawRss = $parts[2] ?? '';
-                    $bRssUrls = TradeEngine::extractRssUrls($bRawRss);
-                    if (empty($bRssUrls)) {
-                        continue;
-                    }
-                    if (filter_var($bUrl, FILTER_VALIDATE_URL)) {
-                        $savedRss = implode("\n", $bRssUrls);
-                        $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, created_at) VALUES (?, ?, ?, 'approved', 100, NOW())");
-                        $stmt->execute([$bName, $bUrl, $savedRss]);
-                        $addedCount++;
-                        $totalFeeds += count($bRssUrls);
-                    }
-                }
-            }
-            if ($addedCount > 0) {
-                if (!empty($_POST['fetch_now_bulk'])) {
-                    $stats = TradeEngine::fetchRssFeeds();
-                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録し、新着記事{$stats['items_saved']}件を取得・同期しました！";
-                } else {
-                    $flashMessage = "提携サイト{$addedCount}件（合計RSS {$totalFeeds}フィード）を一括登録しました！";
-                }
-            } else {
-                $errorMessage = "有効な提携サイトデータが見つかりませんでした。「サイト名 | サイトURL | RSS URL1, RSS URL2」の形式で入力してください。";
-            }
-        }
-
         // 4-C. 相互リンク・相互RSSの設定更新 (複数RSSフィード対応)
         if ($op === 'update_trade_site') {
             $tradeId = (int)($_POST['trade_id'] ?? 0);
@@ -548,52 +534,31 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = "RSS巡回完了: 提携{$stats['sites_checked']}サイト、合計{$stats['feeds_checked']}フィードを巡回し、最新記事{$stats['items_saved']}件を同期・更新しました！{$errMsg}";
         }
 
-        // 4-F. 定番アンテナ・相互リンクサイトの一括初期追加（相互リンク枠の拡充）
-        if ($op === 'seed_popular_trade_sites') {
-            require_once __DIR__ . '/classes/MigrationAddFeatures.php';
-            $inserted = MigrationAddFeatures::seedInitialTradeSites($db);
-            TradeEngine::fetchRssFeeds();
-            $flashMessage = "🌟 定番アンテナ・相互リンクサイト（{$inserted}件）を一括登録し、最新RSSフィードを巡回取得しました！";
-        }
-
         // 4-Z. サイト基本設定の更新
         if ($op === 'save_site_settings') {
             $siteName = trim($_POST['site_name'] ?? '');
             $siteDescription = trim($_POST['site_description'] ?? '');
-            $siteGenre = trim($_POST['site_genre'] ?? 'general');
-            $logoUrl = trim($_POST['logo_url'] ?? '');
-            $faviconUrl = trim($_POST['favicon_url'] ?? '');
-            $isPublic = isset($_POST['is_public']) ? 1 : 0;
-            $allowAutoPublish = isset($_POST['allow_auto_publish']) ? 1 : 0;
-            $youtubeThumbnailEnabled = isset($_POST['youtube_thumbnail_enabled']) ? 1 : 0;
 
             if ($siteName === '') {
                 throw new Exception('サイト名を入力してください。');
             }
 
-            $stmt = $db->prepare("UPDATE sites
-                SET name = ?, description = ?, genre = ?, logo_url = ?, favicon_url = ?,
-                    is_public = ?, allow_auto_publish = ?, youtube_thumbnail_enabled = ?
-                WHERE id = 1");
-            $stmt->execute([
-                $siteName,
-                $siteDescription,
-                $siteGenre !== '' ? $siteGenre : 'general',
-                $logoUrl !== '' ? $logoUrl : null,
-                $faviconUrl !== '' ? $faviconUrl : null,
-                $isPublic,
-                $allowAutoPublish,
-                $youtubeThumbnailEnabled
-            ]);
+            $stmt = $db->prepare("UPDATE sites SET name = ?, description = ? WHERE id = 1");
+            $stmt->execute([$siteName, $siteDescription]);
+
+            foreach (['logo', 'favicon', 'ogp'] as $assetType) {
+                $field = 'site_' . $assetType;
+                if (isset($_FILES[$field]) && ($_FILES[$field]['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_NO_FILE) {
+                    SiteAssetManager::saveUploadedAsset(1, $assetType, $_FILES[$field]);
+                }
+            }
+
             $flashMessage = 'サイト設定を保存しました。';
         }
 
         // 5. アフィリエイト広告スロット & 個別表示/非表示設定の更新
         if ($op === 'save_ads') {
             SettingsManager::set('show_ads', '1'); // 全体マスターは廃止。個別広告枠のみで制御
-            // ステマ規制法対応 アフィリエイト広告表記 (PR表記)
-            SettingsManager::set('affiliate_pr_notice_enabled', isset($_POST['affiliate_pr_notice_enabled']) ? '1' : '0');
-            SettingsManager::set('affiliate_pr_notice_text', trim($_POST['affiliate_pr_notice_text'] ?? '当サイトはアフィリエイト広告を利用しています。'));
 
             // 個別広告枠ごとの表示/非表示設定
             SettingsManager::set('ad_pc_header_enabled', isset($_POST['ad_pc_header_enabled']) ? '1' : '0');
@@ -615,12 +580,6 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $flashMessage = 'アフィリエイト広告スロット・個別表示/非表示設定を保存しました。';
         }
 
-        // 5-2. 相互RSS表示/非表示設定の更新
-        if ($op === 'save_rss_settings') {
-            SettingsManager::set('show_rss', isset($_POST['show_rss']) ? '1' : '0');
-            $flashMessage = '相互RSS表示設定を保存しました。';
-        }
-
         // 5-3. API設定の更新
         if ($op === 'save_api_settings') {
             SettingsManager::set('gemini_api_key', trim($_POST['gemini_api_key'] ?? ''));
@@ -632,11 +591,17 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($op === 'save_system_settings') {
             SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
             SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
-            SettingsManager::set('auto_post_max_per_day', (int)($_POST['auto_post_max_per_day'] ?? 10));
-            SettingsManager::set('auto_post_start_hour', (int)($_POST['auto_post_start_hour'] ?? 8));
-            SettingsManager::set('auto_post_end_hour', (int)($_POST['auto_post_end_hour'] ?? 23));
             SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
             $flashMessage = 'システム設定を保存しました。';
+        }
+
+        // 5-3C. 実トレンドの手動更新
+        if ($op === 'refresh_trends') {
+            require_once __DIR__ . '/classes/TrendCollector.php';
+            $trendStats = TrendCollector::collectAndIntegrate(1);
+            $flashMessage = $trendStats['fetched'] > 0
+                ? "トレンドを更新しました（取得 {$trendStats['fetched']}件 / 新規 {$trendStats['inserted']}件 / 更新 {$trendStats['updated']}件）。"
+                : 'トレンド取得元へ接続できませんでした。架空データは追加していません。';
         }
 
         // 5-4. 手動キーワードからの即時AI記事自動生成テスト
@@ -958,7 +923,6 @@ $hasGeminiKey = !empty($geminiApiKey);
 
 $autoPostEnabled = SettingsManager::get('auto_post_enabled', '1') === '1';
 $intervalHours = (float)SettingsManager::get('auto_post_interval_hours', '1');
-$maxPerDay = (int)SettingsManager::get('auto_post_max_per_day', '10');
 $lastCronTime = SettingsManager::get('last_cron_executed_at');
 $lastCronLog = SettingsManager::get('last_cron_log', '');
 $lastCronStatus = SettingsManager::get('last_cron_status', '待機中');
@@ -1339,7 +1303,7 @@ $navGroups = [
                                     </span>
                                 </div>
                                 <div class="text-xs text-slate-600 space-y-1">
-                                    <div>投稿間隔: <span class="font-bold text-slate-800"><?= $intervalHours ?>時間ごと</span> (1日最大<?= $maxPerDay ?>本)</div>
+                                    <div>投稿間隔: <span class="font-bold text-slate-800"><?= $intervalHours ?>時間ごと</span></div>
                                     <div class="text-[11px] text-slate-500">
                                         <?php if ($canPostNextIn > 0): ?>
                                             次回可能まで: <span class="font-bold text-amber-700">あと約<?= $canPostNextIn ?>分</span>
