@@ -127,9 +127,6 @@ class MigrationAddFeatures {
             'gemini_model' => 'gemini-2.5-flash',
             'auto_post_enabled' => '1',
             'auto_post_interval_hours' => '3',
-            // ページの生死判定設定
-            'ai_lifecycle_auto_enabled' => '1',
-            'ai_lifecycle_max_days' => '30',
             // 広告コード
             'ad_pc_header' => '<div class="w-[468px] h-[60px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold">広告 (PCヘッダー: 468x60)</div>',
             'ad_pc_sidebar_top' => '<div class="w-[300px] h-[250px] bg-stone-100 border border-dashed border-stone-300 flex items-center justify-center text-xs text-stone-400 font-bold mx-auto">広告 (PCサイド上: 300x250)</div>',
@@ -150,20 +147,6 @@ class MigrationAddFeatures {
             $stmt = $db->prepare("INSERT IGNORE INTO site_settings (site_id, setting_key, setting_value) VALUES (1, ?, ?)");
             $stmt->execute([$key, $val]);
         }
-
-        // 6. ページの生死・AI判定用カラムの追加（存在しない場合のみ安全に追加）
-        try {
-            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_status` ENUM('active', 'warning', 'dormant', 'archived') NOT NULL DEFAULT 'active' AFTER `status`");
-        } catch (Throwable $e) {}
-        try {
-            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_reason` VARCHAR(255) NULL AFTER `lifecycle_status`");
-        } catch (Throwable $e) {}
-        try {
-            $db->exec("ALTER TABLE `articles` ADD COLUMN `lifecycle_checked_at` DATETIME NULL AFTER `lifecycle_reason`");
-        } catch (Throwable $e) {}
-        try {
-            $db->exec("ALTER TABLE `articles` ADD COLUMN `auto_lifecycle_enabled` TINYINT(1) NOT NULL DEFAULT 1 AFTER `lifecycle_checked_at`");
-        } catch (Throwable $e) {}
 
         // 7. 相互リンク・相互RSSの複数RSS登録対応 (rss_url を TEXT に拡張)
         try {
