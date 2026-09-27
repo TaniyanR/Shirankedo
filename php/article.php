@@ -34,6 +34,10 @@ if ($dbConnected) {
     }
 }
 
+$assetBaseUrl = ((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http')
+    . '://' . ($_SERVER['HTTP_HOST'] ?? '')
+    . rtrim(dirname($_SERVER['PHP_SELF'] ?? '/'), '/\\') . '/';
+
 // 記事取得
 $article = null;
 if ($dbConnected && ($articleId > 0 || !empty($slug))) {
@@ -206,7 +210,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <meta property="og:image:width" content="1200">
     <meta property="og:image:height" content="630">
     <?php elseif (SiteAssetManager::exists((int)($site['id'] ?? 1), 'ogp')): ?>
-    <meta property="og:image" content="<?= htmlspecialchars(SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
+    <meta property="og:image" content="<?= htmlspecialchars($assetBaseUrl . SiteAssetManager::url('ogp', (int)($site['id'] ?? 1))) ?>">
     <?php endif; ?>
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="<?= htmlspecialchars($article['title']) ?>">
