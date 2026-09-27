@@ -24,7 +24,7 @@ try {
     if (empty($sites)) {
         $db->exec("INSERT INTO sites (id, subdomain, name, description, genre, is_public, allow_auto_publish)
                    VALUES (1, '', 'しらんけど', 'いま話題のトレンドを客観一次情報とともにまとめ。しらんけど。', 'general', 1, 1)
-                   ON DUPLICATE KEY UPDATE name = VALUES(name)"
+                   ON DUPLICATE KEY UPDATE name = VALUES(name)");
         $sites = $db->query("SELECT id, name FROM sites")->fetchAll();
         echo "  [Worker初期化] デフォルトサイト(ID:1)を自動構成しました。\n";
     }
