@@ -3112,7 +3112,17 @@ $navGroups = [
                             <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 <span>📊</span><span>アクセス解析</span>
                             </h1>
-                            <p class="text-xs text-slate-500 mt-1">PV・UU・参照元・端末・人気記事を確認します。</p>
+                            <p class="text-xs text-slate-500 mt-1">管理者・Botを除外した実アクセスのPV・UU・参照元・端末・人気記事を確認します。</p>
+                        </div>
+
+                        <div class="bg-emerald-50 border border-emerald-200 rounded-2xl px-4 py-3 text-xs text-emerald-900 flex flex-wrap items-center gap-x-5 gap-y-1">
+                            <span class="font-black">✓ 実アクセス計測中</span>
+                            <span>PV: GETのページ閲覧のみ</span>
+                            <span>UU: 1st-party Cookieで識別</span>
+                            <span>除外: 管理者 / Bot / クローラー / プレビュー取得</span>
+                            <?php if (!empty($stats['tracking_since'])): ?>
+                                <span class="text-emerald-700">新方式の計測開始: <?= htmlspecialchars($stats['tracking_since']) ?></span>
+                            <?php endif; ?>
                         </div>
 
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -3386,7 +3396,7 @@ $navGroups = [
                             <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
                                 <span>💻</span><span>システム設定</span>
                             </h1>
-                            <p class="text-xs text-slate-500 mt-1">自動投稿の動作、実行時間、Cronなどシステム運用に関する設定をまとめています。</p>
+                            <p class="text-xs text-slate-500 mt-1">自動投稿の投稿間隔とCronなど、システム運用に関する設定を管理します。</p>
                         </div>
 
                                                 <div class="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs text-xs flex flex-wrap items-center justify-between gap-3">
