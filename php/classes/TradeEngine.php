@@ -48,9 +48,11 @@ class TradeEngine {
             $db = Database::getConnection();
             
             // 承認済みサイトのリストと返還比率を取得
-            $sites = $db->query("SELECT id, site_name, url, return_rate, is_boosted, boost_weight, in_count, out_count FROM trade_sites WHERE status = 'approved'")->fetchAll();
+            $sites = $db->query("SELECT id, site_name, url, return_rate, is_boosted, boost_weight, in_count, out_count
+                                 FROM trade_sites
+                                 WHERE status = 'approved' AND partnership_type = 'link_rss'")->fetchAll();
             if (empty($sites)) {
-                return self::getFallbackFeedItems($requireImage, $limit);
+                return [];
             }
 
             // スコア算出 (IN数 * 返還率% * ブースト係数 - OUTペナルティ)
@@ -85,7 +87,7 @@ class TradeEngine {
             $sql = "SELECT i.*, s.site_name 
                     FROM trade_feed_items i
                     JOIN trade_sites s ON i.trade_site_id = s.id
-                    WHERE i.trade_site_id IN ($inPlaceholders) AND s.status = 'approved'";
+                    WHERE i.trade_site_id IN ($inPlaceholders) AND s.status = 'approved' AND s.partnership_type = 'link_rss'";
             if ($requireImage) {
                 $sql .= " AND i.has_image = 1 AND i.image_url IS NOT NULL AND i.image_url != ''";
             }
@@ -95,13 +97,9 @@ class TradeEngine {
             $stmt->execute($selectedSiteIds);
             $items = $stmt->fetchAll();
 
-            if (empty($items)) {
-                return self::getFallbackFeedItems($requireImage, $limit);
-            }
-
             return $items;
         } catch (Throwable $e) {
-            return self::getFallbackFeedItems($requireImage, $limit);
+            return [];
         }
     }
 
@@ -119,33 +117,10 @@ class TradeEngine {
         try {
             $db = Database::getConnection();
             $sites = $db->query("SELECT id, site_name, url FROM trade_sites WHERE status = 'approved' ORDER BY is_boosted DESC, in_count DESC, id ASC LIMIT 100")->fetchAll();
-            if (!empty($sites)) {
-                return $sites;
-            }
-            return self::getFallbackApprovedLinks();
+            return $sites ?: [];
         } catch (Throwable $e) {
-            return self::getFallbackApprovedLinks();
+            return [];
         }
-    }
-
-    /**
-     * 初期表示用 フォールバック相互リンク一覧
-     */
-    public static function getFallbackApprovedLinks(): array {
-        return [
-            ['id' => 1, 'site_name' => '2chまとめアンテナ', 'url' => 'https://2ch-c.net/'],
-            ['id' => 2, 'site_name' => 'しぃアンテナ(*ﾟーﾟ)', 'url' => 'http://2ch-c.net/'],
-            ['id' => 3, 'site_name' => 'だめぽアンテナ', 'url' => 'https://damepo.net/'],
-            ['id' => 4, 'site_name' => 'ヌルポアンテナ', 'url' => 'https://nullpoantenna.com/'],
-            ['id' => 5, 'site_name' => 'ニュース速報まとめアンテナ', 'url' => 'https://news-matome-antenna.com/'],
-            ['id' => 6, 'site_name' => '芸能・エンタメ速報アンテナ', 'url' => 'https://geinou-antenna.com/'],
-            ['id' => 7, 'site_name' => 'ゲームトレンド速報アンテナ', 'url' => 'https://gametrend-antenna.com/'],
-            ['id' => 8, 'site_name' => 'IT・ガジェットまとめアンテナ', 'url' => 'https://itgadget-antenna.net/'],
-            ['id' => 9, 'site_name' => 'スポーツ速報ナビ', 'url' => 'https://sports-navi-antenna.com/'],
-            ['id' => 10, 'site_name' => 'カルチャートレンド総合アンテナ', 'url' => 'https://culture-trend-antenna.jp/'],
-            ['id' => 11, 'site_name' => '話題のバズニュースまとめ', 'url' => 'https://buzz-matome-news.com/'],
-            ['id' => 12, 'site_name' => 'SNSホットワードアンテナ', 'url' => 'https://snshotword-antenna.net/']
-        ];
     }
 
     /**
@@ -181,11 +156,11 @@ class TradeEngine {
         try {
             $db = Database::getConnection();
             if ($tradeSiteId !== null) {
-                $stmt = $db->prepare("SELECT id, site_name, url, rss_url FROM trade_sites WHERE id = ?");
+                $stmt = $db->prepare("SELECT id, site_name, url, rss_url FROM trade_sites WHERE id = ? AND partnership_type = 'link_rss'");
                 $stmt->execute([$tradeSiteId]);
                 $sites = $stmt->fetchAll();
             } else {
-                $sites = $db->query("SELECT id, site_name, url, rss_url FROM trade_sites WHERE status = 'approved'")->fetchAll();
+                $sites = $db->query("SELECT id, site_name, url, rss_url FROM trade_sites WHERE status = 'approved' AND partnership_type = 'link_rss'")->fetchAll();
             }
 
             if (empty($sites)) {
@@ -404,67 +379,5 @@ class TradeEngine {
 
         return null;
     }
-
-    /**
-     * 初期デモ用フィードアイテム（相互RSS未登録時）
-     */
-    private static function getFallbackFeedItems(bool $requireImage, int $limit): array {
-        $fallbacks = [
-            [
-                'id' => 1,
-                'trade_site_id' => 0,
-                'site_name' => 'トレンドニュース速報',
-                'title' => '【話題】今年流行りの最新便利グッズBEST5が発表！',
-                'url' => '#',
-                'image_url' => 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=400&q=80',
-                'has_image' => 1,
-                'published_at' => date('Y-m-d H:i:s')
-            ],
-            [
-                'id' => 2,
-                'trade_site_id' => 0,
-                'site_name' => 'エンタメまとめch',
-                'title' => '深夜の突撃ロケ企画でハプニング連発、ネット騒然！',
-                'url' => '#',
-                'image_url' => 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?auto=format&fit=crop&w=400&q=80',
-                'has_image' => 1,
-                'published_at' => date('Y-m-d H:i:s')
-            ],
-            [
-                'id' => 3,
-                'trade_site_id' => 0,
-                'site_name' => 'ゲームギーク速報',
-                'title' => '全世界待望の新作アクションRPG、配信直後に歴代同接記録を更新',
-                'url' => '#',
-                'image_url' => 'https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=400&q=80',
-                'has_image' => 1,
-                'published_at' => date('Y-m-d H:i:s')
-            ],
-            [
-                'id' => 4,
-                'trade_site_id' => 0,
-                'site_name' => 'ネットの噂アンテナ',
-                'title' => '会話を丸く収めるクッション言葉「しらんけど」の威力',
-                'url' => '#',
-                'image_url' => 'https://images.unsplash.com/photo-1585829365295-ab7cd400c167?auto=format&fit=crop&w=400&q=80',
-                'has_image' => 1,
-                'published_at' => date('Y-m-d H:i:s')
-            ],
-            [
-                'id' => 5,
-                'trade_site_id' => 0,
-                'site_name' => 'カルチャーラボ',
-                'title' => '話題のAIツールを使った創作活動が急速に拡大中',
-                'url' => '#',
-                'image_url' => 'https://images.unsplash.com/photo-1518770660439-4636190af475?auto=format&fit=crop&w=400&q=80',
-                'has_image' => 1,
-                'published_at' => date('Y-m-d H:i:s')
-            ]
-        ];
-
-        if ($requireImage) {
-            return array_slice(array_filter($fallbacks, fn($x) => $x['has_image']), 0, $limit);
-        }
-        return array_slice($fallbacks, 0, $limit);
-    }
 }
+

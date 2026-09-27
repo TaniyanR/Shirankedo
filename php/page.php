@@ -76,13 +76,16 @@ if ($page && ($page['special_type'] ?? 'content') === 'trade' && $_SERVER['REQUE
     $siteTitle = trim($_POST['site_name'] ?? '');
     $siteUrl = trim($_POST['url'] ?? '');
     $rawRss = trim($_POST['rss_url'] ?? '');
+    $email = trim($_POST['email'] ?? '');
     $honeyTrap = trim($_POST['trap_field'] ?? '');
     $validRssUrls = TradeEngine::extractRssUrls($rawRss);
 
     if ($honeyTrap !== '') {
         $tradeSuccess = true;
-    } elseif ($siteTitle === '' || $siteUrl === '' || $rawRss === '') {
-        $tradeError = 'サイト名、URL、RSSのURLはすべて必須項目です。';
+    } elseif ($siteTitle === '' || $siteUrl === '' || $rawRss === '' || $email === '') {
+        $tradeError = 'サイト名、URL、RSSのURL、メールアドレスはすべて必須項目です。';
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $tradeError = '正しいメールアドレスを入力してください。';
     } elseif (!filter_var($siteUrl, FILTER_VALIDATE_URL)) {
         $tradeError = 'サイトURLは「https://〜」の正しい形式でご入力ください。';
     } elseif (empty($validRssUrls)) {
@@ -96,8 +99,10 @@ if ($page && ($page['special_type'] ?? 'content') === 'trade' && $_SERVER['REQUE
                     $tradeError = 'このサイトURLは既に登録申請済みです。';
                 } else {
                     $savedRss = implode("\n", $validRssUrls);
-                    $stmt = $db->prepare("INSERT INTO trade_sites (site_id, site_name, url, rss_url, status, return_rate, created_at) VALUES (1, ?, ?, ?, 'pending', 100, NOW())");
-                    $stmt->execute([$siteTitle, $siteUrl, $savedRss]);
+                    $stmt = $db->prepare("INSERT INTO trade_sites
+                        (site_id, site_name, url, rss_url, contact_email, partnership_type, application_source, status, return_rate, created_at)
+                        VALUES (1, ?, ?, ?, ?, 'link_rss', 'external', 'pending', 100, NOW())");
+                    $stmt->execute([$siteTitle, $siteUrl, $savedRss, $email]);
                     $tradeSuccess = true;
                 }
             } catch (Throwable $e) {
@@ -196,7 +201,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                     <?php if ($tradeSuccess): ?>
                         <div class="bg-emerald-50 border border-emerald-200 rounded-2xl p-6 text-center space-y-3">
                             <div class="text-3xl">🎉</div>
-                            <h2 class="text-base font-black text-emerald-900">相互リンク・相互RSSのご依頼を受け付けました</h2>
+                            <h2 class="text-base font-black text-emerald-900">相互リンク申請を受け付けました</h2>
                         </div>
                     <?php else: ?>
                         <?php if ($tradeError): ?>
@@ -211,6 +216,11 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                             <div class="space-y-1.5">
                                 <label class="block text-xs font-bold text-stone-800">貴サイトURL <span class="text-rose-600">*</span></label>
                                 <input type="url" name="url" required value="<?= htmlspecialchars($_POST['url'] ?? '') ?>" placeholder="https://example.com" class="w-full text-sm p-3.5 rounded-2xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:border-stone-900">
+                            </div>
+                            <div class="space-y-1.5">
+                                <label class="block text-xs font-bold text-stone-800">メールアドレス <span class="text-rose-600">*</span></label>
+                                <input type="email" name="email" required value="<?= htmlspecialchars($_POST['email'] ?? '') ?>" placeholder="you@example.com" class="w-full text-sm p-3.5 rounded-2xl border border-stone-200 bg-stone-50 focus:bg-white focus:outline-none focus:border-stone-900">
+                                <p class="text-[11px] text-stone-400">申請内容の確認・管理のために保存します。</p>
                             </div>
                             <div class="space-y-1.5">
                                 <label class="block text-xs font-bold text-stone-800">RSSフィードURL（複数可） <span class="text-rose-600">*</span></label>

@@ -501,7 +501,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $errorMessage = "RSSフィードURLを最低1件以上正しく入力してください（複数ある場合は改行してください）。";
             } else {
                 $savedRss = implode("\n", $rssUrls);
-                $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, status, return_rate, is_boosted, boost_weight, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, NOW())");
+                $stmt = $db->prepare("INSERT INTO trade_sites (site_name, url, rss_url, partnership_type, application_source, status, return_rate, is_boosted, boost_weight, created_at) VALUES (?, ?, ?, 'link_rss', 'admin', ?, ?, ?, ?, NOW())");
                 $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight]);
                 $newId = (int)$db->lastInsertId();
 
@@ -522,6 +522,59 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
 
+        // 4-B. 外部から届いた相互リンク申請の承認・非承認
+        if ($op === 'review_trade_application') {
+            $tradeId = (int)($_POST['trade_id'] ?? 0);
+            $decision = $_POST['decision'] ?? '';
+            $partnershipType = $_POST['partnership_type'] ?? 'link_only';
+            if (!in_array($partnershipType, ['link_only', 'link_rss'], true)) {
+                $partnershipType = 'link_only';
+            }
+
+            $stmt = $db->prepare("SELECT * FROM trade_sites
+                                  WHERE id = ? AND application_source = 'external' AND status = 'pending'
+                                  LIMIT 1");
+            $stmt->execute([$tradeId]);
+            $application = $stmt->fetch();
+            if (!$application) {
+                throw new Exception('対象の申請が見つからないか、すでに処理済みです。');
+            }
+
+            if ($decision === 'approve') {
+                $db->prepare("UPDATE trade_sites
+                              SET status = 'approved', partnership_type = ?
+                              WHERE id = ?")
+                   ->execute([$partnershipType, $tradeId]);
+
+                $isRss = $partnershipType === 'link_rss';
+                $annTitle = $isRss
+                    ? "【相互リンク・相互RSS】「{$application['site_name']}」様との提携を開始しました"
+                    : "【相互リンク】「{$application['site_name']}」様との相互リンクを開始しました";
+                $annBody = $isRss
+                    ? "「{$application['site_name']}」様（{$application['url']}）との相互リンク・相互RSS提携を承認し、掲載を開始しました。"
+                    : "「{$application['site_name']}」様（{$application['url']}）との相互リンクを承認し、掲載を開始しました。";
+                $db->prepare("INSERT INTO announcements
+                    (site_id, title, body, type, trade_site_id, is_public, published_at, created_at)
+                    VALUES (1, ?, ?, 'trade_approved', ?, 1, NOW(), NOW())")
+                   ->execute([$annTitle, $annBody, $tradeId]);
+
+                $fetchMsg = '';
+                if ($isRss) {
+                    $stats = TradeEngine::fetchRssFeeds($tradeId);
+                    $fetchMsg = " RSS取得 {$stats['items_saved']}件。";
+                }
+
+                $flashMessage = "「{$application['site_name']}」様の申請を承認しました。"
+                    . ($isRss ? '相互リンク＋相互RSSとして開始します。' : '相互リンクのみで開始します。')
+                    . $fetchMsg;
+            } elseif ($decision === 'reject') {
+                $db->prepare("UPDATE trade_sites SET status = 'rejected' WHERE id = ?")->execute([$tradeId]);
+                $flashMessage = "「{$application['site_name']}」様の申請を非承認にしました。";
+            } else {
+                throw new Exception('承認または非承認を選択してください。');
+            }
+        }
+
         // 4-C. 相互リンク・相互RSSの設定更新 (複数RSSフィード対応)
         if ($op === 'update_trade_site') {
             $tradeId = (int)($_POST['trade_id'] ?? 0);
@@ -529,6 +582,11 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $siteUrl = trim($_POST['url'] ?? '');
             $rawRss = trim($_POST['rss_url'] ?? '');
             $status = $_POST['status'] ?? 'pending';
+            $partnershipType = $_POST['partnership_type'] ?? 'link_rss';
+            if (!in_array($partnershipType, ['link_only', 'link_rss'], true)) {
+                $partnershipType = 'link_rss';
+            }
+            $contactEmail = trim($_POST['contact_email'] ?? '');
             $rate = (int)($_POST['return_rate'] ?? 100);
             $isBoosted = !empty($_POST['is_boosted']) ? 1 : 0;
             $boostWeight = (int)($_POST['boost_weight'] ?? 1);
@@ -537,25 +595,31 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $savedRss = !empty($rssUrls) ? implode("\n", $rssUrls) : $rawRss;
 
             // 以前のステータスを取得してお知らせ連動
-            $prev = $db->prepare("SELECT site_name, url, status FROM trade_sites WHERE id = ?");
+            $prev = $db->prepare("SELECT site_name, url, status, partnership_type FROM trade_sites WHERE id = ?");
             $prev->execute([$tradeId]);
             $oldSite = $prev->fetch();
 
             if (!empty($siteName) && !empty($siteUrl)) {
-                $stmt = $db->prepare("UPDATE trade_sites SET site_name = ?, url = ?, rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
-                $stmt->execute([$siteName, $siteUrl, $savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+                $stmt = $db->prepare("UPDATE trade_sites SET site_name = ?, url = ?, rss_url = ?, contact_email = ?, partnership_type = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$siteName, $siteUrl, $savedRss, $contactEmail !== '' ? $contactEmail : null, $partnershipType, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
             } else {
-                $stmt = $db->prepare("UPDATE trade_sites SET rss_url = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
-                $stmt->execute([$savedRss, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
+                $stmt = $db->prepare("UPDATE trade_sites SET rss_url = ?, contact_email = ?, partnership_type = ?, status = ?, return_rate = ?, is_boosted = ?, boost_weight = ? WHERE id = ?");
+                $stmt->execute([$savedRss, $contactEmail !== '' ? $contactEmail : null, $partnershipType, $status, $rate, $isBoosted, $boostWeight, $tradeId]);
             }
 
             // 承認時にお知らせ自動投稿
             if ($oldSite && $oldSite['status'] !== 'approved' && $status === 'approved') {
                 $targetName = !empty($siteName) ? $siteName : $oldSite['site_name'];
                 $targetUrl = !empty($siteUrl) ? $siteUrl : $oldSite['url'];
-                $annTitle = "【相互リンク】「" . $targetName . "」様と相互リンク・相互RSSを開始しました";
-                $annBody = "「" . $targetName . "」様（" . $targetUrl . "）と相互リンクおよび相互RSSの提携を開始いたしました。今後ともよろしくお願い申し上げます。";
-                $db->prepare("INSERT INTO announcements (title, body, type, trade_site_id, is_public) VALUES (?, ?, 'trade_approved', ?, 1)")
+                $isRss = $partnershipType === 'link_rss';
+                $annTitle = $isRss
+                    ? "【相互リンク・相互RSS】「{$targetName}」様との提携を開始しました"
+                    : "【相互リンク】「{$targetName}」様との相互リンクを開始しました";
+                $annBody = $isRss
+                    ? "「{$targetName}」様（{$targetUrl}）との相互リンク・相互RSS提携を開始しました。"
+                    : "「{$targetName}」様（{$targetUrl}）との相互リンクを開始しました。";
+                $db->prepare("INSERT INTO announcements (site_id, title, body, type, trade_site_id, is_public, published_at, created_at)
+                              VALUES (1, ?, ?, 'trade_approved', ?, 1, NOW(), NOW())")
                    ->execute([$annTitle, $annBody, $tradeId]);
             }
             // 削除・解除時にお知らせ自動投稿
@@ -885,6 +949,8 @@ $staticPageCount = 0;
 $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
+$pendingTradeApplications = [];
+$allTradeSiteCount = 0;
 $poolImages = [];
 $imageGroups = [];
 $selectedImageGroup = isset($_GET['folder']) ? (int)$_GET['folder'] : -1;
@@ -910,15 +976,25 @@ if ($db && $isLoggedIn) {
         }
 
         // 相互リンク・アクセストレード集計
-        $tradeSites = $db->query("SELECT * FROM trade_sites ORDER BY id DESC")->fetchAll();
-        $inSum = $db->query("SELECT SUM(in_count) as total_in, SUM(out_count) as total_out FROM trade_sites")->fetch();
+        $pendingTradeApplications = $db->query("SELECT * FROM trade_sites
+            WHERE application_source = 'external' AND status = 'pending'
+            ORDER BY created_at ASC, id ASC")->fetchAll();
+
+        $tradeSites = $db->query("SELECT * FROM trade_sites
+            WHERE NOT (application_source = 'external' AND status = 'pending')
+            ORDER BY id DESC")->fetchAll();
+
+        $allTradeSiteCount = (int)$db->query("SELECT COUNT(*) FROM trade_sites")->fetchColumn();
+        $inSum = $db->query("SELECT SUM(in_count) as total_in, SUM(out_count) as total_out FROM trade_sites WHERE status = 'approved'")->fetch();
         $totalIn = (int)($inSum['total_in'] ?? 0);
         $totalOut = (int)($inSum['total_out'] ?? 0);
 
         $feedItemCount = (int)($db->query("SELECT COUNT(*) FROM trade_feed_items")->fetchColumn() ?: 0);
         $totalFeedUrlsCount = 0;
         foreach ($tradeSites as $ts) {
-            $totalFeedUrlsCount += count(TradeEngine::extractRssUrls($ts['rss_url'] ?? ''));
+            if (($ts['partnership_type'] ?? 'link_rss') === 'link_rss') {
+                $totalFeedUrlsCount += count(TradeEngine::extractRssUrls($ts['rss_url'] ?? ''));
+            }
         }
 
         // アイキャッチ画像プール
@@ -1027,7 +1103,7 @@ $navGroups = [
         'icon' => '💰',
         'children' => [
             'ads' => ['icon' => '💵', 'label' => 'アフィリエイト・広告設定', 'badge' => null],
-            'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => null],
+            'trade' => ['icon' => '🔗', 'label' => '相互リンク・相互RSS提携', 'badge' => !empty($pendingTradeApplications) ? count($pendingTradeApplications) . '件待ち' : null],
             'trends' => ['icon' => '🔥', 'label' => '急上昇トレンド候補一覧', 'badge' => !empty($trendCandidates) ? count($trendCandidates) . '件' : null],
         ]
     ],
@@ -2449,7 +2525,7 @@ $navGroups = [
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                             <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
                                 <div class="text-[11px] font-bold text-slate-400">提携サイト数</div>
-                                <div class="text-2xl font-black text-slate-900 mt-1"><?= count($tradeSites) ?> <span class="text-xs font-normal text-slate-400">サイト</span></div>
+                                <div class="text-2xl font-black text-slate-900 mt-1"><?= $allTradeSiteCount ?> <span class="text-xs font-normal text-slate-400">サイト</span></div>
                                 <div class="text-[11px] text-slate-500 mt-1">承認・保留中を含む</div>
                             </div>
                             <div class="bg-white p-4 rounded-3xl border border-slate-200 shadow-sm">
@@ -2469,6 +2545,76 @@ $navGroups = [
                                 </div>
                                 <div class="text-[11px] text-slate-500 mt-1">返還率: <?= $totalIn > 0 ? round(($totalOut / $totalIn) * 100) : 0 ?>%</div>
                             </div>
+                        </div>
+
+                        <!-- 外部サイトからの申請待ち -->
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-4">
+                            <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 border-b border-slate-100 pb-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900">📨 相互リンク申請待ち</h2>
+                                    <p class="text-xs text-slate-500 mt-1">「相互リンク依頼」ページから届いた申請を確認して承認します。</p>
+                                </div>
+                                <span class="px-2.5 py-1 rounded-full text-xs font-black <?= !empty($pendingTradeApplications) ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-slate-100 text-slate-500' ?>">
+                                    <?= count($pendingTradeApplications) ?>件
+                                </span>
+                            </div>
+
+                            <?php if (empty($pendingTradeApplications)): ?>
+                                <div class="py-8 text-center text-xs text-slate-400">現在、承認待ちの申請はありません。</div>
+                            <?php else: ?>
+                                <div class="space-y-4">
+                                    <?php foreach ($pendingTradeApplications as $app):
+                                        $appRss = TradeEngine::extractRssUrls($app['rss_url'] ?? '');
+                                    ?>
+                                        <div class="rounded-2xl border border-amber-200 bg-amber-50/40 p-4 sm:p-5 space-y-4">
+                                            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                                <div class="space-y-2">
+                                                    <div>
+                                                        <div class="text-[10px] font-bold text-slate-400">サイト名</div>
+                                                        <div class="text-sm font-black text-slate-900"><?= htmlspecialchars($app['site_name']) ?></div>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] font-bold text-slate-400">URL</div>
+                                                        <a href="<?= htmlspecialchars($app['url']) ?>" target="_blank" rel="noopener noreferrer" class="text-xs text-indigo-600 hover:underline break-all"><?= htmlspecialchars($app['url']) ?> ↗</a>
+                                                    </div>
+                                                    <div>
+                                                        <div class="text-[10px] font-bold text-slate-400">メールアドレス</div>
+                                                        <a href="mailto:<?= htmlspecialchars($app['contact_email'] ?? '') ?>" class="text-xs text-slate-700 font-bold break-all"><?= htmlspecialchars($app['contact_email'] ?: '未登録') ?></a>
+                                                    </div>
+                                                    <div class="text-[10px] text-slate-400">申請日時: <?= htmlspecialchars($app['created_at'] ?? '') ?></div>
+                                                </div>
+                                                <div>
+                                                    <div class="text-[10px] font-bold text-slate-400 mb-1.5">申請RSS（<?= count($appRss) ?>件）</div>
+                                                    <div class="space-y-1 max-h-28 overflow-y-auto rounded-xl bg-white border border-slate-200 p-3">
+                                                        <?php foreach ($appRss as $rssUrl): ?>
+                                                            <a href="<?= htmlspecialchars($rssUrl) ?>" target="_blank" rel="noopener noreferrer" class="block text-[10px] font-mono text-indigo-600 hover:underline break-all"><?= htmlspecialchars($rssUrl) ?></a>
+                                                        <?php endforeach; ?>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <form method="POST" class="flex flex-col sm:flex-row sm:items-end gap-3 pt-3 border-t border-amber-100">
+                                                <input type="hidden" name="op" value="review_trade_application">
+                                                <input type="hidden" name="trade_id" value="<?= (int)$app['id'] ?>">
+                                                <div class="flex-1">
+                                                    <label class="block text-xs font-black text-slate-700 mb-1">承認する提携内容</label>
+                                                    <select name="partnership_type" required class="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-white text-xs font-bold">
+                                                        <option value="" selected disabled>選択してください</option>
+                                                        <option value="link_only">相互リンクのみ</option>
+                                                        <option value="link_rss">相互リンク＋相互RSS</option>
+                                                    </select>
+                                                </div>
+                                                <button type="submit" name="decision" value="approve" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-black shadow-sm">
+                                                    ✓ 承認
+                                                </button>
+                                                <button type="submit" name="decision" value="reject" formnovalidate onclick="return confirm('この申請を非承認にしますか？');" class="px-5 py-2.5 rounded-xl bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 text-xs font-black">
+                                                    非承認
+                                                </button>
+                                            </form>
+                                        </div>
+                                    <?php endforeach; ?>
+                                </div>
+                            <?php endif; ?>
                         </div>
 
                         <!-- 相互リンク・相互RSSの新規登録フォーム (複数RSSフィード対応) -->
@@ -2557,7 +2703,7 @@ $navGroups = [
                                     <h2 class="text-base font-black text-slate-900">提携サイト一覧 (アクセス比率 & 登録RSS管理)</h2>
                                     <p class="text-xs text-slate-500">各サイトの登録RSSフィード数やURLの編集、即時クローラー実行が可能です</p>
                                 </div>
-                                <span class="text-xs font-bold text-slate-400">全 <?= count($tradeSites) ?> 件</span>
+                                <span class="text-xs font-bold text-slate-400">登録済み <?= count($tradeSites) ?> 件</span>
                             </div>
                             
                             <?php if (empty($tradeSites)): ?>
@@ -2590,10 +2736,21 @@ $navGroups = [
                                                         <a href="<?= htmlspecialchars($ts['url']) ?>" target="_blank" class="text-indigo-600 hover:underline block truncate text-[11px] mt-0.5" title="<?= htmlspecialchars($ts['url']) ?>">
                                                             🌐 <?= htmlspecialchars($ts['url']) ?>
                                                         </a>
+                                                        <div class="flex flex-wrap gap-1 mt-1.5">
+                                                            <span class="px-2 py-0.5 rounded-full text-[9px] font-bold <?= ($ts['partnership_type'] ?? 'link_rss') === 'link_rss' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-600 border border-slate-200' ?>">
+                                                                <?= ($ts['partnership_type'] ?? 'link_rss') === 'link_rss' ? '相互リンク＋RSS' : '相互リンクのみ' ?>
+                                                            </span>
+                                                            <?php if (!empty($ts['contact_email'])): ?>
+                                                                <a href="mailto:<?= htmlspecialchars($ts['contact_email']) ?>" class="text-[9px] text-slate-500 hover:underline truncate max-w-[160px]"><?= htmlspecialchars($ts['contact_email']) ?></a>
+                                                            <?php endif; ?>
+                                                        </div>
                                                     </td>
 
                                                     <!-- 登録RSSフィード一覧 (複数URL表示) -->
                                                     <td class="py-3 max-w-[280px]">
+                                                        <?php if (($ts['partnership_type'] ?? 'link_rss') === 'link_only'): ?>
+                                                            <span class="inline-flex items-center px-2 py-1 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">RSS未使用</span>
+                                                        <?php else: ?>
                                                         <div class="flex items-center gap-1.5 mb-1">
                                                             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold <?= $rssCount > 1 ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-slate-100 text-slate-700' ?>">
                                                                 📡 RSS <?= $rssCount ?>件登録
@@ -2616,6 +2773,7 @@ $navGroups = [
                                                                 <?php endforeach; ?>
                                                             <?php endif; ?>
                                                         </div>
+                                                        <?php endif; ?>
                                                     </td>
 
                                                     <!-- IN / OUT -->
@@ -2629,6 +2787,8 @@ $navGroups = [
                                                         <input type="hidden" name="op" value="update_trade_site">
                                                         <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
                                                         <input type="hidden" name="rss_url" value="<?= htmlspecialchars($ts['rss_url'] ?? '') ?>">
+                                                        <input type="hidden" name="partnership_type" value="<?= htmlspecialchars($ts['partnership_type'] ?? 'link_rss') ?>">
+                                                        <input type="hidden" name="contact_email" value="<?= htmlspecialchars($ts['contact_email'] ?? '') ?>">
 
                                                         <td class="py-3">
                                                             <select name="return_rate" class="px-2 py-1 rounded-xl border border-slate-200 text-xs font-bold bg-white">
@@ -2663,6 +2823,7 @@ $navGroups = [
                                                     </form>
 
                                                     <!-- 個別RSS巡回ボタン -->
+                                                    <?php if (($ts['partnership_type'] ?? 'link_rss') === 'link_rss'): ?>
                                                     <form method="POST" class="inline">
                                                         <input type="hidden" name="op" value="fetch_trade_rss">
                                                         <input type="hidden" name="trade_id" value="<?= $ts['id'] ?>">
@@ -2670,6 +2831,7 @@ $navGroups = [
                                                             ⚡
                                                         </button>
                                                     </form>
+                                                    <?php endif; ?>
 
                                                     <!-- 削除ボタン -->
                                                     <form method="POST" class="inline" onsubmit="return confirm('提携サイト「<?= htmlspecialchars($ts['site_name']) ?>」と取得記事キャッシュを完全に削除しますか？');">
@@ -2706,6 +2868,20 @@ $navGroups = [
                                                             <div>
                                                                 <label class="block text-xs font-bold text-slate-700 mb-1">サイトURL</label>
                                                                 <input type="url" name="url" value="<?= htmlspecialchars($ts['url']) ?>" required class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                                                            </div>
+
+                                                            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                                                <div>
+                                                                    <label class="block text-xs font-bold text-slate-700 mb-1">提携内容</label>
+                                                                    <select name="partnership_type" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs font-bold bg-white">
+                                                                        <option value="link_only" <?= ($ts['partnership_type'] ?? 'link_rss') === 'link_only' ? 'selected' : '' ?>>相互リンクのみ</option>
+                                                                        <option value="link_rss" <?= ($ts['partnership_type'] ?? 'link_rss') === 'link_rss' ? 'selected' : '' ?>>相互リンク＋相互RSS</option>
+                                                                    </select>
+                                                                </div>
+                                                                <div>
+                                                                    <label class="block text-xs font-bold text-slate-700 mb-1">メールアドレス</label>
+                                                                    <input type="email" name="contact_email" value="<?= htmlspecialchars($ts['contact_email'] ?? '') ?>" class="w-full px-3 py-2 rounded-xl border border-slate-200 text-xs">
+                                                                </div>
                                                             </div>
 
                                                             <div>
