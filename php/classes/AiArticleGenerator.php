@@ -8,6 +8,7 @@
  * 4. 出典・参考リンクを構造化して提供
  */
 require_once __DIR__ . '/SettingsManager.php';
+require_once __DIR__ . '/NewsSourceCollector.php';
 
 class AiArticleGenerator {
     /**
@@ -227,15 +228,11 @@ EOT;
      * 単体プロンプトまたは特定キーワードから記事を即時テスト生成するメソッド
      */
     public static function generateFromKeyword(string $keyword, string $categoryName = 'エンタメ'): array {
-        $fakeSource = [
-            [
-                'title' => "{$keyword}に関する最新公式アナウンス",
-                'publisher' => '主要公式メディア',
-                'url' => 'https://news.google.com/'
-            ]
-        ];
-        $result = self::generate(1, ['display_keyword' => $keyword], $fakeSource);
-        return $result;
+        $sources = NewsSourceCollector::collect($keyword, 5);
+        if (empty($sources)) {
+            throw new RuntimeException('参照できるニュースページを取得できませんでした。');
+        }
+        return self::generate(1, ['display_keyword' => $keyword], $sources);
     }
 
     private static function fallbackGenerate(string $keyword, array $sources): array {
