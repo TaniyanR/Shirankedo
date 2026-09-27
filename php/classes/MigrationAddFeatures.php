@@ -15,6 +15,9 @@ class MigrationAddFeatures {
           site_name VARCHAR(191) NOT NULL,
           url VARCHAR(512) NOT NULL,
           rss_url TEXT NOT NULL,
+          contact_email VARCHAR(255) NULL,
+          partnership_type ENUM('link_only','link_rss') NOT NULL DEFAULT 'link_rss',
+          application_source ENUM('admin','external') NOT NULL DEFAULT 'admin',
           status ENUM('pending','approved','rejected','deleted') NOT NULL DEFAULT 'pending',
           return_rate INT NOT NULL DEFAULT 100,
           is_boosted TINYINT(1) NOT NULL DEFAULT 0,
@@ -232,6 +235,15 @@ class MigrationAddFeatures {
 
         try {
             $db->exec("ALTER TABLE trade_sites MODIFY COLUMN rss_url TEXT NOT NULL");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE trade_sites ADD COLUMN contact_email VARCHAR(255) NULL AFTER rss_url");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE trade_sites ADD COLUMN partnership_type ENUM('link_only','link_rss') NOT NULL DEFAULT 'link_rss' AFTER contact_email");
+        } catch (Throwable $e) {}
+        try {
+            $db->exec("ALTER TABLE trade_sites ADD COLUMN application_source ENUM('admin','external') NOT NULL DEFAULT 'admin' AFTER partnership_type");
         } catch (Throwable $e) {}
     }
 }
