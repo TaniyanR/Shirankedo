@@ -957,6 +957,7 @@ $navGroups = [
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
+            'pages' => ['icon' => '📑', 'label' => '個別ページ一覧', 'badge' => '5'],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
     ],
@@ -1755,6 +1756,57 @@ $navGroups = [
                     </div>
 
                 <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
+
+                <?php elseif ($currentTab === 'pages'): ?>
+                    <?php
+                    $staticPages = [
+                        ['title' => 'サイトについて', 'slug' => 'about'],
+                        ['title' => '相互リンク依頼', 'slug' => 'trade'],
+                        ['title' => 'お知らせ', 'slug' => 'news'],
+                        ['title' => 'プライバシーポリシー', 'slug' => 'privacy-policy'],
+                        ['title' => 'お問い合わせ', 'slug' => 'que'],
+                    ];
+                    ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>📑</span><span>個別ページ一覧</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">サイト内の固定ページをまとめて確認できます。</p>
+                        </div>
+
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 text-slate-400 font-bold">
+                                            <th class="py-3">ページ名</th>
+                                            <th class="py-3">URL</th>
+                                            <th class="py-3 text-right">表示</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <?php foreach ($staticPages as $page): ?>
+                                            <?php $pageUrl = 'page.php?slug=' . rawurlencode($page['slug']); ?>
+                                            <tr class="hover:bg-slate-50 transition-colors">
+                                                <td class="py-4 pr-4">
+                                                    <div class="font-black text-slate-900"><?= htmlspecialchars($page['title']) ?></div>
+                                                </td>
+                                                <td class="py-4 pr-4">
+                                                    <code class="text-[11px] text-slate-500 break-all"><?= htmlspecialchars($pageUrl) ?></code>
+                                                </td>
+                                                <td class="py-4 text-right">
+                                                    <a href="<?= htmlspecialchars($pageUrl) ?>" target="_blank" rel="noopener noreferrer" class="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px] transition-colors">
+                                                        <span>ページを開く</span><span>↗</span>
+                                                    </a>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
 
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
