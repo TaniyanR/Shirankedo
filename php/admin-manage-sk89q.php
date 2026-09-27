@@ -18,6 +18,7 @@ ini_set('display_errors', 0);
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/SiteAssetManager.php';
+require_once __DIR__ . '/classes/StaticPageManager.php';
 require_once __DIR__ . '/classes/Installer.php';
 
 // DB初期設定の自動検出 (未インストールまたはDB未接続時はインストーラーを起動)
@@ -192,6 +193,57 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $op = $_POST['op'] ?? '';
 
     try {
+        // 固定ページ作成・更新
+        if ($op === 'save_static_page') {
+            $pageId = (int)($_POST['page_id'] ?? 0);
+            $title = trim($_POST['page_title'] ?? '');
+            $slug = trim($_POST['page_slug'] ?? '');
+            $bodyHtml = trim($_POST['page_body_html'] ?? '');
+            $status = ($_POST['page_status'] ?? 'published') === 'draft' ? 'draft' : 'published';
+            $sortOrder = (int)($_POST['page_sort_order'] ?? 0);
+            $specialType = $_POST['page_special_type'] ?? 'content';
+            if (!in_array($specialType, ['content', 'trade', 'news', 'contact'], true)) {
+                $specialType = 'content';
+            }
+
+            if ($title === '') {
+                throw new Exception('ページタイトルを入力してください。');
+            }
+            if (!preg_match('/^[a-z0-9][a-z0-9_-]*$/', $slug)) {
+                throw new Exception('slugは半角英小文字・数字・ハイフン・アンダーバーで入力してください。');
+            }
+
+            $dup = $db->prepare("SELECT id FROM static_pages WHERE site_id = 1 AND slug = ? AND id <> ? LIMIT 1");
+            $dup->execute([$slug, $pageId]);
+            if ($dup->fetchColumn()) {
+                throw new Exception('同じslugの固定ページが既にあります。');
+            }
+
+            if ($pageId > 0) {
+                $stmt = $db->prepare("UPDATE static_pages
+                                      SET title = ?, slug = ?, body_html = ?, special_type = ?, status = ?, sort_order = ?
+                                      WHERE id = ? AND site_id = 1");
+                $stmt->execute([$title, $slug, $bodyHtml, $specialType, $status, $sortOrder, $pageId]);
+                $flashMessage = '固定ページを更新しました。';
+            } else {
+                $stmt = $db->prepare("INSERT INTO static_pages
+                    (site_id, title, slug, body_html, special_type, status, sort_order)
+                    VALUES (1, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([$title, $slug, $bodyHtml, $specialType, $status, $sortOrder]);
+                $flashMessage = '固定ページを新規作成しました。';
+            }
+        }
+
+        // 固定ページ削除
+        if ($op === 'delete_static_page') {
+            $pageId = (int)($_POST['page_id'] ?? 0);
+            if ($pageId > 0) {
+                $stmt = $db->prepare("DELETE FROM static_pages WHERE id = ? AND site_id = 1");
+                $stmt->execute([$pageId]);
+                $flashMessage = '固定ページを削除しました。';
+            }
+        }
+
         // 1. 記事作成
         if ($op === 'create_article') {
             $title = trim($_POST['title'] ?? '');
@@ -829,6 +881,7 @@ if ($currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 
 
 $articles = [];
 $totalArticles = 0;
+$staticPageCount = 0;
 $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
@@ -844,6 +897,7 @@ $trendCandidates = [];
 if ($db && $isLoggedIn) {
     try {
         $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles")->fetchColumn();
+        $staticPageCount = (int)$db->query("SELECT COUNT(*) FROM static_pages WHERE site_id = 1")->fetchColumn();
         $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
         $categories = $db->query("SELECT id, name FROM categories WHERE site_id = 1")->fetchAll();
         
@@ -957,6 +1011,7 @@ $navGroups = [
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
+            'pages' => ['icon' => '📑', 'label' => '個別ページ一覧', 'badge' => $staticPageCount ? (string)$staticPageCount : null],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
     ],
@@ -1755,6 +1810,137 @@ $navGroups = [
                     </div>
 
                 <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
+
+                <?php elseif ($currentTab === 'pages'): ?>
+                    <?php
+                    $staticPages = [];
+                    $editingPage = null;
+                    try {
+                        $staticPages = StaticPageManager::all(1);
+                        $editPageId = (int)($_GET['edit_page'] ?? 0);
+                        if ($editPageId > 0) {
+                            $editingPage = StaticPageManager::findById($editPageId, 1);
+                        }
+                    } catch (Throwable $e) {}
+                    ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>📑</span><span>個別ページ一覧</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">固定ページの新規作成・編集・公開状態・削除を管理します。</p>
+                        </div>
+
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm space-y-5">
+                            <div class="flex items-center justify-between gap-3">
+                                <div>
+                                    <h2 class="text-base font-black text-slate-900"><?= $editingPage ? '固定ページを編集' : '固定ページを新規作成' ?></h2>
+                                    <p class="text-[11px] text-slate-400 mt-1">本文はHTMLを使用できます。相互リンク依頼・お問い合わせ・お知らせの専用機能は本文の下に自動表示されます。</p>
+                                </div>
+                                <?php if ($editingPage): ?>
+                                    <a href="?tab=pages" class="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold">新規作成へ戻る</a>
+                                <?php endif; ?>
+                            </div>
+
+                            <form method="POST" class="space-y-4">
+                                <input type="hidden" name="op" value="save_static_page">
+                                <input type="hidden" name="tab" value="pages">
+                                <input type="hidden" name="page_id" value="<?= (int)($editingPage['id'] ?? 0) ?>">
+                                <input type="hidden" name="page_special_type" value="<?= htmlspecialchars($editingPage['special_type'] ?? 'content') ?>">
+
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">ページタイトル</label>
+                                        <input type="text" name="page_title" required value="<?= htmlspecialchars($editingPage['title'] ?? '') ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm" placeholder="例: 運営者情報">
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">slug</label>
+                                        <div class="flex items-center">
+                                            <span class="px-3 py-3 rounded-l-2xl border border-r-0 border-slate-200 bg-slate-100 text-[11px] text-slate-500">page.php?slug=</span>
+                                            <input type="text" name="page_slug" required value="<?= htmlspecialchars($editingPage['slug'] ?? '') ?>" class="min-w-0 flex-1 px-3 py-3 rounded-r-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono" placeholder="operator">
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="space-y-1.5">
+                                    <label class="block text-xs font-bold text-slate-700">本文</label>
+                                    <textarea name="page_body_html" rows="14" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-amber-500 text-sm font-mono leading-relaxed" placeholder="<p>ここに本文を入力します。</p>"><?= htmlspecialchars($editingPage['body_html'] ?? '') ?></textarea>
+                                </div>
+
+                                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">公開状態</label>
+                                        <?php $pageStatus = $editingPage['status'] ?? 'published'; ?>
+                                        <select name="page_status" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                            <option value="published" <?= $pageStatus === 'published' ? 'selected' : '' ?>>公開</option>
+                                            <option value="draft" <?= $pageStatus === 'draft' ? 'selected' : '' ?>>非公開</option>
+                                        </select>
+                                    </div>
+                                    <div class="space-y-1.5">
+                                        <label class="block text-xs font-bold text-slate-700">並び順</label>
+                                        <input type="number" name="page_sort_order" value="<?= (int)($editingPage['sort_order'] ?? 100) ?>" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
+                                    </div>
+                                </div>
+
+                                <div class="flex justify-end">
+                                    <button type="submit" class="px-6 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">
+                                        <?= $editingPage ? '変更を保存' : '固定ページを作成' ?>
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                            <div class="overflow-x-auto">
+                                <table class="w-full text-left text-xs border-collapse">
+                                    <thead>
+                                        <tr class="border-b border-slate-100 text-slate-400 font-bold">
+                                            <th class="py-3">ページ名</th>
+                                            <th class="py-3">URL</th>
+                                            <th class="py-3">状態</th>
+                                            <th class="py-3 text-right">操作</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody class="divide-y divide-slate-100">
+                                        <?php if (empty($staticPages)): ?>
+                                            <tr><td colspan="4" class="py-8 text-center text-slate-400">固定ページはまだありません。</td></tr>
+                                        <?php else: foreach ($staticPages as $page): ?>
+                                            <?php $pageUrl = 'page.php?slug=' . rawurlencode($page['slug']); ?>
+                                            <tr class="hover:bg-slate-50 transition-colors">
+                                                <td class="py-4 pr-4">
+                                                    <div class="font-black text-slate-900"><?= htmlspecialchars($page['title']) ?></div>
+                                                </td>
+                                                <td class="py-4 pr-4">
+                                                    <code class="text-[11px] text-slate-500 break-all"><?= htmlspecialchars($pageUrl) ?></code>
+                                                </td>
+                                                <td class="py-4">
+                                                    <?php if (($page['status'] ?? '') === 'published'): ?>
+                                                        <span class="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold">公開</span>
+                                                    <?php else: ?>
+                                                        <span class="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px] font-bold">非公開</span>
+                                                    <?php endif; ?>
+                                                </td>
+                                                <td class="py-4 text-right">
+                                                    <div class="inline-flex items-center gap-2">
+                                                        <a href="?tab=pages&edit_page=<?= (int)$page['id'] ?>" class="px-3 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-bold text-[11px]">編集</a>
+                                                        <?php if (($page['status'] ?? '') === 'published'): ?>
+                                                            <a href="<?= htmlspecialchars($pageUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-[11px]">表示 ↗</a>
+                                                        <?php endif; ?>
+                                                        <form method="POST" onsubmit="return confirm('「<?= htmlspecialchars(addslashes($page['title']), ENT_QUOTES) ?>」を削除しますか？ この操作は元に戻せません。');">
+                                                            <input type="hidden" name="op" value="delete_static_page">
+                                                            <input type="hidden" name="tab" value="pages">
+                                                            <input type="hidden" name="page_id" value="<?= (int)$page['id'] ?>">
+                                                            <button type="submit" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-bold text-[11px]">削除</button>
+                                                        </form>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; endif; ?>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
 
                 <?php elseif ($currentTab === 'articles'): ?>
                     <div class="space-y-6">
