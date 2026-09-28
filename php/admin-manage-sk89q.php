@@ -716,7 +716,7 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($op === 'save_system_settings') {
             SettingsManager::set('auto_post_enabled', isset($_POST['auto_post_enabled']) ? '1' : '0');
             SettingsManager::set('auto_post_interval_hours', trim($_POST['auto_post_interval_hours'] ?? '1'));
-            SettingsManager::set('auto_post_default_status', $_POST['auto_post_default_status'] ?? 'published');
+            SettingsManager::set('auto_post_default_status', 'published');
             $flashMessage = 'システム設定を保存しました。';
         }
 
@@ -775,18 +775,22 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // アイキャッチ画像の選定
             $selectedImage = ImageManager::selectBestImage(1, $generated['important_keywords'] ?? [$keyword]);
-            $imgUrl = $selectedImage['url'] ?? '';
+            $imgUrl = trim((string)($selectedImage['url'] ?? ''));
+
+            if (!empty($safety['needs_hold']) || !empty($safety['is_dangerous'])) {
+                throw new Exception('安全判定で公開できないため、記事は保存しませんでした。');
+            }
+            if ($imgUrl === '') {
+                throw new Exception('アイキャッチ画像を選定できないため、記事は保存しませんでした。');
+            }
 
             $slug = 'trend-' . time() . '-' . rand(100, 999);
             $index = $trendData['shirankedo_index'];
             $label = ShirankedoIndex::getLabel($index);
 
-            // アイキャッチ画像が無い場合は表に出さず保留とする
-            $hasImage = !empty($imgUrl);
-            $finalStatus = ($safety['needs_hold'] || $status === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
-            $dangerReason = $safety['is_dangerous'] 
-                ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
-                : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
+            // AI手動生成も公開可能な場合だけ保存する
+            $finalStatus = 'published';
+            $dangerReason = null;
 
             $stmt = $db->prepare("INSERT INTO articles 
                 (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, 
@@ -3793,7 +3797,7 @@ $navGroups = [
                                 </span>
                             </div>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 gap-5">
                                 <div class="space-y-1.5">
                                     <label class="block text-xs font-bold text-slate-700">Gemini API Key</label>
                                     <input type="password" name="gemini_api_key" id="input_gemini_key" value="<?= htmlspecialchars(SettingsManager::get('gemini_api_key')) ?>" placeholder="AIzaSy..." class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-slate-50 focus:bg-white focus:outline-none focus:border-indigo-500 font-mono text-sm">
@@ -3900,14 +3904,7 @@ $navGroups = [
                                         <?php endforeach; ?>
                                     </select>
                                 </div>
-                                <div class="space-y-1.5">
-                                    <label class="block text-xs font-bold text-slate-700">自動生成記事の公開設定</label>
-                                    <?php $defaultStatus=SettingsManager::get('auto_post_default_status','published'); ?>
-                                    <select name="auto_post_default_status" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm">
-                                        <option value="published" <?= $defaultStatus==='published'?'selected':'' ?>>即時公開</option>
-                                        <option value="on_hold" <?= $defaultStatus==='on_hold'?'selected':'' ?>>保留して確認</option>
-                                    </select>
-                                </div>
+
                             </div>
 
                             <div class="flex justify-end">
