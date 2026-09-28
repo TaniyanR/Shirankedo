@@ -308,10 +308,10 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         </div>
     </div>
 
-    <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderTop ?>
+    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
+    <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-3 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
         </div>
     <?php endif; ?>
 
@@ -630,6 +630,13 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 </div>
             </div>
         </section>
+    <?php endif; ?>
+
+    <!-- スマホ専用 フッター上 広告枠 (300x250) -->
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-4 bg-stone-50 border-t border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
     <?php endif; ?>
 
     <!-- フッター -->
