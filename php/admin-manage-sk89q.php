@@ -9,7 +9,7 @@
  * 3. 🖼️ アイキャッチ画像プール管理 (800x450px・キーワード3つ設定・最大3万枚対応)
  * 4. 🔗 相互リンク・相互RSS管理 (承認・非承認・返還率80%/100%/120%/150%・特別優遇ブースト)
  * 5. 📢 お知らせ管理 (相互リンク承認・解除通知)
- * 6. 💰 アフィリエイト広告スロット設定 (PCヘッダー/サイド上下、スマホヘッダー上下)
+ * 6. 💰 アフィリエイト広告スロット設定 (PCヘッダー/サイド上下、スマホヘッダー下/フッター上)
  * 7. 🏷️ SEO・カスタムタグ設定 (<meta name="referrer" content="unsafe-url">, <head>タグ, <body>直下タグ)
  * 8. 🔒 セキュリティ設定 (管理画面URLスラッグ変更・管理者パスワード変更)
  */
@@ -3102,8 +3102,8 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $spHeadTopOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">④ スマホ ヘッダー上 (300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">ファーストビュー最上部</div>
+                                                <div class="text-xs font-black text-slate-900">④ スマホ フッター上 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">ページ最下部のフッター直前</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_sp_header_top_enabled" value="1" <?= $spHeadTopOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
@@ -3119,7 +3119,7 @@ $navGroups = [
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
                                                 <div class="text-xs font-black text-slate-900">⑤ スマホ ヘッダー下 (300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">記事タイトル直下</div>
+                                                <div class="text-[10px] text-slate-500">ヘッダー直下</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_sp_header_bottom_enabled" value="1" <?= $spHeadBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
@@ -3135,7 +3135,7 @@ $navGroups = [
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                                 <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                                     <span class="text-lg">📄</span>
-                                    <h2 class="text-base font-black text-slate-900">記事ページ内 広告スロット（インフィード・本文下）</h2>
+                                    <h2 class="text-base font-black text-slate-900">PC記事内 広告スロット（左右 300×250px）</h2>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3144,15 +3144,15 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $artMiddleOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">⑥ 記事本文中 (インフィード / 300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">なぜ話題ボックスと本文の間</div>
+                                                <div class="text-xs font-black text-slate-900">⑥ PC 記事内 左 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">記事本文エリア内・左側</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_article_middle_enabled" value="1" <?= $artMiddleOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
                                                 <span>表示</span>
                                             </label>
                                         </div>
-                                        <textarea name="ad_article_middle" rows="3" placeholder="本文中インフィード広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_middle')) ?></textarea>
+                                        <textarea name="ad_article_middle" rows="3" placeholder="PC記事内・左側 300×250 広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_middle')) ?></textarea>
                                     </div>
 
                                     <!-- 7. 記事下部 -->
@@ -3160,15 +3160,15 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $artBottomOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">⑦ 記事下部 (関連記事上 / 300×250px〜)</div>
-                                                <div class="text-[10px] text-slate-500">本文読了後・投票ボタンの直下</div>
+                                                <div class="text-xs font-black text-slate-900">⑦ PC 記事内 右 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">記事本文エリア内・右側</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_article_bottom_enabled" value="1" <?= $artBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
                                                 <span>表示</span>
                                             </label>
                                         </div>
-                                        <textarea name="ad_article_bottom" rows="3" placeholder="記事直下広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom')) ?></textarea>
+                                        <textarea name="ad_article_bottom" rows="3" placeholder="PC記事内・右側 300×250 広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom')) ?></textarea>
                                     </div>
                                 </div>
                             </div>
