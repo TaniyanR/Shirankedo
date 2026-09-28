@@ -100,10 +100,10 @@ EOT;
      */
     public static function normalizeModelName(string $model): string {
         $model = trim($model);
-        if ($model === 'gemini-2.0-flash' || empty($model)) {
+        if ($model === 'gemini-2.0-flash' || $model === 'gemini-1.5-flash' || empty($model)) {
             return 'gemini-2.5-flash';
         }
-        if ($model === 'gemini-2.0-pro') {
+        if ($model === 'gemini-2.0-pro' || $model === 'gemini-1.5-pro') {
             return 'gemini-2.5-pro';
         }
         return $model;
@@ -211,14 +211,14 @@ EOT;
             ];
         }
 
-        // 404の場合、gemini-2.5-flash または gemini-1.5-flash で自動再テスト
-        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
-            $retry = self::testApiKey($apiKey, 'gemini-2.5-flash');
+        // モデルが見つからない場合はFlash Liteも確認
+        if ($httpCode === 404 && $model !== 'gemini-2.5-flash-lite') {
+            $retry = self::testApiKey($apiKey, 'gemini-2.5-flash-lite');
             if ($retry['success']) {
-                SettingsManager::set('gemini_model', 'gemini-2.5-flash');
+                SettingsManager::set('gemini_model', 'gemini-2.5-flash-lite');
                 return [
                     'success' => true,
-                    'message' => "モデルを最新の gemini-2.5-flash へ自動更新し接続成功！ (HTTP 200)"
+                    'message' => "gemini-2.5-flash-lite へ切り替えて接続成功！ (HTTP 200)"
                 ];
             }
         }
