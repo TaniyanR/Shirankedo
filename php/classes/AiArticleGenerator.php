@@ -64,32 +64,34 @@ EOT;
             $userPrompt .= "【関連YouTube情報】:\n{$youtubeInfo}\n";
         }
 
-        // Gemini API呼び出し
+        // Gemini API呼び出し。設定モデルに加え、現行のFlash系候補を順番に試す。
         if (!empty($apiKey)) {
-            $apiResult = self::callGeminiApi($apiKey, $model, $systemPrompt, $userPrompt);
-            if ($apiResult['success']) {
-                SettingsManager::set('gemini_last_status', 'SUCCESS (HTTP 200) - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', '');
-                return $apiResult['data'];
+            $modelsToTry = array_values(array_unique(array_filter([
+                $model,
+                'gemini-2.5-flash',
+                'gemini-2.5-flash-lite',
+            ])));
+            $errors = [];
+
+            foreach ($modelsToTry as $tryModel) {
+                $apiResult = self::callGeminiApi($apiKey, $tryModel, $systemPrompt, $userPrompt);
+                if ($apiResult['success']) {
+                    if ($tryModel !== $model) {
+                        SettingsManager::set('gemini_model', $tryModel);
+                    }
+                    SettingsManager::set('gemini_last_status', "SUCCESS ({$tryModel}, HTTP 200) - " . date('Y-m-d H:i:s'));
+                    SettingsManager::set('gemini_last_error', '');
+                    return $apiResult['data'];
+                }
+
+                $errors[] = "{$tryModel}: HTTP {$apiResult['code']} / {$apiResult['error']}";
             }
 
-            // モデルが404等の場合は安定版 gemini-1.5-flash で自動フォールバック再試行
-            if ($model !== 'gemini-1.5-flash') {
-                $retryResult = self::callGeminiApi($apiKey, 'gemini-1.5-flash', $systemPrompt, $userPrompt);
-                if ($retryResult['success']) {
-                    SettingsManager::set('gemini_last_status', 'SUCCESS (HTTP 200, gemini-1.5-flash) - ' . date('Y-m-d H:i:s'));
-                    SettingsManager::set('gemini_last_error', '');
-                    return $retryResult['data'];
-                }
-                SettingsManager::set('gemini_last_status', 'ERROR (' . $retryResult['code'] . ') - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', $retryResult['error']);
-            } else {
-                SettingsManager::set('gemini_last_status', 'ERROR (' . $apiResult['code'] . ') - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', $apiResult['error']);
-            }
+            SettingsManager::set('gemini_last_status', 'ERROR - ' . date('Y-m-d H:i:s'));
+            SettingsManager::set('gemini_last_error', implode(" | ", $errors));
         }
 
-        // 外部API未設定またはエラー時の安全なローカル構築フォールバック
+        // 外部API未設定または全モデル失敗時の安全なローカル構築フォールバック
         return self::fallbackGenerate($keyword, $verifiedSources);
     }
 
@@ -140,26 +142,35 @@ EOT;
 
         if ($httpCode === 200 && $response) {
             $resData = json_decode($response, true);
-            $rawJson = $resData['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $parsed = json_decode($rawJson, true);
-            if (is_array($parsed) && !empty($parsed['title'])) {
+            $rawJson = trim((string)($resData['candidates'][0]['content']['parts'][0]['text'] ?? ''));
+
+            // JSONモードでも環境によってコードフェンスが付く場合に対応。
+            $cleanJson = preg_replace('/^\x60\x60\x60(?:json)?\s*/i', '', $rawJson);
+            $cleanJson = preg_replace('/\s*\x60\x60\x60$/', '', (string)$cleanJson);
+            $parsed = json_decode((string)$cleanJson, true);
+
+            // 前後に説明文が混ざった場合は最初のJSONオブジェクトを救出。
+            if (!is_array($parsed) && preg_match('/\{[\s\S]*\}/', $rawJson, $m)) {
+                $parsed = json_decode($m[0], true);
+            }
+
+            if (is_array($parsed) && !empty($parsed['title']) && !empty($parsed['body'])) {
                 $parsed['_generation_mode'] = 'ai';
                 return ['success' => true, 'data' => $parsed, 'code' => 200];
             }
+
+            $finishReason = $resData['candidates'][0]['finishReason'] ?? '';
+            $errorMsg = 'HTTP 200 でしたが記事JSONを解析できませんでした'
+                . ($finishReason ? " (finishReason: {$finishReason})" : '')
+                . ($rawJson === '' ? ' / 応答本文が空です' : '');
+            return ['success' => false, 'code' => 200, 'error' => $errorMsg];
         }
 
         $errorMsg = $curlError ?: ($response ?: 'Empty response');
-        if ($resData = json_decode($response, true)) {
+        if ($resData = json_decode((string)$response, true)) {
             if (isset($resData['error']['message'])) {
                 $errorMsg = $resData['error']['message'];
             }
-        }
-
-        // 404またはモデル廃止の場合、別モデルで自動再試行
-        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
-            return self::callGeminiApi($apiKey, 'gemini-2.5-flash', $systemPrompt, $userPrompt);
-        } elseif ($httpCode === 404 && $model === 'gemini-2.5-flash') {
-            return self::callGeminiApi($apiKey, 'gemini-1.5-flash', $systemPrompt, $userPrompt);
         }
 
         return ['success' => false, 'code' => $httpCode, 'error' => $errorMsg];
