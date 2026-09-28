@@ -3804,11 +3804,23 @@ $navGroups = [
                                     <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); ?>
                                     <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
                                         <option value="gemini-2.5-flash" <?= $curModel === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash</option>
-                                        <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash</option>
+                                        <option value="gemini-2.5-flash-lite" <?= $curModel === 'gemini-2.5-flash-lite' ? 'selected' : '' ?>>Gemini 2.5 Flash Lite</option>
                                         <option value="gemini-2.5-pro" <?= $curModel === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro</option>
                                     </select>
                                 </div>
                             </div>
+
+                            <?php
+                            $geminiLastStatus = SettingsManager::get('gemini_last_status', '');
+                            $geminiLastError = SettingsManager::get('gemini_last_error', '');
+                            ?>
+                            <?php if ($geminiLastStatus || $geminiLastError): ?>
+                                <div class="rounded-2xl border <?= $geminiLastError ? 'border-rose-200 bg-rose-50' : 'border-emerald-200 bg-emerald-50' ?> p-4 space-y-1">
+                                    <div class="text-xs font-black <?= $geminiLastError ? 'text-rose-800' : 'text-emerald-800' ?>">Gemini 最終実行状態</div>
+                                    <?php if ($geminiLastStatus): ?><div class="text-[11px] text-slate-600"><?= htmlspecialchars($geminiLastStatus) ?></div><?php endif; ?>
+                                    <?php if ($geminiLastError): ?><div class="text-[11px] text-rose-700 break-all"><?= htmlspecialchars($geminiLastError) ?></div><?php endif; ?>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="flex justify-end">
                                 <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">API設定を保存</button>
