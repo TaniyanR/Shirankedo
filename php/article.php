@@ -254,7 +254,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- ヘッダー -->
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
-        <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <a href="index.php" class="flex items-center gap-3">
                 <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'logo')): ?>
                     <div class="w-10 h-10 rounded-2xl bg-white border border-stone-200 overflow-hidden shadow-sm flex items-center justify-center">
@@ -286,7 +286,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- アフィリエイト広告利用の案内 -->
     <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 text-[11px] text-amber-950 font-medium shadow-xs">
-        <div class="max-w-6xl mx-auto py-1.5 flex items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto py-1.5 flex items-center justify-between gap-4">
             <span><?= htmlspecialchars($affiliatePrNoticeText) ?></span>
             <a href="page.php?slug=about" class="font-bold text-stone-700 hover:text-amber-800 whitespace-nowrap">サイトについて</a>
         </div>
@@ -300,7 +300,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <?php endif; ?>
 
     <!-- メインコンテンツレイアウト (記事エリア + PCサイドバー) -->
-    <div class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col lg:flex-row gap-8">
+    <div class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col lg:flex-row gap-8">
         
         <!-- 左側メイン記事カラム -->
         <main class="flex-1 min-w-0 space-y-8">
@@ -602,7 +602,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- 相互リンク・提携アンテナサイト集 (全幅グリッド表示で相互リンク枠を大幅拡充) -->
     <?php if ($showRss && !empty($approvedLinks)): ?>
-        <section class="max-w-6xl mx-auto px-4 sm:px-6 my-6 w-full">
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 my-6 w-full">
             <div class="bg-white rounded-3xl border border-stone-200 p-5 sm:p-6 shadow-sm space-y-4">
                 <div class="flex items-center justify-between border-b border-stone-100 pb-3">
                     <div class="flex items-center gap-2">
@@ -628,7 +628,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- フッター -->
     <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 mt-8 border-t border-stone-800">
-        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="space-y-1 text-center sm:text-left">
                 <div class="text-white font-black text-sm tracking-wider">
                     <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>
@@ -636,7 +636,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
-                <p class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
+                <p class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold">
                 <?php foreach ($publishedStaticPages as $footerPage): ?>
