@@ -204,6 +204,9 @@ $score = (int)($article['shirankedo_index'] ?? 50);
 $colorClass = $score >= 80 ? 'bg-rose-50 text-rose-800 border-rose-200' :
               ($score >= 50 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-stone-100 text-stone-800 border-stone-200');
 
+$articleParagraphs = preg_split('/\R{2,}/u', trim((string)($article['body'] ?? ''))) ?: [];
+$articleParagraphs = array_values(array_filter(array_map('trim', $articleParagraphs), static fn($p) => $p !== ''));
+
 // SNSシェア用データ
 $currentUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') . $_SERVER['REQUEST_URI'];
 $shareTitle = $article['title'] . ' | しらんけど';
@@ -350,8 +353,10 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <?php endif; ?>
 
                 <!-- 記事本文 -->
-                <div class="prose max-w-none text-stone-800 leading-relaxed text-sm sm:text-base space-y-4 font-sans whitespace-pre-wrap">
-                    <?= nl2br(htmlspecialchars($article['body'])) ?>
+                <div class="text-stone-800 text-[15px] sm:text-[16px] leading-[1.95] font-sans space-y-5">
+                    <?php foreach ($articleParagraphs as $paragraph): ?>
+                        <p><?= nl2br(htmlspecialchars($paragraph)) ?></p>
+                    <?php endforeach; ?>
                 </div>
 
                 <?php if (!empty($articleSources)): ?>
