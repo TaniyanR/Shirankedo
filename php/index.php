@@ -386,7 +386,10 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                         $score = (int)$art['shirankedo_index'];
                         $colorClass = $score >= 80 ? 'bg-rose-50 text-rose-800 border-rose-200' : ($score >= 50 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-stone-100 text-stone-800 border-stone-200');
                         $barColor = $score >= 80 ? 'bg-rose-500' : ($score >= 50 ? 'bg-amber-500' : 'bg-stone-400');
-                        $imgSrc = $art['custom_image_url'] ?: 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80';
+                        $imgSrc = trim((string)($art['image_url'] ?? ''));
+                        if ($imgSrc === '') {
+                            $imgSrc = 'https://images.unsplash.com/photo-1504711434969-e33886168f5c?auto=format&fit=crop&w=800&q=80';
+                        }
                     ?>
                         <article class="bg-white rounded-3xl border border-stone-200/80 overflow-hidden shadow-sm hover:shadow-lg transition-all flex flex-col group">
                             <!-- アイキャッチ画像 (直接 article.php?id=XX へ遷移) -->
