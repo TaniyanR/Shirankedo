@@ -19,6 +19,7 @@ require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
 require_once __DIR__ . '/classes/SiteAssetManager.php';
 require_once __DIR__ . '/classes/StaticPageManager.php';
+require_once __DIR__ . '/classes/NewsSourceCollector.php';
 require_once __DIR__ . '/classes/Installer.php';
 
 // DB初期設定の自動検出 (未インストールまたはDB未接続時はインストーラーを起動)
@@ -739,16 +740,11 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             require_once __DIR__ . '/classes/ImageManager.php';
             require_once __DIR__ . '/classes/SafetyBrake.php';
 
-            // 一次ソースの準備
-            $verifiedSources = [
-                [
-                    'source_type' => 'news',
-                    'title' => "「{$keyword}」に関する最新報道・公式発表",
-                    'publisher' => '大手報道各社・一次情報',
-                    'url' => 'https://news.google.com/search?q=' . urlencode($keyword),
-                    'reliability_score' => 90
-                ]
-            ];
+            // 実際の参照ページを複数取得
+            $verifiedSources = NewsSourceCollector::collect($keyword, 5);
+            if (empty($verifiedSources)) {
+                throw new Exception('参照できるニュースページを取得できませんでした。推測だけの記事は生成しません。');
+            }
 
             // 安全判定
             $safety = SafetyBrake::audit($keyword, '', $verifiedSources);
@@ -800,6 +796,20 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
                 $dangerReason
             ]);
             $newArtId = $db->lastInsertId();
+
+            $srcStmt = $db->prepare("INSERT INTO article_sources
+                (article_id, site_id, source_type, title, url, publisher, reliability_score)
+                VALUES (?, 1, ?, ?, ?, ?, ?)");
+            foreach ($verifiedSources as $vs) {
+                $srcStmt->execute([
+                    $newArtId,
+                    $vs['source_type'] ?? 'news',
+                    $vs['title'] ?? '',
+                    $vs['url'] ?? '',
+                    $vs['publisher'] ?? '',
+                    (int)($vs['reliability_score'] ?? 90)
+                ]);
+            }
 
             $statusText = $finalStatus === 'published' ? '公開' : '下書き（保留）';
             $flashMessage = "✨ AI記事「{$generated['title']}」の自動生成が完了し、{$statusText}として保存しました！（記事ID #{$newArtId}）";

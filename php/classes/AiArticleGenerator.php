@@ -8,6 +8,7 @@
  * 4. 出典・参考リンクを構造化して提供
  */
 require_once __DIR__ . '/SettingsManager.php';
+require_once __DIR__ . '/NewsSourceCollector.php';
 
 class AiArticleGenerator {
     /**
@@ -22,6 +23,12 @@ class AiArticleGenerator {
         $sourcesText = '';
         foreach ($verifiedSources as $idx => $s) {
             $sourcesText .= sprintf("[%d] %s (%s): %s\n", $idx + 1, $s['title'] ?? '', $s['publisher'] ?? '', $s['url'] ?? '');
+            if (!empty($s['summary'])) {
+                $sourcesText .= "    概要: " . trim($s['summary']) . "\n";
+            }
+            if (!empty($s['published_at'])) {
+                $sourcesText .= "    公開日時: " . trim($s['published_at']) . "\n";
+            }
         }
 
         $systemPrompt = <<<EOT
@@ -31,7 +38,9 @@ class AiArticleGenerator {
 2. 情報源にない推測、憶測、独自の意見、噂を勝手に足すことは固く禁じられています。
 3. 容疑段階の人物を犯人扱いせず、一般人の氏名・住所・勤務先・個人情報は記載しないでください。
 4. 刺激的な煽り見出しや、AI特有の紋切り型の定型文（「いかがでしたでしょうか」等）は禁止します。
-5. 記事本文の最後の1文は、文脈に沿った自然で少しユーモアのある文章にした上で、必ず「〜しらんけど。」で締めくくってください。
+5. 本文は1,200〜2,000文字程度を目安に、6〜10段落で構成してください。「何が起きたか」「背景」「公表されている具体情報」「なぜ注目されているか」「今後確認すべき点」を、情報源にある範囲で整理してください。
+6. 文字数を増やすための水増し、同じ内容の言い換え、情報源にない数字・コメント・反応の創作は禁止します。確認できる情報が少ない場合は無理に2,000文字へ伸ばさず、事実の範囲で簡潔にしてください。
+7. 記事本文の最後の1文は、文脈に沿った自然で少しユーモアのある文章にした上で、必ず「〜しらんけど。」で締めくくってください。
    （例：「この勢いがどこまで続くのかは今後の公式発表次第になりそうです。しらんけど。」）
    ※事実関係そのものを「しらんけど」で曖昧にしてはいけません。最後の所感・余韻として添えてください。
 
@@ -40,7 +49,7 @@ class AiArticleGenerator {
 {
   "title": "記事タイトル（35文字以内で具体的・誤解を招かない表現）",
   "why_trending": "なぜ話題？（100文字以内の簡潔な要約）",
-  "body": "記事本文（段落分けされた客観的で読みやすい解説、400〜800文字程度）",
+  "body": "記事本文（6〜10段落、1,200〜2,000文字程度を基本。確認できる事実が少ない場合は無理に水増ししない）",
   "conclusion": "締めの文章（最後は必ず「〜しらんけど。」）",
   "important_keywords": ["キーワード1", "キーワード2"]
 }
@@ -109,6 +118,7 @@ EOT;
             ],
             'generationConfig' => [
                 'temperature' => 0.3,
+                'maxOutputTokens' => 4096,
                 'responseMimeType' => 'application/json'
             ]
         ];
@@ -218,26 +228,29 @@ EOT;
      * 単体プロンプトまたは特定キーワードから記事を即時テスト生成するメソッド
      */
     public static function generateFromKeyword(string $keyword, string $categoryName = 'エンタメ'): array {
-        $fakeSource = [
-            [
-                'title' => "{$keyword}に関する最新公式アナウンス",
-                'publisher' => '主要公式メディア',
-                'url' => 'https://news.google.com/'
-            ]
-        ];
-        $result = self::generate(1, ['display_keyword' => $keyword], $fakeSource);
-        return $result;
+        $sources = NewsSourceCollector::collect($keyword, 5);
+        if (empty($sources)) {
+            throw new RuntimeException('参照できるニュースページを取得できませんでした。');
+        }
+        return self::generate(1, ['display_keyword' => $keyword], $sources);
     }
 
     private static function fallbackGenerate(string $keyword, array $sources): array {
         $sourceNames = array_column($sources, 'publisher');
         $sourceSummary = !empty($sourceNames) ? implode('、', array_slice($sourceNames, 0, 2)) : '各公式発表';
 
+        $sourceTitles = array_values(array_filter(array_map(fn($s) => trim($s['title'] ?? ''), $sources)));
+        $sourceLines = [];
+        foreach (array_slice($sourceTitles, 0, 5) as $title) {
+            $sourceLines[] = "・" . $title;
+        }
+        $sourceList = !empty($sourceLines) ? implode("\n", $sourceLines) : "・参照元の取得に失敗しました";
+
         return [
-            'title' => "「{$keyword}」が急上昇、{$sourceSummary}の最新動向に注目集まる",
-            'why_trending' => "ネット検索および主要ランキングで「{$keyword}」の関心が急激に上昇。公式発表を受け話題となっています。",
-            'body' => "「{$keyword}」に関する最新情報が発表され、各所で大きな関心を集めています。{$sourceSummary}等の公表資料によると、関連する取り組みや発表内容が広く認知され、検索やニュース閲覧が急速に拡大しています。事実関係の確認が進んでおり、ファンや利用者の間で今後の展開に対する注目が高まっています。",
-            'conclusion' => "今後の追加発表次第では、さらに盛り上がりを見せる展開になるかもしれません。しらんけど。",
+            'title' => "「{$keyword}」が話題、確認できる最新情報を整理",
+            'why_trending' => "「{$keyword}」に関する複数の報道・発表が確認され、注目が集まっています。",
+            'body' => "「{$keyword}」について、現在確認できる報道・発表を整理します。\n\n今回参照できた主な情報は次のとおりです。\n{$sourceList}\n\n各情報源の内容は更新される可能性があります。現時点で確認できない数字や発言、SNS上の反応などは記事内で補完していません。\n\n詳しい内容や最新情報については、記事下部の「参考・出典」から各参照ページをご確認ください。",
+            'conclusion' => "追加情報が出れば状況が変わる可能性もあるので、続報は原典で確認するのが確実です。しらんけど。",
             'important_keywords' => array_filter([$keyword, 'トレンド', '話題'])
         ];
     }

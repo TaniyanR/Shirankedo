@@ -133,6 +133,19 @@ if ($dbConnected && isset($article['id'])) {
     }
 }
 
+// 参考・出典
+$articleSources = [];
+if ($dbConnected && isset($article['id'])) {
+    try {
+        $srcStmt = $db->prepare("SELECT title, url, publisher, source_type
+                                 FROM article_sources
+                                 WHERE article_id = ?
+                                 ORDER BY reliability_score DESC, id ASC");
+        $srcStmt->execute([(int)$article['id']]);
+        $articleSources = $srcStmt->fetchAll();
+    } catch (Throwable $e) {}
+}
+
 // 関連・最新記事（おすすめ：アイキャッチ画像設定済みのみ）
 $recentArticles = [];
 if ($dbConnected) {
@@ -262,28 +275,22 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 </div>
             </a>
 
-            <!-- PCヘッダー広告枠 (468x60 / 728x90) -->
+            <!-- PCヘッダー広告枠 (右寄せ) -->
             <?php if ($adPcHeaderEnabled && !empty($adPcHeader)): ?>
-                <div class="hidden lg:block overflow-hidden max-h-[60px]">
+                <div class="hidden lg:block ml-auto overflow-hidden max-h-[60px]">
                     <?= $adPcHeader ?>
                 </div>
             <?php endif; ?>
-
-            <div class="flex items-center gap-2 sm:gap-3 text-xs">
-                <a href="index.php" class="px-3.5 py-1.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold transition-all">
-                    ← トレンド一覧
-                </a>
-            </div>
         </div>
     </header>
 
-    <!-- ステマ規制法対応 アフィリエイト広告表記 (PRバー) -->
-    <?php if ($affiliatePrNoticeEnabled): ?>
-        <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 py-1.5 text-center text-[11px] text-amber-950 font-medium tracking-wide flex items-center justify-center gap-1.5 shadow-xs">
-            <span class="inline-block px-1.5 py-0.5 rounded bg-amber-200 text-amber-950 font-black text-[10px]">PR</span>
+    <!-- アフィリエイト広告利用の案内 -->
+    <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 text-[11px] text-amber-950 font-medium shadow-xs">
+        <div class="max-w-6xl mx-auto py-1.5 flex items-center justify-between gap-4">
             <span><?= htmlspecialchars($affiliatePrNoticeText) ?></span>
+            <a href="page.php?slug=about" class="font-bold text-stone-700 hover:text-amber-800 whitespace-nowrap">サイトについて</a>
         </div>
-    <?php endif; ?>
+    </div>
 
     <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
     <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
@@ -293,11 +300,11 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
     <?php endif; ?>
 
     <!-- メインコンテンツレイアウト (記事エリア + PCサイドバー) -->
-    <div class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-8">
+    <div class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col lg:flex-row gap-8">
         
         <!-- 左側メイン記事カラム -->
         <main class="flex-1 min-w-0 space-y-8">
-            <article class="bg-white rounded-3xl border border-stone-200/80 p-6 sm:p-10 shadow-sm space-y-6">
+            <article class="bg-white rounded-3xl border border-stone-200/80 p-6 sm:p-8 shadow-sm space-y-5">
                 
                 <!-- ヘッダー情報 -->
                 <div class="space-y-3">
@@ -311,44 +318,11 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                         <span class="px-2.5 py-0.5 rounded-lg font-bold border <?= $colorClass ?>">
                             しらんけど指数: <?= $score ?>点 (<?= htmlspecialchars($article['index_label'] ?? '話題') ?>)
                         </span>
-                        <?php if ($affiliatePrNoticeEnabled): ?>
-                            <span class="text-stone-400">•</span>
-                            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100/80 text-amber-950 text-[10px] font-bold border border-amber-200">
-                                <span>📢</span> <?= htmlspecialchars($affiliatePrNoticeText) ?>
-                            </span>
-                        <?php endif; ?>
                     </div>
 
                     <h1 class="text-2xl sm:text-3xl font-black text-stone-950 leading-snug">
                         <?= htmlspecialchars($article['title']) ?>
                     </h1>
-                </div>
-
-                <!-- SNSシェアボタン (上部) -->
-                <div class="flex flex-wrap items-center gap-2 border-y border-stone-100 py-3">
-                    <span class="text-xs font-bold text-stone-400">シェア:</span>
-                    <!-- Threads -->
-                    <a href="<?= htmlspecialchars($shareThreadsUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-slate-950 text-white hover:bg-slate-800 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
-                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 192 192"><path d="M141.537 88.9883C140.71 88.5919 139.87 88.2104 139.019 87.8451C137.537 60.5382 122.616 44.905 97.5619 44.745C97.4484 44.7443 97.3355 44.7443 97.222 44.7443C82.2364 44.7443 69.7731 51.1409 62.102 62.7807L75.381 72.8229C80.7061 64.7176 89.4312 60.4851 100.865 60.4851C117.828 60.4851 123.633 74.4447 124.636 93.9669C116.892 92.4285 107.575 92.0569 96.6853 92.8523C64.9048 95.1769 46.103 111.455 46.8974 133.407C47.3789 146.708 55.4377 156.456 68.3216 159.298C81.8282 162.277 96.671 158.468 107.971 149.034C114.382 143.682 119.049 136.634 121.737 128.291C127.02 138.835 136.037 146.077 149.207 147.452C165.65 149.172 178.683 140.75 183.084 125.753C188.082 108.72 177.345 92.4638 159.224 88.0934C154.218 86.8863 148.067 87.3229 141.537 88.9883ZM108.647 132.884C102.133 138.086 92.5936 142.062 82.5936 139.863C73.4936 137.863 68.3936 130.663 68.0936 120.363C67.5936 103.563 80.4936 90.763 108.647 88.684V132.884Z"/></svg>
-                        <span>Threads</span>
-                    </a>
-                    <!-- X / Twitter -->
-                    <a href="<?= htmlspecialchars($shareTwitterUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-black text-white hover:bg-stone-800 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
-                        <span>𝕏</span> <span>ポスト</span>
-                    </a>
-                    <!-- LINE -->
-                    <a href="<?= htmlspecialchars($shareLineUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-[#06C755] text-white hover:opacity-90 text-xs font-black flex items-center gap-1.5 transition-opacity shadow-sm">
-                        <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24"><path d="M24 10.304c0-5.369-5.383-9.738-12-9.738-6.616 0-12 4.369-12 9.738 0 4.814 4.269 8.846 10.019 9.608.391.084.922.258 1.057.592.121.303.079.778.039 1.085l-.171 1.027c-.053.303-.242 1.186 1.039.647 1.281-.54 6.911-4.069 9.428-6.967 1.739-1.907 2.589-3.843 2.589-5.992z"/></svg>
-                        <span>LINE</span>
-                    </a>
-                    <!-- Pinterest -->
-                    <a href="<?= htmlspecialchars($sharePinterestUrl) ?>" target="_blank" rel="noopener noreferrer" class="px-3 py-1.5 rounded-xl bg-rose-600 text-white hover:bg-rose-500 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
-                        <span>📌</span> <span>Pin</span>
-                    </a>
-                    <!-- コピー -->
-                    <button onclick="navigator.clipboard.writeText('<?= addslashes($currentUrl) ?>'); alert('URLをコピーしました！ThreadsやSNSでシェアできます。');" class="px-3 py-1.5 rounded-xl bg-stone-200 text-stone-800 hover:bg-stone-300 text-xs font-black flex items-center gap-1.5 transition-colors shadow-sm">
-                        <span>📋</span> <span>URLコピー</span>
-                    </button>
                 </div>
 
                 <!-- アイキャッチ画像 (800x450px) -->
@@ -379,6 +353,25 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <div class="prose max-w-none text-stone-800 leading-relaxed text-sm sm:text-base space-y-4 font-sans whitespace-pre-wrap">
                     <?= nl2br(htmlspecialchars($article['body'])) ?>
                 </div>
+
+                <?php if (!empty($articleSources)): ?>
+                    <div class="rounded-2xl border border-stone-200 bg-stone-50 p-5 space-y-3">
+                        <div class="text-sm font-black text-stone-900">参考・出典</div>
+                        <p class="text-[11px] text-stone-500">記事作成時に確認した参照ページです。リンク先で原文・最新情報をご確認いただけます。</p>
+                        <ul class="space-y-2">
+                            <?php foreach ($articleSources as $src): ?>
+                                <li class="text-xs leading-relaxed">
+                                    <a href="<?= htmlspecialchars($src['url']) ?>" target="_blank" rel="noopener noreferrer" class="text-indigo-700 hover:text-indigo-900 hover:underline font-bold break-all">
+                                        <?= htmlspecialchars($src['title']) ?> ↗
+                                    </a>
+                                    <?php if (!empty($src['publisher'])): ?>
+                                        <span class="text-stone-400 ml-1">— <?= htmlspecialchars($src['publisher']) ?></span>
+                                    <?php endif; ?>
+                                </li>
+                            <?php endforeach; ?>
+                        </ul>
+                    </div>
+                <?php endif; ?>
 
                 <!-- 締めの言葉（しらんけど構文） -->
                 <div class="bg-stone-50 border-l-4 border-amber-500 p-5 rounded-r-2xl font-mincho text-sm sm:text-base text-stone-900">
@@ -643,11 +636,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
-                <?php if ($affiliatePrNoticeEnabled): ?>
-                    <p class="text-[11px] text-amber-400/90 font-medium pt-1">
-                        ※ <?= htmlspecialchars($affiliatePrNoticeText) ?>
-                    </p>
-                <?php endif; ?>
+                <p class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold">
                 <?php foreach ($publishedStaticPages as $footerPage): ?>

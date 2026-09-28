@@ -7,6 +7,7 @@
  */
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../classes/SettingsManager.php';
+require_once __DIR__ . '/../classes/NewsSourceCollector.php';
 
 // 出力バッファリング開始（ログ保存用）
 ob_start();
@@ -113,16 +114,12 @@ foreach ($sites as $site) {
     foreach ($candidates as $cand) {
         echo "  → AI記事生成処理開始: 「{$cand['display_keyword']}」 (しらんけど指数: {$cand['shirankedo_index']})\n";
 
-        // 一次ソースの準備
-        $verifiedSources = [
-            [
-                'source_type' => 'news',
-                'title' => "「{$cand['display_keyword']}」に関する主要メディア報道・発表",
-                'publisher' => 'Googleニュース / 大手報道各社',
-                'url' => 'https://news.google.com/search?q=' . urlencode($cand['display_keyword']) . '&hl=ja&gl=JP&ceid=JP:ja',
-                'reliability_score' => 90
-            ]
-        ];
+        // 実際の参照ページを複数取得
+        $verifiedSources = NewsSourceCollector::collect($cand['display_keyword'], 5);
+        if (empty($verifiedSources)) {
+            echo "    [記事生成スキップ] 参照ページを取得できなかったため、推測記事は作成しません。\n";
+            continue;
+        }
 
         // 安全判定 (Safety Brake)
         $safety = SafetyBrake::audit($cand['display_keyword'], '', $verifiedSources);
