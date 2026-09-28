@@ -1725,7 +1725,7 @@ $navGroups = [
 
                                                     <!-- タイトル -->
                                                     <td class="py-3 font-bold text-slate-900 max-w-xs">
-                                                        <a href="article.php?id=<?= $a['id'] ?>" target="_blank" class="hover:text-amber-600 line-clamp-1">
+                                                        <a href="article.php?id=<?= $a['id'] ?><?= ($a['status'] ?? '') === 'published' ? '' : '&preview=1' ?>" target="_blank" class="hover:text-amber-600 line-clamp-1">
                                                             <?= htmlspecialchars($a['title']) ?> ↗
                                                         </a>
                                                     </td>
@@ -2188,7 +2188,7 @@ $navGroups = [
 
                                                 <td class="py-3 max-w-xs">
                                                     <div class="font-bold text-slate-900 leading-snug">
-                                                        <a href="article.php?id=<?= $a['id'] ?>" target="_blank" class="hover:text-amber-600 transition-colors">
+                                                        <a href="article.php?id=<?= $a['id'] ?><?= ($a['status'] ?? '') === 'published' ? '' : '&preview=1' ?>" target="_blank" class="hover:text-amber-600 transition-colors">
                                                             <?= htmlspecialchars($a['title']) ?> ↗
                                                         </a>
                                                     </div>
