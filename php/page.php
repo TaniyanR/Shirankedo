@@ -280,7 +280,7 @@ $affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当�
         <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="space-y-1 text-center sm:text-left">
                 <div class="text-white font-black text-sm"><?= htmlspecialchars($siteName) ?></div>
-                <div class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($siteName) ?></div>
+                <div class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($siteName) ?></div>
             </div>
             <?php if (!empty($publishedPages)): ?>
             <div class="flex flex-wrap items-center justify-center gap-4 text-xs font-bold">
