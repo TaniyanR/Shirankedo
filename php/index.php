@@ -641,7 +641,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
-                <p class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
+                <p class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
             </div>
             <div class="flex flex-wrap items-center gap-4 text-xs font-bold">
                 <?php if (!empty($threadsAccountUrl)): ?>
