@@ -9,7 +9,7 @@
  * 3. 🖼️ アイキャッチ画像プール管理 (800x450px・キーワード3つ設定・最大3万枚対応)
  * 4. 🔗 相互リンク・相互RSS管理 (承認・非承認・返還率80%/100%/120%/150%・特別優遇ブースト)
  * 5. 📢 お知らせ管理 (相互リンク承認・解除通知)
- * 6. 💰 アフィリエイト広告スロット設定 (PCヘッダー/サイド上下、スマホヘッダー上下)
+ * 6. 💰 アフィリエイト広告スロット設定 (PCヘッダー/サイド上下、スマホヘッダー下/フッター上)
  * 7. 🏷️ SEO・カスタムタグ設定 (<meta name="referrer" content="unsafe-url">, <head>タグ, <body>直下タグ)
  * 8. 🔒 セキュリティ設定 (管理画面URLスラッグ変更・管理者パスワード変更)
  */
@@ -299,6 +299,14 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $db->prepare("DELETE FROM comments WHERE article_id = ?")->execute([$artId]);
             $db->prepare("DELETE FROM articles WHERE id = ?")->execute([$artId]);
             $flashMessage = "記事ID #{$artId} を完全に削除しました。";
+        }
+
+        // 2-C. コメント削除
+        if ($op === 'delete_comment') {
+            $commentId = (int)($_POST['comment_id'] ?? 0);
+            if ($commentId <= 0) throw new Exception('削除するコメントを指定してください。');
+            $db->prepare("DELETE FROM comments WHERE id = ?")->execute([$commentId]);
+            $flashMessage = "コメントID #{$commentId} を削除しました。";
         }
 
         // 2-4. アイキャッチ画像の設定と即時公開
@@ -760,6 +768,10 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             ];
 
             $generated = AiArticleGenerator::generate(1, $trendData, $verifiedSources);
+            if (($generated['_generation_mode'] ?? 'fallback') !== 'ai') {
+                $geminiError = SettingsManager::get('gemini_last_error', 'Gemini APIから正常な記事を取得できませんでした');
+                throw new Exception('Gemini記事生成に失敗しました: ' . $geminiError);
+            }
 
             // アイキャッチ画像の選定
             $selectedImage = ImageManager::selectBestImage(1, $generated['important_keywords'] ?? [$keyword]);
@@ -956,6 +968,8 @@ if ($currentTab === 'advanced' || $currentTab === 'security' || $currentTab === 
 $articles = [];
 $totalArticles = 0;
 $staticPageCount = 0;
+$commentCount = 0;
+$adminComments = [];
 $totalIn = 0;
 $totalOut = 0;
 $tradeSites = [];
@@ -974,6 +988,13 @@ if ($db && $isLoggedIn) {
     try {
         $totalArticles = (int)$db->query("SELECT COUNT(*) FROM articles")->fetchColumn();
         $staticPageCount = (int)$db->query("SELECT COUNT(*) FROM static_pages WHERE site_id = 1")->fetchColumn();
+        $commentCount = (int)$db->query("SELECT COUNT(*) FROM comments WHERE status = 'approved'")->fetchColumn();
+        $adminComments = $db->query("SELECT c.id, c.article_id, c.author_name, c.content, c.created_at, a.title AS article_title
+                                     FROM comments c
+                                     LEFT JOIN articles a ON a.id = c.article_id
+                                     WHERE c.status = 'approved'
+                                     ORDER BY c.id DESC
+                                     LIMIT 200")->fetchAll();
         $articles = $db->query("SELECT a.id, a.title, a.slug, a.shirankedo_index, a.index_label, a.status, a.published_at, a.image_url, c.name as category_name FROM articles a LEFT JOIN categories c ON a.category_id = c.id ORDER BY a.id DESC LIMIT 100")->fetchAll();
         $categories = $db->query("SELECT id, name FROM categories WHERE site_id = 1")->fetchAll();
         
@@ -1097,6 +1118,7 @@ $navGroups = [
         'children' => [
             'create_article' => ['icon' => '✍️', 'label' => '記事をつくる (AI・手動)', 'badge' => null],
             'articles' => ['icon' => '📄', 'label' => '記事一覧・管理', 'badge' => $totalArticles ? (string)$totalArticles : null],
+            'comments' => ['icon' => '💬', 'label' => 'コメント管理', 'badge' => $commentCount ? (string)$commentCount : null],
             'pages' => ['icon' => '📑', 'label' => '個別ページ一覧', 'badge' => $staticPageCount ? (string)$staticPageCount : null],
             'images' => ['icon' => '🖼️', 'label' => '画像・素材管理', 'badge' => count($poolImages) ? count($poolImages) . '枚' : null],
         ]
@@ -1896,6 +1918,49 @@ $navGroups = [
                     </div>
 
                 <!-- 3. 🖼️ アイキャッチ画像プール管理 タブ (最大3万枚対応・キーワード3つ) -->
+
+                <?php elseif ($currentTab === 'comments'): ?>
+                    <div class="space-y-6">
+                        <div class="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs">
+                            <h1 class="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                                <span>💬</span><span>コメント管理</span>
+                            </h1>
+                            <p class="text-xs text-slate-500 mt-1">記事に投稿されたコメントを確認・削除できます。</p>
+                        </div>
+                        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+                            <?php if (empty($adminComments)): ?>
+                                <div class="py-10 text-center text-xs text-slate-400">現在コメントはありません。</div>
+                            <?php else: ?>
+                                <div class="overflow-x-auto">
+                                    <table class="w-full text-left text-xs border-collapse">
+                                        <thead><tr class="border-b border-slate-100 text-slate-400 font-bold">
+                                            <th class="py-3 pr-4">記事</th><th class="py-3 pr-4">投稿者</th><th class="py-3 pr-4">コメント</th><th class="py-3 pr-4 whitespace-nowrap">投稿日時</th><th class="py-3 text-right">操作</th>
+                                        </tr></thead>
+                                        <tbody class="divide-y divide-slate-100">
+                                            <?php foreach ($adminComments as $comment): ?>
+                                                <tr class="align-top hover:bg-slate-50">
+                                                    <td class="py-4 pr-4 max-w-[240px]">
+                                                        <a href="article.php?id=<?= (int)$comment['article_id'] ?>" target="_blank" class="font-bold text-slate-900 hover:text-amber-600"><?= htmlspecialchars($comment['article_title'] ?: '削除済み記事') ?> ↗</a>
+                                                        <div class="text-[10px] text-slate-400 mt-1">記事ID #<?= (int)$comment['article_id'] ?></div>
+                                                    </td>
+                                                    <td class="py-4 pr-4 whitespace-nowrap font-bold text-slate-700"><?= htmlspecialchars($comment['author_name'] ?: '名無しさん') ?></td>
+                                                    <td class="py-4 pr-4 min-w-[320px] max-w-xl text-slate-700 leading-relaxed"><?= nl2br(htmlspecialchars($comment['content'] ?? '')) ?></td>
+                                                    <td class="py-4 pr-4 whitespace-nowrap text-slate-500"><?= htmlspecialchars($comment['created_at'] ?? '') ?></td>
+                                                    <td class="py-4 text-right">
+                                                        <form method="POST" onsubmit="return confirm('このコメントを削除しますか？');">
+                                                            <input type="hidden" name="op" value="delete_comment">
+                                                            <input type="hidden" name="comment_id" value="<?= (int)$comment['id'] ?>">
+                                                            <button type="submit" class="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-black text-[11px]">削除</button>
+                                                        </form>
+                                                    </td>
+                                                </tr>
+                                            <?php endforeach; ?>
+                                        </tbody>
+                                    </table>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
 
                 <?php elseif ($currentTab === 'pages'): ?>
                     <?php
@@ -3038,8 +3103,8 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $spHeadTopOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">④ スマホ ヘッダー上 (300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">ファーストビュー最上部</div>
+                                                <div class="text-xs font-black text-slate-900">④ スマホ フッター上 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">ページ最下部のフッター直前</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_sp_header_top_enabled" value="1" <?= $spHeadTopOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
@@ -3055,7 +3120,7 @@ $navGroups = [
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
                                                 <div class="text-xs font-black text-slate-900">⑤ スマホ ヘッダー下 (300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">記事タイトル直下</div>
+                                                <div class="text-[10px] text-slate-500">ヘッダー直下</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_sp_header_bottom_enabled" value="1" <?= $spHeadBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
@@ -3071,7 +3136,7 @@ $navGroups = [
                             <div class="bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm space-y-6">
                                 <div class="flex items-center gap-2 border-b border-slate-100 pb-3">
                                     <span class="text-lg">📄</span>
-                                    <h2 class="text-base font-black text-slate-900">記事ページ内 広告スロット（インフィード・本文下）</h2>
+                                    <h2 class="text-base font-black text-slate-900">PC記事内 広告スロット（左右 300×250px）</h2>
                                 </div>
 
                                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3080,15 +3145,15 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $artMiddleOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">⑥ 記事本文中 (インフィード / 300×250px)</div>
-                                                <div class="text-[10px] text-slate-500">なぜ話題ボックスと本文の間</div>
+                                                <div class="text-xs font-black text-slate-900">⑥ PC 記事内 左 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">記事本文エリア内・左側</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_article_middle_enabled" value="1" <?= $artMiddleOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
                                                 <span>表示</span>
                                             </label>
                                         </div>
-                                        <textarea name="ad_article_middle" rows="3" placeholder="本文中インフィード広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_middle')) ?></textarea>
+                                        <textarea name="ad_article_middle" rows="3" placeholder="PC記事内・左側 300×250 広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_middle')) ?></textarea>
                                     </div>
 
                                     <!-- 7. 記事下部 -->
@@ -3096,15 +3161,15 @@ $navGroups = [
                                     <div class="p-4 rounded-2xl border <?= $artBottomOn ? 'border-slate-200 bg-slate-50/50' : 'border-rose-200 bg-rose-50/30' ?> space-y-3">
                                         <div class="flex items-center justify-between gap-2">
                                             <div>
-                                                <div class="text-xs font-black text-slate-900">⑦ 記事下部 (関連記事上 / 300×250px〜)</div>
-                                                <div class="text-[10px] text-slate-500">本文読了後・投票ボタンの直下</div>
+                                                <div class="text-xs font-black text-slate-900">⑦ PC 記事内 右 (300×250px)</div>
+                                                <div class="text-[10px] text-slate-500">記事本文エリア内・右側</div>
                                             </div>
                                             <label class="flex items-center gap-1.5 cursor-pointer bg-white px-3 py-1 rounded-xl border border-slate-200 text-[11px] font-bold text-slate-700">
                                                 <input type="checkbox" name="ad_article_bottom_enabled" value="1" <?= $artBottomOn ? 'checked' : '' ?> class="w-3.5 h-3.5 rounded text-amber-500">
                                                 <span>表示</span>
                                             </label>
                                         </div>
-                                        <textarea name="ad_article_bottom" rows="3" placeholder="記事直下広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom')) ?></textarea>
+                                        <textarea name="ad_article_bottom" rows="3" placeholder="PC記事内・右側 300×250 広告タグ..." class="w-full p-2.5 rounded-xl border border-slate-200 font-mono text-xs bg-white focus:outline-none focus:border-amber-500"><?= htmlspecialchars(SettingsManager::get('ad_article_bottom')) ?></textarea>
                                     </div>
                                 </div>
                             </div>
@@ -3739,11 +3804,23 @@ $navGroups = [
                                     <?php $curModel = SettingsManager::get('gemini_model', 'gemini-2.5-flash'); ?>
                                     <select name="gemini_model" id="input_gemini_model" class="w-full px-4 py-3 rounded-2xl border border-slate-200 bg-white text-sm focus:outline-none focus:border-indigo-500">
                                         <option value="gemini-2.5-flash" <?= $curModel === 'gemini-2.5-flash' ? 'selected' : '' ?>>Gemini 2.5 Flash</option>
-                                        <option value="gemini-1.5-flash" <?= $curModel === 'gemini-1.5-flash' ? 'selected' : '' ?>>Gemini 1.5 Flash</option>
+                                        <option value="gemini-2.5-flash-lite" <?= $curModel === 'gemini-2.5-flash-lite' ? 'selected' : '' ?>>Gemini 2.5 Flash Lite</option>
                                         <option value="gemini-2.5-pro" <?= $curModel === 'gemini-2.5-pro' ? 'selected' : '' ?>>Gemini 2.5 Pro</option>
                                     </select>
                                 </div>
                             </div>
+
+                            <?php
+                            $geminiLastStatus = SettingsManager::get('gemini_last_status', '');
+                            $geminiLastError = SettingsManager::get('gemini_last_error', '');
+                            ?>
+                            <?php if ($geminiLastStatus || $geminiLastError): ?>
+                                <div class="rounded-2xl border <?= $geminiLastError ? 'border-rose-200 bg-rose-50' : 'border-emerald-200 bg-emerald-50' ?> p-4 space-y-1">
+                                    <div class="text-xs font-black <?= $geminiLastError ? 'text-rose-800' : 'text-emerald-800' ?>">Gemini 最終実行状態</div>
+                                    <?php if ($geminiLastStatus): ?><div class="text-[11px] text-slate-600"><?= htmlspecialchars($geminiLastStatus) ?></div><?php endif; ?>
+                                    <?php if ($geminiLastError): ?><div class="text-[11px] text-rose-700 break-all"><?= htmlspecialchars($geminiLastError) ?></div><?php endif; ?>
+                                </div>
+                            <?php endif; ?>
 
                             <div class="flex justify-end">
                                 <button type="submit" class="px-7 py-3 rounded-2xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs shadow-md">API設定を保存</button>

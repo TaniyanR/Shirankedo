@@ -125,7 +125,7 @@ if ($dbConnected && isset($article['id'])) {
         $voteBelieved = (int)($counts['believed'] ?? 0);
         $voteSkeptical = (int)($counts['skeptical'] ?? 0);
 
-        $comStmt = $db->prepare("SELECT * FROM comments WHERE article_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 50");
+        $comStmt = $db->prepare("SELECT id, author_name, content, created_at FROM comments WHERE article_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 50");
         $comStmt->execute([$article['id']]);
         $comments = $comStmt->fetchAll();
     } catch (Throwable $e) {
@@ -204,6 +204,9 @@ $score = (int)($article['shirankedo_index'] ?? 50);
 $colorClass = $score >= 80 ? 'bg-rose-50 text-rose-800 border-rose-200' :
               ($score >= 50 ? 'bg-amber-50 text-amber-800 border-amber-200' : 'bg-stone-100 text-stone-800 border-stone-200');
 
+$articleParagraphs = preg_split('/\R{2,}/u', trim((string)($article['body'] ?? ''))) ?: [];
+$articleParagraphs = array_values(array_filter(array_map('trim', $articleParagraphs), static fn($p) => $p !== ''));
+
 // SNSシェア用データ
 $currentUrl = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://" . ($_SERVER['HTTP_HOST'] ?? 'shirankedo.bichi.xyz') . $_SERVER['REQUEST_URI'];
 $shareTitle = $article['title'] . ' | しらんけど';
@@ -254,7 +257,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- ヘッダー -->
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
-        <div class="max-w-6xl mx-auto flex items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto flex items-center justify-between gap-4">
             <a href="index.php" class="flex items-center gap-3">
                 <?php if (SiteAssetManager::exists((int)($site['id'] ?? 1), 'logo')): ?>
                     <div class="w-10 h-10 rounded-2xl bg-white border border-stone-200 overflow-hidden shadow-sm flex items-center justify-center">
@@ -286,21 +289,21 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- アフィリエイト広告利用の案内 -->
     <div class="bg-amber-50/90 border-b border-amber-200/70 px-4 text-[11px] text-amber-950 font-medium shadow-xs">
-        <div class="max-w-6xl mx-auto py-1.5 flex items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto py-1.5 flex items-center justify-between gap-4">
             <span><?= htmlspecialchars($affiliatePrNoticeText) ?></span>
             <a href="page.php?slug=about" class="font-bold text-stone-700 hover:text-amber-800 whitespace-nowrap">サイトについて</a>
         </div>
     </div>
 
-    <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderTop ?>
+    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
+    <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-3 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
         </div>
     <?php endif; ?>
 
     <!-- メインコンテンツレイアウト (記事エリア + PCサイドバー) -->
-    <div class="max-w-6xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col lg:flex-row gap-8">
+    <div class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-3 sm:py-4 flex flex-col lg:flex-row gap-8">
         
         <!-- 左側メイン記事カラム -->
         <main class="flex-1 min-w-0 space-y-8">
@@ -342,16 +345,27 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                     </p>
                 </div>
 
-                <!-- 記事本文中 広告枠 (インフィード / 300x250) -->
-                <?php if ($adArticleMiddleEnabled && !empty($adArticleMiddle)): ?>
-                    <div class="flex justify-center my-4 overflow-hidden">
-                        <?= $adArticleMiddle ?>
+                <!-- PC記事内 広告枠：左・右 300x250 -->
+                <?php if (($adArticleMiddleEnabled && !empty($adArticleMiddle)) || ($adArticleBottomEnabled && !empty($adArticleBottom))): ?>
+                    <div class="hidden lg:grid grid-cols-2 gap-6 my-5">
+                        <div class="min-h-[250px] flex items-center justify-center rounded-2xl bg-stone-50 border border-stone-200 overflow-hidden">
+                            <?php if ($adArticleMiddleEnabled && !empty($adArticleMiddle)): ?>
+                                <?= $adArticleMiddle ?>
+                            <?php endif; ?>
+                        </div>
+                        <div class="min-h-[250px] flex items-center justify-center rounded-2xl bg-stone-50 border border-stone-200 overflow-hidden">
+                            <?php if ($adArticleBottomEnabled && !empty($adArticleBottom)): ?>
+                                <?= $adArticleBottom ?>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 <?php endif; ?>
 
                 <!-- 記事本文 -->
-                <div class="prose max-w-none text-stone-800 leading-relaxed text-sm sm:text-base space-y-4 font-sans whitespace-pre-wrap">
-                    <?= nl2br(htmlspecialchars($article['body'])) ?>
+                <div class="text-stone-800 text-[15px] sm:text-[16px] leading-[1.95] font-sans space-y-5">
+                    <?php foreach ($articleParagraphs as $paragraph): ?>
+                        <p><?= nl2br(htmlspecialchars($paragraph)) ?></p>
+                    <?php endforeach; ?>
                 </div>
 
                 <?php if (!empty($articleSources)): ?>
@@ -442,7 +456,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                                         <span><?= htmlspecialchars($com['author_name'] ?? '名無しさん') ?></span>
                                         <span class="text-[11px] font-normal"><?= date('m/d H:i', strtotime($com['created_at'])) ?></span>
                                     </div>
-                                    <p class="text-stone-800 leading-relaxed"><?= nl2br(htmlspecialchars($com['body'])) ?></p>
+                                    <p class="text-stone-800 leading-relaxed"><?= nl2br(htmlspecialchars($com['content'] ?? '')) ?></p>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
@@ -488,20 +502,6 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                         <?php endforeach; ?>
                     </div>
                 </section>
-            <?php endif; ?>
-
-            <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-            <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
-                <div class="lg:hidden flex justify-center py-4 bg-stone-50 rounded-2xl border border-stone-200">
-                    <?= $adSpHeaderBottom ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- 記事下部 広告枠 (300x250 / レスポンシブ) -->
-            <?php if ($adArticleBottomEnabled && !empty($adArticleBottom)): ?>
-                <div class="flex justify-center my-6 p-4 bg-stone-50 rounded-2xl border border-stone-200 overflow-hidden">
-                    <?= $adArticleBottom ?>
-                </div>
             <?php endif; ?>
 
             <!-- 他のトレンド話題 -->
@@ -602,7 +602,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 
     <!-- 相互リンク・提携アンテナサイト集 (全幅グリッド表示で相互リンク枠を大幅拡充) -->
     <?php if ($showRss && !empty($approvedLinks)): ?>
-        <section class="max-w-6xl mx-auto px-4 sm:px-6 my-6 w-full">
+        <section class="max-w-7xl mx-auto px-4 sm:px-6 my-6 w-full">
             <div class="bg-white rounded-3xl border border-stone-200 p-5 sm:p-6 shadow-sm space-y-4">
                 <div class="flex items-center justify-between border-b border-stone-100 pb-3">
                     <div class="flex items-center gap-2">
@@ -626,9 +626,16 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
         </section>
     <?php endif; ?>
 
+    <!-- スマホ専用 フッター上 広告枠 (300x250) -->
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-4 bg-stone-50 border-t border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
+    <?php endif; ?>
+
     <!-- フッター -->
     <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 mt-8 border-t border-stone-800">
-        <div class="max-w-6xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="space-y-1 text-center sm:text-left">
                 <div class="text-white font-black text-sm tracking-wider">
                     <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?>
@@ -636,7 +643,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
-                <p class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
+                <p class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
             </div>
             <div class="flex items-center gap-4 text-xs font-bold">
                 <?php foreach ($publishedStaticPages as $footerPage): ?>

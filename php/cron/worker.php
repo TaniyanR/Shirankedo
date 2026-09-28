@@ -132,6 +132,12 @@ foreach ($sites as $site) {
             continue;
         }
 
+        if (($generated['_generation_mode'] ?? 'fallback') !== 'ai') {
+            $geminiError = SettingsManager::get('gemini_last_error', 'Gemini APIから正常な記事を取得できませんでした');
+            echo "    [記事生成スキップ] Gemini生成失敗: {$geminiError}\n";
+            continue;
+        }
+
         // 画像選択 (10,000枚規模マネージャー)
         $selectedImage = ImageManager::selectBestImage(
             $siteId, 

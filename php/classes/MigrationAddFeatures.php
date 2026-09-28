@@ -95,6 +95,9 @@ class MigrationAddFeatures {
         try { $db->exec("ALTER TABLE access_logs ADD KEY idx_tracking_created (tracking_version, created_at)"); } catch (Throwable $e) {}
         try { $db->exec("ALTER TABLE access_logs ADD KEY idx_visitor_created (visitor_hash, created_at)"); } catch (Throwable $e) {}
 
+        // コメント投稿者名を既存commentsテーブルへ安全に追加
+        try { $db->exec("ALTER TABLE comments ADD COLUMN author_name VARCHAR(100) NOT NULL DEFAULT '名無しさん' AFTER article_id"); } catch (Throwable $e) {}
+
         // ロゴ・favicon・OGP画像はDB保存。
         $db->exec("CREATE TABLE IF NOT EXISTS site_assets (
           id INT UNSIGNED NOT NULL AUTO_INCREMENT,

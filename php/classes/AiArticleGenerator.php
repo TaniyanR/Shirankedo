@@ -37,10 +37,13 @@ class AiArticleGenerator {
 1. 下記の「確認された一次情報源・報道データ」に明記されている客観的事実のみを整理・要約して記事を作成してください。
 2. 情報源にない推測、憶測、独自の意見、噂を勝手に足すことは固く禁じられています。
 3. 容疑段階の人物を犯人扱いせず、一般人の氏名・住所・勤務先・個人情報は記載しないでください。
-4. 刺激的な煽り見出しや、AI特有の紋切り型の定型文（「いかがでしたでしょうか」等）は禁止します。
-5. 本文は1,200〜2,000文字程度を目安に、6〜10段落で構成してください。「何が起きたか」「背景」「公表されている具体情報」「なぜ注目されているか」「今後確認すべき点」を、情報源にある範囲で整理してください。
-6. 文字数を増やすための水増し、同じ内容の言い換え、情報源にない数字・コメント・反応の創作は禁止します。確認できる情報が少ない場合は無理に2,000文字へ伸ばさず、事実の範囲で簡潔にしてください。
-7. 記事本文の最後の1文は、文脈に沿った自然で少しユーモアのある文章にした上で、必ず「〜しらんけど。」で締めくくってください。
+4. 刺激的な煽り見出しや、AI特有の紋切り型の定型文（「いかがでしたでしょうか」「注目が集まっています」の連発等）は禁止します。
+5. 読者が最初の3行で「何が起きたのか」「どこが面白い・重要なのか」を理解できる導入にしてください。一般論から始めず、最も具体的で重要な確認済み事実から始めてください。
+6. 本文は1,200〜2,000文字程度を目安に、6〜10段落で構成してください。「何が起きたか」「背景」「公表されている具体情報」「従来との違い・意外な点」「なぜ話題になっているか」「今後確認すべき点」を、情報源にある範囲で自然につないでください。
+7. 情報源に日付、固有名詞、数字、順位、発表内容など具体情報がある場合は積極的に使ってください。抽象的な言葉だけで段落を埋めないでください。
+8. 1段落を長くしすぎず、テンポのよい自然な日本語にしてください。「一方で」「つまり」「ここでポイントになるのは」などは必要な時だけ使い、説明臭くなりすぎないようにしてください。
+9. 文字数を増やすための水増し、同じ内容の言い換え、情報源にない数字・コメント・反応の創作は禁止します。確認できる情報が少ない場合は無理に2,000文字へ伸ばさず、事実の範囲で簡潔にしてください。
+10. 記事本文の最後の1文は、文脈に沿った自然で少しユーモアのある文章にした上で、必ず「〜しらんけど。」で締めくくってください。
    （例：「この勢いがどこまで続くのかは今後の公式発表次第になりそうです。しらんけど。」）
    ※事実関係そのものを「しらんけど」で曖昧にしてはいけません。最後の所感・余韻として添えてください。
 
@@ -61,32 +64,34 @@ EOT;
             $userPrompt .= "【関連YouTube情報】:\n{$youtubeInfo}\n";
         }
 
-        // Gemini API呼び出し
+        // Gemini API呼び出し。設定モデルに加え、現行のFlash系候補を順番に試す。
         if (!empty($apiKey)) {
-            $apiResult = self::callGeminiApi($apiKey, $model, $systemPrompt, $userPrompt);
-            if ($apiResult['success']) {
-                SettingsManager::set('gemini_last_status', 'SUCCESS (HTTP 200) - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', '');
-                return $apiResult['data'];
+            $modelsToTry = array_values(array_unique(array_filter([
+                $model,
+                'gemini-2.5-flash',
+                'gemini-2.5-flash-lite',
+            ])));
+            $errors = [];
+
+            foreach ($modelsToTry as $tryModel) {
+                $apiResult = self::callGeminiApi($apiKey, $tryModel, $systemPrompt, $userPrompt);
+                if ($apiResult['success']) {
+                    if ($tryModel !== $model) {
+                        SettingsManager::set('gemini_model', $tryModel);
+                    }
+                    SettingsManager::set('gemini_last_status', "SUCCESS ({$tryModel}, HTTP 200) - " . date('Y-m-d H:i:s'));
+                    SettingsManager::set('gemini_last_error', '');
+                    return $apiResult['data'];
+                }
+
+                $errors[] = "{$tryModel}: HTTP {$apiResult['code']} / {$apiResult['error']}";
             }
 
-            // モデルが404等の場合は安定版 gemini-1.5-flash で自動フォールバック再試行
-            if ($model !== 'gemini-1.5-flash') {
-                $retryResult = self::callGeminiApi($apiKey, 'gemini-1.5-flash', $systemPrompt, $userPrompt);
-                if ($retryResult['success']) {
-                    SettingsManager::set('gemini_last_status', 'SUCCESS (HTTP 200, gemini-1.5-flash) - ' . date('Y-m-d H:i:s'));
-                    SettingsManager::set('gemini_last_error', '');
-                    return $retryResult['data'];
-                }
-                SettingsManager::set('gemini_last_status', 'ERROR (' . $retryResult['code'] . ') - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', $retryResult['error']);
-            } else {
-                SettingsManager::set('gemini_last_status', 'ERROR (' . $apiResult['code'] . ') - ' . date('Y-m-d H:i:s'));
-                SettingsManager::set('gemini_last_error', $apiResult['error']);
-            }
+            SettingsManager::set('gemini_last_status', 'ERROR - ' . date('Y-m-d H:i:s'));
+            SettingsManager::set('gemini_last_error', implode(" | ", $errors));
         }
 
-        // 外部API未設定またはエラー時の安全なローカル構築フォールバック
+        // 外部API未設定または全モデル失敗時の安全なローカル構築フォールバック
         return self::fallbackGenerate($keyword, $verifiedSources);
     }
 
@@ -95,10 +100,10 @@ EOT;
      */
     public static function normalizeModelName(string $model): string {
         $model = trim($model);
-        if ($model === 'gemini-2.0-flash' || empty($model)) {
+        if ($model === 'gemini-2.0-flash' || $model === 'gemini-1.5-flash' || empty($model)) {
             return 'gemini-2.5-flash';
         }
-        if ($model === 'gemini-2.0-pro') {
+        if ($model === 'gemini-2.0-pro' || $model === 'gemini-1.5-pro') {
             return 'gemini-2.5-pro';
         }
         return $model;
@@ -137,25 +142,35 @@ EOT;
 
         if ($httpCode === 200 && $response) {
             $resData = json_decode($response, true);
-            $rawJson = $resData['candidates'][0]['content']['parts'][0]['text'] ?? '';
-            $parsed = json_decode($rawJson, true);
-            if (is_array($parsed) && !empty($parsed['title'])) {
+            $rawJson = trim((string)($resData['candidates'][0]['content']['parts'][0]['text'] ?? ''));
+
+            // JSONモードでも環境によってコードフェンスが付く場合に対応。
+            $cleanJson = preg_replace('/^\x60\x60\x60(?:json)?\s*/i', '', $rawJson);
+            $cleanJson = preg_replace('/\s*\x60\x60\x60$/', '', (string)$cleanJson);
+            $parsed = json_decode((string)$cleanJson, true);
+
+            // 前後に説明文が混ざった場合は最初のJSONオブジェクトを救出。
+            if (!is_array($parsed) && preg_match('/\{[\s\S]*\}/', $rawJson, $m)) {
+                $parsed = json_decode($m[0], true);
+            }
+
+            if (is_array($parsed) && !empty($parsed['title']) && !empty($parsed['body'])) {
+                $parsed['_generation_mode'] = 'ai';
                 return ['success' => true, 'data' => $parsed, 'code' => 200];
             }
+
+            $finishReason = $resData['candidates'][0]['finishReason'] ?? '';
+            $errorMsg = 'HTTP 200 でしたが記事JSONを解析できませんでした'
+                . ($finishReason ? " (finishReason: {$finishReason})" : '')
+                . ($rawJson === '' ? ' / 応答本文が空です' : '');
+            return ['success' => false, 'code' => 200, 'error' => $errorMsg];
         }
 
         $errorMsg = $curlError ?: ($response ?: 'Empty response');
-        if ($resData = json_decode($response, true)) {
+        if ($resData = json_decode((string)$response, true)) {
             if (isset($resData['error']['message'])) {
                 $errorMsg = $resData['error']['message'];
             }
-        }
-
-        // 404またはモデル廃止の場合、別モデルで自動再試行
-        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
-            return self::callGeminiApi($apiKey, 'gemini-2.5-flash', $systemPrompt, $userPrompt);
-        } elseif ($httpCode === 404 && $model === 'gemini-2.5-flash') {
-            return self::callGeminiApi($apiKey, 'gemini-1.5-flash', $systemPrompt, $userPrompt);
         }
 
         return ['success' => false, 'code' => $httpCode, 'error' => $errorMsg];
@@ -196,14 +211,14 @@ EOT;
             ];
         }
 
-        // 404の場合、gemini-2.5-flash または gemini-1.5-flash で自動再テスト
-        if ($httpCode === 404 && $model !== 'gemini-2.5-flash') {
-            $retry = self::testApiKey($apiKey, 'gemini-2.5-flash');
+        // モデルが見つからない場合はFlash Liteも確認
+        if ($httpCode === 404 && $model !== 'gemini-2.5-flash-lite') {
+            $retry = self::testApiKey($apiKey, 'gemini-2.5-flash-lite');
             if ($retry['success']) {
-                SettingsManager::set('gemini_model', 'gemini-2.5-flash');
+                SettingsManager::set('gemini_model', 'gemini-2.5-flash-lite');
                 return [
                     'success' => true,
-                    'message' => "モデルを最新の gemini-2.5-flash へ自動更新し接続成功！ (HTTP 200)"
+                    'message' => "gemini-2.5-flash-lite へ切り替えて接続成功！ (HTTP 200)"
                 ];
             }
         }
@@ -251,7 +266,8 @@ EOT;
             'why_trending' => "「{$keyword}」に関する複数の報道・発表が確認され、注目が集まっています。",
             'body' => "「{$keyword}」について、現在確認できる報道・発表を整理します。\n\n今回参照できた主な情報は次のとおりです。\n{$sourceList}\n\n各情報源の内容は更新される可能性があります。現時点で確認できない数字や発言、SNS上の反応などは記事内で補完していません。\n\n詳しい内容や最新情報については、記事下部の「参考・出典」から各参照ページをご確認ください。",
             'conclusion' => "追加情報が出れば状況が変わる可能性もあるので、続報は原典で確認するのが確実です。しらんけど。",
-            'important_keywords' => array_filter([$keyword, 'トレンド', '話題'])
+            'important_keywords' => array_filter([$keyword, 'トレンド', '話題']),
+            '_generation_mode' => 'fallback'
         ];
     }
 }

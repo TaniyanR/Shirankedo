@@ -62,4 +62,34 @@ class SafetyBrake {
             'matched'      => $matchedWords,
         ];
     }
+    /**
+     * コメント投稿専用の簡易監査。
+     * 記事用SafetyBrakeとは分離し、通常の感想や口語表現は許可する。
+     */
+    public static function auditComment(string $comment): array {
+        $comment = trim($comment);
+
+        if ($comment === '') {
+            return ['safe' => false, 'reason' => 'コメント本文が空です'];
+        }
+
+        if (mb_strlen($comment) > 1000) {
+            return ['safe' => false, 'reason' => 'コメントは1000文字以内で入力してください'];
+        }
+
+        // 明確なスパム・危険投稿だけを最低限ブロックする。
+        $blockedPatterns = [
+            '/<\s*script\b/i',
+            '/javascript\s*:/i',
+            '/(?:https?:\/\/[^\s]+\s*){3,}/i',
+        ];
+        foreach ($blockedPatterns as $pattern) {
+            if (preg_match($pattern, $comment)) {
+                return ['safe' => false, 'reason' => 'スパムまたは危険な入力を検出しました'];
+            }
+        }
+
+        return ['safe' => true, 'reason' => ''];
+    }
+
 }

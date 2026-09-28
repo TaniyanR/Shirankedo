@@ -119,8 +119,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 exit;
             }
 
-            $stmt = $db->prepare("INSERT INTO comments (article_id, author_name, body, ip_address, status) VALUES (?, ?, ?, ?, 'approved')");
-            $stmt->execute([$articleId, $author ?: '名無しさん', $body, $ip]);
+            $ipHash = hash('sha256', $ip . '|' . ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+            $stmt = $db->prepare("INSERT INTO comments (site_id, article_id, author_name, content, ip_hash, status) VALUES (?, ?, ?, ?, ?, 'approved')");
+            $stmt->execute([(int)($site['id'] ?? 1), $articleId, $author ?: '名無しさん', $body, $ipHash]);
 
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
@@ -307,10 +308,10 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         </div>
     </div>
 
-    <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderTop ?>
+    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
+    <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-3 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
         </div>
     <?php endif; ?>
 
@@ -355,13 +356,6 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                     <?php endforeach; ?>
                 </div>
             </div>
-        </div>
-    <?php endif; ?>
-
-    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-    <?php if ($showAds && !empty($adSpHeaderBottom)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderBottom ?>
         </div>
     <?php endif; ?>
 
@@ -631,6 +625,13 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         </section>
     <?php endif; ?>
 
+    <!-- スマホ専用 フッター上 広告枠 (300x250) -->
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-4 bg-stone-50 border-t border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
+    <?php endif; ?>
+
     <!-- フッター -->
     <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800 mt-auto">
         <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -641,7 +642,7 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
                 <p class="text-[11px] text-stone-500">
                     客観的事実と一次報道に基づき要約しています。判断は自己責任でお願いします。しらんけど。
                 </p>
-                <p class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
+                <p class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($site['name'] ?? 'しらんけど') ?></p>
             </div>
             <div class="flex flex-wrap items-center gap-4 text-xs font-bold">
                 <?php if (!empty($threadsAccountUrl)): ?>

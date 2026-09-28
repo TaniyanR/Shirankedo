@@ -123,6 +123,10 @@ if ($page && ($page['special_type'] ?? 'content') === 'news' && $db) {
 $headCustomTags = SettingsManager::get('head_custom_tags');
 $bodyTopTags = SettingsManager::get('body_top_tags');
 $affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当サイトはアフィリエイト広告を利用しています。');
+$adSpHeaderBottomEnabled = SettingsManager::get('ad_sp_header_bottom_enabled', '1') === '1';
+$adSpHeaderTopEnabled = SettingsManager::get('ad_sp_header_top_enabled', '1') === '1';
+$adSpHeaderBottom = SettingsManager::get('ad_sp_header_bottom');
+$adSpHeaderTop = SettingsManager::get('ad_sp_header_top');
 ?>
 <!DOCTYPE html>
 <html lang="ja">
@@ -172,6 +176,13 @@ $affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当�
             <a href="page.php?slug=about" class="font-bold text-stone-700 hover:text-amber-800 whitespace-nowrap">サイトについて</a>
         </div>
     </div>
+
+    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
+    <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-3 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
+        </div>
+    <?php endif; ?>
 
     <main class="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 py-5 sm:py-7">
         <?php if (!$page): ?>
@@ -276,11 +287,18 @@ $affiliatePrNoticeText = SettingsManager::get('affiliate_pr_notice_text', '当�
         <?php endif; ?>
     </main>
 
+    <!-- スマホ専用 フッター上 広告枠 (300x250) -->
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-4 bg-stone-50 border-t border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
+    <?php endif; ?>
+
     <footer class="bg-stone-900 text-stone-400 text-xs py-8 px-4 border-t border-stone-800 mt-8">
         <div class="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-4">
             <div class="space-y-1 text-center sm:text-left">
                 <div class="text-white font-black text-sm"><?= htmlspecialchars($siteName) ?></div>
-                <div class="text-[11px] text-stone-600">© <?= date('Y') ?> <?= htmlspecialchars($siteName) ?></div>
+                <div class="text-[11px] text-stone-300 font-semibold">Copyright © <?= date('Y') ?> <?= htmlspecialchars($siteName) ?></div>
             </div>
             <?php if (!empty($publishedPages)): ?>
             <div class="flex flex-wrap items-center justify-center gap-4 text-xs font-bold">

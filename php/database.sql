@@ -180,6 +180,7 @@ CREATE TABLE IF NOT EXISTS `comments` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `site_id` INT UNSIGNED NOT NULL,
   `article_id` INT UNSIGNED NOT NULL,
+  `author_name` VARCHAR(100) NOT NULL DEFAULT '名無しさん',
   `content` TEXT NOT NULL COMMENT 'プレーンテキストのみ',
   `ip_hash` CHAR(64) NOT NULL,
   `status` ENUM('approved', 'pending', 'hidden', 'deleted') NOT NULL DEFAULT 'approved',
