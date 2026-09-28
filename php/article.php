@@ -295,10 +295,10 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
         </div>
     </div>
 
-    <!-- スマホ専用 ヘッダー上 広告枠 (300x250) -->
-    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderTop ?>
+    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
+    <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
+        <div class="lg:hidden flex justify-center py-3 bg-stone-50 border-b border-stone-200">
+            <?= $adSpHeaderBottom ?>
         </div>
     <?php endif; ?>
 
@@ -345,10 +345,19 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                     </p>
                 </div>
 
-                <!-- 記事本文中 広告枠 (インフィード / 300x250) -->
-                <?php if ($adArticleMiddleEnabled && !empty($adArticleMiddle)): ?>
-                    <div class="flex justify-center my-4 overflow-hidden">
-                        <?= $adArticleMiddle ?>
+                <!-- PC記事内 広告枠：左・右 300x250 -->
+                <?php if (($adArticleMiddleEnabled && !empty($adArticleMiddle)) || ($adArticleBottomEnabled && !empty($adArticleBottom))): ?>
+                    <div class="hidden lg:grid grid-cols-2 gap-6 my-5">
+                        <div class="min-h-[250px] flex items-center justify-center rounded-2xl bg-stone-50 border border-stone-200 overflow-hidden">
+                            <?php if ($adArticleMiddleEnabled && !empty($adArticleMiddle)): ?>
+                                <?= $adArticleMiddle ?>
+                            <?php endif; ?>
+                        </div>
+                        <div class="min-h-[250px] flex items-center justify-center rounded-2xl bg-stone-50 border border-stone-200 overflow-hidden">
+                            <?php if ($adArticleBottomEnabled && !empty($adArticleBottom)): ?>
+                                <?= $adArticleBottom ?>
+                            <?php endif; ?>
+                        </div>
                     </div>
                 <?php endif; ?>
 
@@ -495,20 +504,6 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 </section>
             <?php endif; ?>
 
-            <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-            <?php if ($adSpHeaderBottomEnabled && !empty($adSpHeaderBottom)): ?>
-                <div class="lg:hidden flex justify-center py-4 bg-stone-50 rounded-2xl border border-stone-200">
-                    <?= $adSpHeaderBottom ?>
-                </div>
-            <?php endif; ?>
-
-            <!-- 記事下部 広告枠 (300x250 / レスポンシブ) -->
-            <?php if ($adArticleBottomEnabled && !empty($adArticleBottom)): ?>
-                <div class="flex justify-center my-6 p-4 bg-stone-50 rounded-2xl border border-stone-200 overflow-hidden">
-                    <?= $adArticleBottom ?>
-                </div>
-            <?php endif; ?>
-
             <!-- 他のトレンド話題 -->
             <?php if (!empty($recentArticles)): ?>
                 <div class="space-y-4">
@@ -629,6 +624,13 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                 </div>
             </div>
         </section>
+    <?php endif; ?>
+
+    <!-- スマホ専用 フッター上 広告枠 (300x250) -->
+    <?php if ($adSpHeaderTopEnabled && !empty($adSpHeaderTop)): ?>
+        <div class="lg:hidden flex justify-center py-4 bg-stone-50 border-t border-stone-200">
+            <?= $adSpHeaderTop ?>
+        </div>
     <?php endif; ?>
 
     <!-- フッター -->
