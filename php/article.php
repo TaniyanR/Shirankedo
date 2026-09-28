@@ -125,7 +125,7 @@ if ($dbConnected && isset($article['id'])) {
         $voteBelieved = (int)($counts['believed'] ?? 0);
         $voteSkeptical = (int)($counts['skeptical'] ?? 0);
 
-        $comStmt = $db->prepare("SELECT * FROM comments WHERE article_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 50");
+        $comStmt = $db->prepare("SELECT id, author_name, content, created_at FROM comments WHERE article_id = ? AND status = 'approved' ORDER BY created_at DESC LIMIT 50");
         $comStmt->execute([$article['id']]);
         $comments = $comStmt->fetchAll();
     } catch (Throwable $e) {
@@ -447,7 +447,7 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
                                         <span><?= htmlspecialchars($com['author_name'] ?? '名無しさん') ?></span>
                                         <span class="text-[11px] font-normal"><?= date('m/d H:i', strtotime($com['created_at'])) ?></span>
                                     </div>
-                                    <p class="text-stone-800 leading-relaxed"><?= nl2br(htmlspecialchars($com['body'])) ?></p>
+                                    <p class="text-stone-800 leading-relaxed"><?= nl2br(htmlspecialchars($com['content'] ?? '')) ?></p>
                                 </div>
                             <?php endforeach; ?>
                         <?php endif; ?>
