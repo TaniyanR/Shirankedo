@@ -34,12 +34,15 @@ try {
     $catCount = (int)$db->query("SELECT COUNT(*) FROM categories")->fetchColumn();
     if ($catCount === 0) {
         $db->exec("INSERT INTO categories (id, site_id, slug, name, sort_order) VALUES
-            (1, 1, 'all', '総合トレンド', 1),
-            (2, 1, 'entertainment', 'エンタメ・お笑い', 2),
-            (3, 1, 'trend', '話題・SNS', 3),
-            (4, 1, 'game', 'ゲーム・新作', 4),
-            (5, 1, 'it', 'IT・ネット速報', 5)
-            ON DUPLICATE KEY UPDATE name=VALUES(name)");
+            (1, 1, 'all', '総合', 1),
+            (2, 1, 'entertainment', 'エンタメ', 2),
+            (3, 1, 'sports', 'スポーツ', 3),
+            (4, 1, 'tech', 'テクノロジー', 4),
+            (5, 1, 'anime', 'アニメ・マンガ', 5),
+            (6, 1, 'game', 'ゲーム', 6),
+            (7, 1, 'social', '時事・社会', 7),
+            (8, 1, 'gourmet', 'グルメ', 8)
+            ON DUPLICATE KEY UPDATE name=VALUES(name), slug=VALUES(slug), sort_order=VALUES(sort_order)");
         echo "  [Worker初期化] 基本カテゴリを自動生成しました。\n";
     }
 } catch (Throwable $e) {
