@@ -136,8 +136,9 @@ class TrendCollector {
             }
         }
 
-        // Trendsが取得できない、または件数が少ない時だけGoogleニュースで補完。
-        if (count($trends) < 10) {
+        // Google Trendsだけに偏らないよう、Googleニュースも毎回補完する。
+        // 同一キーワードは正規化して重複除外する。
+        {
             $newsXml = self::fetchUrlWithTimeout('https://news.google.com/rss?hl=ja&gl=JP&ceid=JP:ja', 6);
             if ($newsXml) {
                 $newsParsed = @simplexml_load_string($newsXml, 'SimpleXMLElement', LIBXML_NOCDATA);
@@ -148,7 +149,7 @@ class TrendCollector {
                     }
 
                     foreach ($newsParsed->channel->item as $item) {
-                        if (count($trends) >= 30) break;
+                        if (count($trends) >= 40) break;
                         $title = trim((string)$item->title);
                         $title = preg_replace('/ - [^ -]+$/u', '', $title);
                         if (mb_strlen($title) < 5) continue;

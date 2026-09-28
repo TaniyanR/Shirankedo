@@ -34,12 +34,15 @@ try {
     $catCount = (int)$db->query("SELECT COUNT(*) FROM categories")->fetchColumn();
     if ($catCount === 0) {
         $db->exec("INSERT INTO categories (id, site_id, slug, name, sort_order) VALUES
-            (1, 1, 'all', '総合トレンド', 1),
-            (2, 1, 'entertainment', 'エンタメ・お笑い', 2),
-            (3, 1, 'trend', '話題・SNS', 3),
-            (4, 1, 'game', 'ゲーム・新作', 4),
-            (5, 1, 'it', 'IT・ネット速報', 5)
-            ON DUPLICATE KEY UPDATE name=VALUES(name)");
+            (1, 1, 'all', '総合', 1),
+            (2, 1, 'entertainment', 'エンタメ', 2),
+            (3, 1, 'sports', 'スポーツ', 3),
+            (4, 1, 'tech', 'テクノロジー', 4),
+            (5, 1, 'anime', 'アニメ・マンガ', 5),
+            (6, 1, 'game', 'ゲーム', 6),
+            (7, 1, 'social', '時事・社会', 7),
+            (8, 1, 'gourmet', 'グルメ', 8)
+            ON DUPLICATE KEY UPDATE name=VALUES(name), slug=VALUES(slug), sort_order=VALUES(sort_order)");
         echo "  [Worker初期化] 基本カテゴリを自動生成しました。\n";
     }
 } catch (Throwable $e) {
@@ -50,7 +53,6 @@ try {
 // 自動投稿コントロール設定の取得
 $autoPostEnabled = SettingsManager::get('auto_post_enabled', '1') === '1';
 $intervalHours = (float)SettingsManager::get('auto_post_interval_hours', '1');
-$defaultStatus = SettingsManager::get('auto_post_default_status', 'published');
 $canGenerateArticles = true;
 $skipReason = '';
 
@@ -95,20 +97,53 @@ foreach ($sites as $site) {
         continue;
     }
 
-    // 2. AI記事生成対象の抽出 (1回につき1件生成)
-    $stmt = $db->prepare("SELECT * FROM trend_candidates 
-                          WHERE site_id = ? AND status = 'candidate' 
-                          ORDER BY shirankedo_index DESC, growth_rate DESC 
-                          LIMIT 1");
+    // 2. AI記事生成対象の抽出
+    // 完了済み候補は再利用せず、直近記事と重複しにくい未生成候補から選ぶ。
+    $stmt = $db->prepare("SELECT tc.*
+                          FROM trend_candidates tc
+                          WHERE tc.site_id = ?
+                            AND tc.status = 'candidate'
+                            AND NOT EXISTS (
+                                SELECT 1 FROM articles a
+                                WHERE a.site_id = tc.site_id
+                                  AND a.trend_candidate_id = tc.id
+                            )
+                          ORDER BY tc.is_rapid_rise DESC,
+                                   tc.shirankedo_index DESC,
+                                   tc.growth_rate DESC,
+                                   tc.last_updated_at DESC
+                          LIMIT 12");
     $stmt->execute([$siteId]);
-    $candidates = $stmt->fetchAll();
+    $candidatePool = $stmt->fetchAll();
+    $candidates = [];
 
-    // 未処理候補がない場合、完了済みから再活用またはシード追加
+    if (!empty($candidatePool)) {
+        $recentStmt = $db->prepare("SELECT title FROM articles
+                                    WHERE site_id = ?
+                                      AND published_at >= DATE_SUB(NOW(), INTERVAL 3 DAY)
+                                    ORDER BY published_at DESC
+                                    LIMIT 20");
+        $recentStmt->execute([$siteId]);
+        $recentText = mb_strtolower(implode(' ', array_column($recentStmt->fetchAll(), 'title')));
+
+        foreach ($candidatePool as $candidate) {
+            $kw = trim((string)($candidate['display_keyword'] ?? ''));
+            if ($kw === '') continue;
+            if ($recentText !== '' && mb_strlen($kw) >= 3 && mb_strpos($recentText, mb_strtolower($kw)) !== false) {
+                continue;
+            }
+            $candidates[] = $candidate;
+            break;
+        }
+
+        if (empty($candidates)) {
+            $candidates[] = $candidatePool[0];
+        }
+    }
+
     if (empty($candidates)) {
-        echo "  [Worker] 未生成のトレンド候補がないため、最新の急上昇候補をリフレッシュします。\n";
-        $db->exec("UPDATE trend_candidates SET status = 'candidate' WHERE site_id = {$siteId} ORDER BY last_updated_at DESC LIMIT 2");
-        $stmt->execute([$siteId]);
-        $candidates = $stmt->fetchAll();
+        echo "  [Worker] 新しく記事化できる未生成トレンド候補がありません。完了済み候補の使い回しは行いません。\n";
+        continue;
     }
 
     foreach ($candidates as $cand) {
@@ -123,6 +158,11 @@ foreach ($sites as $site) {
 
         // 安全判定 (Safety Brake)
         $safety = SafetyBrake::audit($cand['display_keyword'], '', $verifiedSources);
+        if (!empty($safety['needs_hold']) || !empty($safety['is_dangerous'])) {
+            $db->prepare("UPDATE trend_candidates SET status = 'ignored' WHERE id = ?")->execute([$cand['id']]);
+            echo "    [記事生成スキップ] 公開できない安全判定のため記事は保存しません。\n";
+            continue;
+        }
 
         // AI記事生成
         try {
@@ -146,12 +186,26 @@ foreach ($sites as $site) {
         $imgUrl = !empty($selectedImage['url']) ? trim($selectedImage['url']) : null;
         $hasImage = !empty($imgUrl);
 
-        // ステータス判定
-        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
+        if (!$hasImage) {
+            $db->prepare("UPDATE trend_candidates SET status = 'ignored' WHERE id = ?")->execute([$cand['id']]);
+            echo "    [記事生成スキップ] アイキャッチ画像を選定できなかったため記事は保存しません。\n";
+            continue;
+        }
+
+        // 公開できる品質の記事だけDBへ保存する。
+        $status = 'published';
         $slug = 'trend-' . time() . '-' . rand(100, 999);
-        $dangerReason = $safety['is_dangerous'] 
-            ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
-            : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
+        $dangerReason = null;
+
+        // AIが選んだカテゴリへ自動振り分け。
+        $categorySlug = $generated['category_slug'] ?? 'all';
+        $allowedCategorySlugs = ['all', 'entertainment', 'sports', 'tech', 'anime', 'game', 'social', 'gourmet'];
+        if (!in_array($categorySlug, $allowedCategorySlugs, true)) {
+            $categorySlug = 'all';
+        }
+        $catStmt = $db->prepare("SELECT id FROM categories WHERE site_id = ? AND slug = ? LIMIT 1");
+        $catStmt->execute([$siteId, $categorySlug]);
+        $categoryId = (int)($catStmt->fetchColumn() ?: 1);
 
         $artStmt = $db->prepare("INSERT INTO articles 
             (site_id, category_id, trend_candidate_id, title, slug, why_trending, body, conclusion_sentence,
@@ -161,7 +215,7 @@ foreach ($sites as $site) {
 
         $artStmt->execute([
             $siteId,
-            1, // デフォルト総合カテゴリ
+            $categoryId,
             $cand['id'],
             $generated['title'],
             $slug,
@@ -206,8 +260,6 @@ foreach ($sites as $site) {
                 ]);
             } catch (Throwable $se) {}
             echo "    ✓ 【公開完了】 記事ID #{$articleId}: 「{$generated['title']}」\n";
-        } else {
-            echo "    ⚠️ 【安全保留】 記事ID #{$articleId}: 「{$generated['title']}」 (理由: " . ($dangerReason ?: '下書き設定') . ")\n";
         }
     }
 }
