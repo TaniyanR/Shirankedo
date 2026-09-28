@@ -769,12 +769,15 @@ if ($isLoggedIn && $_SERVER['REQUEST_METHOD'] === 'POST') {
             $index = $trendData['shirankedo_index'];
             $label = ShirankedoIndex::getLabel($index);
 
-            // アイキャッチ画像が無い場合は表に出さず保留とする
+            // アイキャッチ画像が無い場合やGemini生成失敗時は表に出さず保留とする
             $hasImage = !empty($imgUrl);
-            $finalStatus = ($safety['needs_hold'] || $status === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
-            $dangerReason = $safety['is_dangerous'] 
-                ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
-                : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
+            $isFallbackGeneration = (($generated['_generation_mode'] ?? 'fallback') !== 'ai');
+            $finalStatus = ($safety['needs_hold'] || $status === 'on_hold' || !$hasImage || $isFallbackGeneration) ? 'on_hold' : 'published';
+            $dangerReason = $isFallbackGeneration
+                ? 'Gemini生成に失敗したため簡易フォールバック記事を公開せず保留'
+                : ($safety['is_dangerous'] 
+                    ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
+                    : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null)));
 
             $stmt = $db->prepare("INSERT INTO articles 
                 (site_id, category_id, title, slug, why_trending, body, conclusion_sentence, 
