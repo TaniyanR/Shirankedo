@@ -3894,7 +3894,7 @@ $navGroups = [
                                 </div>
                             </label>
 
-                            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+                            <div class="grid grid-cols-1 gap-5">
                                 <div class="space-y-1.5">
                                     <label class="block text-xs font-bold text-slate-700">投稿間隔</label>
                                     <?php $currentInterval = SettingsManager::get('auto_post_interval_hours', '1'); ?>
