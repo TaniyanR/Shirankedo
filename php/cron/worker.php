@@ -132,6 +132,12 @@ foreach ($sites as $site) {
             continue;
         }
 
+        if (($generated['_generation_mode'] ?? 'fallback') !== 'ai') {
+            $geminiError = SettingsManager::get('gemini_last_error', 'Gemini APIから正常な記事を取得できませんでした');
+            echo "    [記事生成スキップ] Gemini生成失敗: {$geminiError}\n";
+            continue;
+        }
+
         // 画像選択 (10,000枚規模マネージャー)
         $selectedImage = ImageManager::selectBestImage(
             $siteId, 
@@ -141,14 +147,11 @@ foreach ($sites as $site) {
         $hasImage = !empty($imgUrl);
 
         // ステータス判定
-        $isFallbackGeneration = (($generated['_generation_mode'] ?? 'fallback') !== 'ai');
-        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage || $isFallbackGeneration) ? 'on_hold' : 'published';
+        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
         $slug = 'trend-' . time() . '-' . rand(100, 999);
-        $dangerReason = $isFallbackGeneration
-            ? 'Gemini生成に失敗したため簡易フォールバック記事を自動公開せず保留'
-            : ($safety['is_dangerous'] 
-                ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
-                : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null)));
+        $dangerReason = $safety['is_dangerous'] 
+            ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
+            : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
 
         $artStmt = $db->prepare("INSERT INTO articles 
             (site_id, category_id, trend_candidate_id, title, slug, why_trending, body, conclusion_sentence,
