@@ -4,6 +4,7 @@
  * URL: /article.php?id=XX または /article.php?slug=YY または /article/YY (.htaccess経由)
  */
 ini_set('display_errors', 0);
+session_start();
 require_once __DIR__ . '/config.php';
 require_once __DIR__ . '/classes/SettingsManager.php';
 require_once __DIR__ . '/classes/TradeEngine.php';
@@ -16,6 +17,7 @@ TradeEngine::trackIncomingReferrer();
 
 $articleId = (int)($_GET['id'] ?? 0);
 $slug = trim($_GET['slug'] ?? '');
+$isAdminPreview = !empty($_SESSION['admin_logged_in']) && isset($_GET['preview']) && $_GET['preview'] === '1';
 
 $dbConnected = false;
 $db = null;
@@ -54,16 +56,26 @@ $article = null;
 if ($dbConnected && ($articleId > 0 || !empty($slug))) {
     try {
         if ($articleId > 0) {
-            $stmt = $db->prepare("SELECT a.*, c.name as category_name, c.slug as category_slug
-                                  FROM articles a
-                                  LEFT JOIN categories c ON a.category_id = c.id
-                                  WHERE a.id = ? AND a.status = 'published' AND a.image_url IS NOT NULL AND TRIM(a.image_url) != '' LIMIT 1");
+            $sql = "SELECT a.*, c.name as category_name, c.slug as category_slug
+                    FROM articles a
+                    LEFT JOIN categories c ON a.category_id = c.id
+                    WHERE a.id = ?";
+            if (!$isAdminPreview) {
+                $sql .= " AND a.status = 'published' AND a.image_url IS NOT NULL AND TRIM(a.image_url) != ''";
+            }
+            $sql .= " LIMIT 1";
+            $stmt = $db->prepare($sql);
             $stmt->execute([$articleId]);
         } else {
-            $stmt = $db->prepare("SELECT a.*, c.name as category_name, c.slug as category_slug
-                                  FROM articles a
-                                  LEFT JOIN categories c ON a.category_id = c.id
-                                  WHERE a.slug = ? AND a.status = 'published' AND a.image_url IS NOT NULL AND TRIM(a.image_url) != '' LIMIT 1");
+            $sql = "SELECT a.*, c.name as category_name, c.slug as category_slug
+                    FROM articles a
+                    LEFT JOIN categories c ON a.category_id = c.id
+                    WHERE a.slug = ?";
+            if (!$isAdminPreview) {
+                $sql .= " AND a.status = 'published' AND a.image_url IS NOT NULL AND TRIM(a.image_url) != ''";
+            }
+            $sql .= " LIMIT 1";
+            $stmt = $db->prepare($sql);
             $stmt->execute([$slug]);
         }
         $article = $stmt->fetch();
@@ -254,6 +266,12 @@ $sharePinterestUrl = 'https://pinterest.com/pin/create/button/?url=' . urlencode
 </head>
 <body class="bg-stone-100 text-stone-900 min-h-screen flex flex-col font-sans antialiased selection:bg-amber-200">
     <?= $bodyTopTags ?>
+
+    <?php if ($isAdminPreview && !empty($article) && ($article['status'] ?? '') !== 'published'): ?>
+        <div class="bg-indigo-700 text-white text-xs font-bold text-center px-4 py-2">
+            管理者プレビュー：この記事は現在「<?= htmlspecialchars($article['status'] ?? '非公開') ?>」です。一般公開されていません。
+        </div>
+    <?php endif; ?>
 
     <!-- ヘッダー -->
     <header class="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-stone-200 px-4 sm:px-6 py-3 shadow-sm">
