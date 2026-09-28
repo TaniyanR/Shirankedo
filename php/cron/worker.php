@@ -141,11 +141,14 @@ foreach ($sites as $site) {
         $hasImage = !empty($imgUrl);
 
         // ステータス判定
-        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage) ? 'on_hold' : 'published';
+        $isFallbackGeneration = (($generated['_generation_mode'] ?? 'fallback') !== 'ai');
+        $status = ($safety['needs_hold'] || $defaultStatus === 'on_hold' || !$hasImage || $isFallbackGeneration) ? 'on_hold' : 'published';
         $slug = 'trend-' . time() . '-' . rand(100, 999);
-        $dangerReason = $safety['is_dangerous'] 
-            ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
-            : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null));
+        $dangerReason = $isFallbackGeneration
+            ? 'Gemini生成に失敗したため簡易フォールバック記事を自動公開せず保留'
+            : ($safety['is_dangerous'] 
+                ? ($safety['reason'] ?: 'AI検閲: 危険ワード検知') 
+                : (!$hasImage ? 'アイキャッチ画像未設定（画像設定後に表へ公開）' : ($safety['reason'] ?: null)));
 
         $artStmt = $db->prepare("INSERT INTO articles 
             (site_id, category_id, trend_candidate_id, title, slug, why_trending, body, conclusion_sentence,
