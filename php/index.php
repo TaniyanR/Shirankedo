@@ -119,8 +119,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 exit;
             }
 
-            $stmt = $db->prepare("INSERT INTO comments (article_id, author_name, body, ip_address, status) VALUES (?, ?, ?, ?, 'approved')");
-            $stmt->execute([$articleId, $author ?: '名無しさん', $body, $ip]);
+            $ipHash = hash('sha256', $ip . '|' . ($_SERVER['HTTP_USER_AGENT'] ?? ''));
+            $stmt = $db->prepare("INSERT INTO comments (site_id, article_id, author_name, content, ip_hash, status) VALUES (?, ?, ?, ?, ?, 'approved')");
+            $stmt->execute([(int)($site['id'] ?? 1), $articleId, $author ?: '名無しさん', $body, $ipHash]);
 
             echo json_encode(['success' => true]);
         } catch (Throwable $e) {
