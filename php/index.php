@@ -359,13 +359,6 @@ $bodyTopTags = SettingsManager::get('body_top_tags');
         </div>
     <?php endif; ?>
 
-    <!-- スマホ専用 ヘッダー下 広告枠 (300x250) -->
-    <?php if ($showAds && !empty($adSpHeaderBottom)): ?>
-        <div class="lg:hidden flex justify-center py-2 bg-stone-50 border-b border-stone-200">
-            <?= $adSpHeaderBottom ?>
-        </div>
-    <?php endif; ?>
-
     <!-- メインコンテンツレイアウト (記事グリッド + PCサイドバー) -->
     <div class="max-w-7xl w-full mx-auto px-4 sm:px-6 py-6 sm:py-8 flex flex-col lg:flex-row gap-8">
         
